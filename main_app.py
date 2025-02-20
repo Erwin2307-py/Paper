@@ -1,6 +1,9 @@
 import streamlit as st
 
-# Our module imports:
+# Must be the first Streamlit command!
+st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
+
+# Our module imports (adjust paths as needed)
 from modules.api_select import module_api_select
 from modules.online_filter import module_online_filter
 from modules.codewords_pubmed import module_codewords_pubmed
@@ -9,19 +12,17 @@ from modules.analysis import module_analysis
 from modules.extended_topics import module_extended_topics
 
 def main():
-    st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
-
-    # --- Top Green Bar --- 
+    # --- Top Green Bar (full width) ---
     st.markdown(
         """
-        <div style='background-color: #8BC34A; padding: 15px; text-align: center; color: white; font-size: 28px; font-weight: bold;'>
+        <div style="background-color: #8BC34A; width: 100%; padding: 15px; text-align: center; color: white; font-size: 28px; font-weight: bold;">
             Streamlit Multi-Modul Demo
         </div>
         """,
         unsafe_allow_html=True
     )
 
-    # --- CSS for green sidebar ---
+    # --- Sidebar CSS to keep it green ---
     st.markdown(
         """
         <style>
@@ -33,7 +34,7 @@ def main():
         unsafe_allow_html=True
     )
 
-    # Sidebar Module Navigation (persistent)
+    # --- Sidebar Module Navigation (Persistent) ---
     st.sidebar.title("Module Navigation")
     selection = st.sidebar.radio(
         "Wähle ein Modul:",
@@ -47,7 +48,7 @@ def main():
         )
     )
 
-    # Module call depending on selection
+    # Module call based on the user's selection
     if selection.startswith("1"):
         module_api_select()
     elif selection.startswith("2"):
@@ -61,7 +62,8 @@ def main():
     elif selection.startswith("6"):
         module_extended_topics()
 
-if __name__ == "__main__":
-    main()
+    st.write("This app checks API connections and provides several modules for further processing.")
+    st.write("Use the sidebar to navigate between modules. The top green bar remains visible at all times.")
 
+if __name__ == '__main__':
     main()
