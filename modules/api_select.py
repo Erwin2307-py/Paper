@@ -113,7 +113,7 @@ def module_api_select():
             st.sidebar.error("Europe PMC connection failed!")
     
     if "CORE Aggregate" in selected_apis:
-        # Get the CORE Aggregate API key from secrets
+        # Get the CORE Aggregate API key from secrets for security
         CORE_API_KEY = st.secrets.get("CORE_API_KEY", "your_core_api_key_here")
         if CORE_API_KEY and check_core_aggregate_connection(CORE_API_KEY):
             st.sidebar.success("CORE Aggregate connection established!")
@@ -124,13 +124,19 @@ def module_api_select():
 # Main Streamlit App
 #############################################
 def main():
+    # Add a green bar at the top of the page
+    st.markdown(
+        "<div style='background-color: green; height: 50px;'></div>",
+        unsafe_allow_html=True
+    )
+    
     st.title("API Connection Checker")
     
     # Always display the API selection sidebar so that the choices remain visible
     module_api_select()
     
     st.write("This app checks the connections for selected APIs.")
-    st.write("You can use the sidebar to select and see the status of the following APIs:")
+    st.write("Use the sidebar to select and view the status of the following APIs:")
     st.write("- Europe PMC")
     st.write("- PubMed")
     st.write("- CORE Aggregate")
