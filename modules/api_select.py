@@ -33,10 +33,7 @@ def check_core_aggregate_connection(api_key, timeout=15):
         core = CoreAPI(api_key)
         # Try a simple search query using "test"
         result = core.search_publications("test", limit=1)
-        if "results" in result:
-            return True
-        else:
-            return False
+        return "results" in result
     except Exception:
         return False
 
@@ -50,10 +47,7 @@ def check_pubmed_connection(timeout=10):
         r = requests.get(test_url, params=params, timeout=timeout)
         r.raise_for_status()
         data = r.json()
-        if "esearchresult" in data:
-            return True
-        else:
-            return False
+        return "esearchresult" in data
     except Exception:
         return False
 
@@ -67,10 +61,7 @@ def check_europe_pmc_connection(timeout=10):
         r = requests.get(test_url, params=params, timeout=timeout)
         r.raise_for_status()
         data = r.json()
-        if "resultList" in data and "result" in data["resultList"]:
-            return True
-        else:
-            return False
+        return "resultList" in data and "result" in data["resultList"]
     except Exception:
         return False
 
@@ -99,32 +90,50 @@ def module_api_select():
 
     st.sidebar.write("Currently selected:", selected_apis)
 
-    # Check connections for selected APIs and display the result
+    # For each selected API, check connection and display a colored message.
     if "PubMed" in selected_apis:
         if check_pubmed_connection():
-            st.sidebar.success("PubMed connection established!")
+            st.sidebar.markdown(
+                "<div style='background-color: darkgreen; color: white; padding: 5px; text-align: center;'>PubMed connection established!</div>",
+                unsafe_allow_html=True
+            )
         else:
-            st.sidebar.error("PubMed connection failed!")
+            st.sidebar.markdown(
+                "<div style='background-color: red; color: white; padding: 5px; text-align: center;'>PubMed connection failed!</div>",
+                unsafe_allow_html=True
+            )
     
     if "Europe PMC" in selected_apis:
         if check_europe_pmc_connection():
-            st.sidebar.success("Europe PMC connection established!")
+            st.sidebar.markdown(
+                "<div style='background-color: darkgreen; color: white; padding: 5px; text-align: center;'>Europe PMC connection established!</div>",
+                unsafe_allow_html=True
+            )
         else:
-            st.sidebar.error("Europe PMC connection failed!")
+            st.sidebar.markdown(
+                "<div style='background-color: red; color: white; padding: 5px; text-align: center;'>Europe PMC connection failed!</div>",
+                unsafe_allow_html=True
+            )
     
     if "CORE Aggregate" in selected_apis:
         # Get the CORE Aggregate API key from Streamlit secrets
         CORE_API_KEY = st.secrets.get("CORE_API_KEY", "your_core_api_key_here")
         if CORE_API_KEY and check_core_aggregate_connection(CORE_API_KEY):
-            st.sidebar.success("CORE Aggregate connection established!")
+            st.sidebar.markdown(
+                "<div style='background-color: darkgreen; color: white; padding: 5px; text-align: center;'>CORE Aggregate connection established!</div>",
+                unsafe_allow_html=True
+            )
         else:
-            st.sidebar.error("CORE Aggregate connection failed!")
+            st.sidebar.markdown(
+                "<div style='background-color: red; color: white; padding: 5px; text-align: center;'>CORE Aggregate connection failed!</div>",
+                unsafe_allow_html=True
+            )
 
 #############################################
 # Main Streamlit App
 #############################################
 def main():
-    # Top Green Bar: full width, 3 cm high, no margins or padding.
+    # Top Green Bar: full width, 3 cm high, no margin/padding.
     st.markdown(
         """
         <div style="background-color: green; width: 100%; height: 3cm; margin: 0; padding: 0;"></div>
@@ -143,9 +152,7 @@ def main():
     st.write("- PubMed")
     st.write("- CORE Aggregate")
     st.write("- (Other options like OpenAlex, Google Scholar, Semantic Scholar are available for selection)")
-
-    st.write("If the API connections are working, you will see success messages in the sidebar.")
+    st.write("If the API connections are working, you will see a dark green bar next to the API name in the sidebar.")
 
 if __name__ == '__main__':
     main()
-
