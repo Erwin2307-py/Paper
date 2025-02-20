@@ -1,6 +1,6 @@
 import streamlit as st
 
-# Unsere Modul-Imports:
+# Our module imports:
 from modules.api_select import module_api_select
 from modules.online_filter import module_online_filter
 from modules.codewords_pubmed import module_codewords_pubmed
@@ -11,20 +11,29 @@ from modules.extended_topics import module_extended_topics
 def main():
     st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
-    # --- CSS für "grüne Bar" in der Sidebar ---
-    # Hier ein Beispiel, wie man die gesamte Sidebar grün einfärbt
-    # (ACHTUNG: Kann sich je nach Streamlit-Version ändern)
+    # --- Top Green Bar --- 
+    st.markdown(
+        """
+        <div style='background-color: #8BC34A; padding: 15px; text-align: center; color: white; font-size: 28px; font-weight: bold;'>
+            Streamlit Multi-Modul Demo
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # --- CSS for green sidebar ---
     st.markdown(
         """
         <style>
         [data-testid="stSidebar"] {
-            background-color: #8BC34A;  /* Hellgrün */
+            background-color: #8BC34A;
         }
         </style>
         """,
         unsafe_allow_html=True
     )
 
+    # Sidebar Module Navigation (persistent)
     st.sidebar.title("Module Navigation")
     selection = st.sidebar.radio(
         "Wähle ein Modul:",
@@ -38,7 +47,7 @@ def main():
         )
     )
 
-    # Modulaufruf je nach Auswahl
+    # Module call depending on selection
     if selection.startswith("1"):
         module_api_select()
     elif selection.startswith("2"):
@@ -52,6 +61,7 @@ def main():
     elif selection.startswith("6"):
         module_extended_topics()
 
-
 if __name__ == "__main__":
+    main()
+
     main()
