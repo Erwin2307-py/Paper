@@ -1,4 +1,5 @@
 import streamlit as st
+import requests
 
 # Must be the first Streamlit command!
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
@@ -13,15 +14,14 @@ from modules.extended_topics import module_extended_topics
 
 def main():
     # --- Top Green Bar (full width) ---
+    # This green bar spans the full width at the top. Adjust padding if needed.
     st.markdown(
         """
-        <div style="background-color: #8BC34A; width: 100%; padding: 15px; text-align: center; color: white; font-size: 28px; font-weight: bold;">
-            Streamlit Multi-Modul Demo
-        </div>
+        <div style="background-color: #8BC34A; width: 100%; height: 3cm; margin: 0; padding: 0;"></div>
         """,
         unsafe_allow_html=True
     )
-
+    
     # --- Sidebar CSS to keep it green ---
     st.markdown(
         """
@@ -33,7 +33,7 @@ def main():
         """,
         unsafe_allow_html=True
     )
-
+    
     # --- Sidebar Module Navigation (Persistent) ---
     st.sidebar.title("Module Navigation")
     selection = st.sidebar.radio(
@@ -47,7 +47,7 @@ def main():
             "6) Erweiterte Themen"
         )
     )
-
+    
     # Module call based on the user's selection
     if selection.startswith("1"):
         module_api_select()
@@ -61,7 +61,7 @@ def main():
         module_analysis()
     elif selection.startswith("6"):
         module_extended_topics()
-
+    
     st.write("This app checks API connections and provides several modules for further processing.")
     st.write("Use the sidebar to navigate between modules. The top green bar remains visible at all times.")
 
