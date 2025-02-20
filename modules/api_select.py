@@ -2,8 +2,30 @@ import streamlit as st
 import requests
 
 #############################################
-# CORE Aggregate API Class and Connection Check
+# Connection Checks for APIs
 #############################################
+def check_pubmed_connection(timeout=10):
+    test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+    params = {"db": "pubmed", "term": "test", "retmode": "json"}
+    try:
+        r = requests.get(test_url, params=params, timeout=timeout)
+        r.raise_for_status()
+        data = r.json()
+        return "esearchresult" in data
+    except Exception:
+        return False
+
+def check_europe_pmc_connection(timeout=10):
+    test_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+    params = {"query": "test", "format": "json"}
+    try:
+        r = requests.get(test_url, params=params, timeout=timeout)
+        r.raise_for_status()
+        data = r.json()
+        return "resultList" in data and "result" in data["resultList"]
+    except Exception:
+        return False
+
 class CoreAPI:
     def __init__(self, api_key):
         self.base_url = "https://api.core.ac.uk/v3/"
@@ -31,110 +53,58 @@ class CoreAPI:
 def check_core_aggregate_connection(api_key, timeout=15):
     try:
         core = CoreAPI(api_key)
-        # Try a simple search query using "test"
         result = core.search_publications("test", limit=1)
-        if "results" in result:
-            return True
-        else:
-            return False
+        return "results" in result
     except Exception:
         return False
 
 #############################################
-# PubMed Connection Check
-#############################################
-def check_pubmed_connection(timeout=10):
-    test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-    params = {"db": "pubmed", "term": "test", "retmode": "json"}
-    try:
-        r = requests.get(test_url, params=params, timeout=timeout)
-        r.raise_for_status()
-        data = r.json()
-        if "esearchresult" in data:
-            return True
-        else:
-            return False
-    except Exception:
-        return False
-
-#############################################
-# Europe PMC Connection Check
-#############################################
-def check_europe_pmc_connection(timeout=10):
-    test_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
-    params = {"query": "test", "format": "json"}
-    try:
-        r = requests.get(test_url, params=params, timeout=timeout)
-        r.raise_for_status()
-        data = r.json()
-        if "resultList" in data and "result" in data["resultList"]:
-            return True
-        else:
-            return False
-    except Exception:
-        return False
-
-#############################################
-# Sidebar Module: API Selection (Persistent)
-#############################################
-def module_api_select():
-    st.sidebar.header("Module 1: Select APIs to Use")
-    
-    # Available API options
-    options = [
-        "Europe PMC",
-        "PubMed",
-        "CORE Aggregate",
-        "OpenAlex",
-        "Google Scholar",
-        "Semantic Scholar"
-    ]
-    
-    # Use session_state to preserve the selection
-    if "selected_apis" not in st.session_state:
-        st.session_state["selected_apis"] = ["Europe PMC"]
-    
-    selected_apis = st.sidebar.multiselect("Which APIs do you want to use?", options, default=st.session_state["selected_apis"])
-    st.session_state["selected_apis"] = selected_apis  # update session state
-
-    st.sidebar.write("Currently selected:", selected_apis)
-
-    # Check connections for selected APIs and display the result
-    if "PubMed" in selected_apis:
-        if check_pubmed_connection():
-            st.sidebar.success("PubMed connection established!")
-        else:
-            st.sidebar.error("PubMed connection failed!")
-    
-    if "Europe PMC" in selected_apis:
-        if check_europe_pmc_connection():
-            st.sidebar.success("Europe PMC connection established!")
-        else:
-            st.sidebar.error("Europe PMC connection failed!")
-    
-    if "CORE Aggregate" in selected_apis:
-        # Get the CORE Aggregate API key from secrets
-        CORE_API_KEY = st.secrets.get("CORE_API_KEY", "your_core_api_key_here")
-        if CORE_API_KEY and check_core_aggregate_connection(CORE_API_KEY):
-            st.sidebar.success("CORE Aggregate connection established!")
-        else:
-            st.sidebar.error("CORE Aggregate connection failed!")
-
-#############################################
-# Main Streamlit App
+# Streamlit App
 #############################################
 def main():
     st.title("API Connection Checker")
     
-    # Always display the API selection sidebar so that the choices remain visible
-    module_api_select()
+    # --- API Selection at the Top ---
+    st.markdown("<h2 style='color: white; background-color: green; padding: 10px;'>Select APIs</h2>", unsafe_allow_html=True)
     
-    st.write("This app checks the connections for selected APIs.")
-    st.write("You can use the sidebar to select and see the status of the following APIs:")
-    st.write("- Europe PMC")
-    st.write("- PubMed")
-    st.write("- CORE Aggregate")
-    st.write("- (Other options like OpenAlex, Google Scholar, Semantic Scholar are available for selection)")
+    # API options available for selection
+    options = ["Europe PMC", "PubMed", "CORE Aggregate", "OpenAlex", "Google Scholar", "Semantic Scholar"]
+    selected_apis = st.multiselect("Which APIs do you want to use?", options, default=["Europe PMC"])
+    
+    # Persist the selection in session state so it remains visible
+    st.session_state["selected_apis"] = selected_apis
+    
+    # If any APIs are selected, show them in a green bar
+    if selected_apis:
+        selected_str = ", ".join(selected_apis)
+        st.markdown(
+            f"<div style='background-color: green; color: white; padding: 10px;'>Currently selected APIs: {selected_str}</div>",
+            unsafe_allow_html=True
+        )
+    
+    # --- API Connection Checks ---
+    if "PubMed" in selected_apis:
+        if check_pubmed_connection():
+            st.success("PubMed connection established!")
+        else:
+            st.error("PubMed connection failed!")
+    
+    if "Europe PMC" in selected_apis:
+        if check_europe_pmc_connection():
+            st.success("Europe PMC connection established!")
+        else:
+            st.error("Europe PMC connection failed!")
+    
+    if "CORE Aggregate" in selected_apis:
+        # CORE API key can be stored in Streamlit secrets for security.
+        CORE_API_KEY = st.secrets.get("CORE_API_KEY", "your_core_api_key_here")
+        if CORE_API_KEY and check_core_aggregate_connection(CORE_API_KEY):
+            st.success("CORE Aggregate connection established!")
+        else:
+            st.error("CORE Aggregate connection failed!")
+    
+    # You can add additional API checks here for OpenAlex, Google Scholar, etc.
+    st.write("Use the selection above to check API connections.")
 
 if __name__ == '__main__':
     main()
