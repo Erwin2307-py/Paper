@@ -33,10 +33,7 @@ def check_core_aggregate_connection(api_key, timeout=15):
         core = CoreAPI(api_key)
         # Try a simple search query using "test"
         result = core.search_publications("test", limit=1)
-        if "results" in result:
-            return True
-        else:
-            return False
+        return "results" in result
     except Exception:
         return False
 
@@ -50,10 +47,7 @@ def check_pubmed_connection(timeout=10):
         r = requests.get(test_url, params=params, timeout=timeout)
         r.raise_for_status()
         data = r.json()
-        if "esearchresult" in data:
-            return True
-        else:
-            return False
+        return "esearchresult" in data
     except Exception:
         return False
 
@@ -67,20 +61,35 @@ def check_europe_pmc_connection(timeout=10):
         r = requests.get(test_url, params=params, timeout=timeout)
         r.raise_for_status()
         data = r.json()
-        if "resultList" in data and "result" in data["resultList"]:
-            return True
-        else:
-            return False
+        return "resultList" in data and "result" in data["resultList"]
     except Exception:
         return False
 
 #############################################
-# Sidebar Module: API Selection (Persistent)
+# Top Green Bar with API Selection (Persistent)
 #############################################
-def module_api_select():
-    st.sidebar.header("Module 1: Select APIs to Use")
+def top_api_selection():
+    # Create a fixed green bar at the top with full width and 3cm height.
+    st.markdown(
+        """
+        <div style="
+            background-color: #8BC34A;
+            width: 100vw;
+            height: 3cm;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 1000;">
+        """,
+        unsafe_allow_html=True
+    )
     
-    # Available API options
+    # Inside the green bar, place a multiselect widget (with hidden label) for API selection.
     options = [
         "Europe PMC",
         "PubMed",
@@ -89,60 +98,115 @@ def module_api_select():
         "Google Scholar",
         "Semantic Scholar"
     ]
-    
-    # Use session_state to preserve the selection
     if "selected_apis" not in st.session_state:
         st.session_state["selected_apis"] = ["Europe PMC"]
-    
-    selected_apis = st.sidebar.multiselect("Which APIs do you want to use?", options, default=st.session_state["selected_apis"])
-    st.session_state["selected_apis"] = selected_apis  # update session state
+    selected = st.multiselect("Select APIs:", options, default=st.session_state["selected_apis"], key="top_api_select", label_visibility="collapsed")
+    st.session_state["selected_apis"] = selected
 
-    st.sidebar.write("Currently selected:", selected_apis)
-
-    # Check connections for selected APIs and display the result
-    if "PubMed" in selected_apis:
-        if check_pubmed_connection():
-            st.sidebar.success("PubMed connection established!")
-        else:
-            st.sidebar.error("PubMed connection failed!")
-    
-    if "Europe PMC" in selected_apis:
-        if check_europe_pmc_connection():
-            st.sidebar.success("Europe PMC connection established!")
-        else:
-            st.sidebar.error("Europe PMC connection failed!")
-    
-    if "CORE Aggregate" in selected_apis:
-        # Get the CORE Aggregate API key from secrets
-        CORE_API_KEY = st.secrets.get("CORE_API_KEY", "your_core_api_key_here")
-        if CORE_API_KEY and check_core_aggregate_connection(CORE_API_KEY):
-            st.sidebar.success("CORE Aggregate connection established!")
-        else:
-            st.sidebar.error("CORE Aggregate connection failed!")
+    # Display connection status messages inside the green bar.
+    messages = []
+    if "PubMed" in selected:
+        messages.append("PubMed: " + ("OK" if check_pubmed_connection() else "Fail"))
+    if "Europe PMC" in selected:
+        messages.append("Europe PMC: " + ("OK" if check_europe_pmc_connection() else "Fail"))
+    if "CORE Aggregate" in selected:
+        core_key = st.secrets.get("CORE_API_KEY", "")
+        messages.append("CORE Aggregate: " + ("OK" if core_key and check_core_aggregate_connection(core_key) else "Fail"))
+    status_msg = " | ".join(messages)
+    st.markdown(
+        f"""
+        <div style="color: white; font-size: 16px; margin-top: 10px;">
+            {status_msg}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
 
 #############################################
 # Main Streamlit App
 #############################################
 def main():
-    # Grüner Balken oben (3 cm hoch, volle Breite)
+    # Set the page config first
+    st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
+    
+    # Inject CSS to remove margins so the green bar touches the screen edges.
     st.markdown(
         """
-        <div style="background-color: green; width: 100%; height: 3cm;"></div>
+        <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+        }
+        </style>
         """,
         unsafe_allow_html=True
     )
     
+    # Display the top fixed green bar with API selection.
+    top_api_selection()
+    
+    # Add padding at the top so content is not hidden behind the fixed green bar.
+    st.markdown("<div style='padding-top: 3.2cm;'></div>", unsafe_allow_html=True)
+    
     st.title("API Connection Checker")
     
-    # Always display the API selection sidebar so that the choices remain visible
-    module_api_select()
+    # Overall connectivity status check:
+    overall_status = []
+    if check_pubmed_connection():
+        overall_status.append("PubMed connected")
+    else:
+        overall_status.append("PubMed NOT connected")
+    if check_europe_pmc_connection():
+        overall_status.append("Europe PMC connected")
+    else:
+        overall_status.append("Europe PMC NOT connected")
+    core_key = st.secrets.get("CORE_API_KEY", "")
+    if core_key and check_core_aggregate_connection(core_key):
+        overall_status.append("CORE Aggregate connected")
+    else:
+        overall_status.append("CORE Aggregate NOT connected")
     
-    st.write("This app checks the connections for selected APIs.")
-    st.write("You can use the sidebar to select and see the status of the following APIs:")
-    st.write("- Europe PMC")
-    st.write("- PubMed")
-    st.write("- CORE Aggregate")
-    st.write("- (Other options like OpenAlex, Google Scholar, Semantic Scholar are available for selection)")
+    status_overall = " | ".join(overall_status)
+    st.write(f"**Overall Connectivity Status:** {status_overall}")
+    
+    st.write("This app checks the connections for selected APIs. Use the top green bar to select which APIs to use. The connection status is shown in the bar, and the overall connectivity is displayed below.")
+    
+    # (Additional modules can be added here or in the sidebar.)
+    st.sidebar.title("Module Navigation")
+    selection = st.sidebar.radio(
+        "Select a Module:",
+        (
+            "1) API Selection (Top Bar)",
+            "2) Online Filter",
+            "3) Codewords & PubMed",
+            "4) Paper Selection",
+            "5) Analysis & Evaluation",
+            "6) Extended Topics"
+        )
+    )
+    
+    # Call corresponding modules based on sidebar selection.
+    # For example, if selection "2" is chosen, import and run module_online_filter.
+    if selection.startswith("1"):
+        st.info("API selection is available in the top green bar.")
+    elif selection.startswith("2"):
+        from modules.online_filter import module_online_filter
+        module_online_filter()
+    elif selection.startswith("3"):
+        from modules.codewords_pubmed import module_codewords_pubmed
+        module_codewords_pubmed()
+    elif selection.startswith("4"):
+        from modules.paper_select_remove import module_select_remove
+        module_select_remove()
+    elif selection.startswith("5"):
+        from modules.analysis import module_analysis
+        module_analysis()
+    elif selection.startswith("6"):
+        from modules.extended_topics import module_extended_topics
+        module_extended_topics()
+    
+    st.write("Use the sidebar to navigate between modules. The top green bar remains visible at all times.")
 
 if __name__ == '__main__':
     main()
