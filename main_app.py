@@ -172,7 +172,8 @@ def main():
             "3) Codewords & PubMed",
             "4) Paper Selection",
             "5) Analysis & Evaluation",
-            "6) Extended Topics"
+            "6) Extended Topics",
+            "7) Pharmcat
         )
     )
 
