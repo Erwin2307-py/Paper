@@ -33,7 +33,10 @@ def check_core_aggregate_connection(api_key, timeout=15):
         core = CoreAPI(api_key)
         # Try a simple search query using "test"
         result = core.search_publications("test", limit=1)
-        return "results" in result
+        if "results" in result:
+            return True
+        else:
+            return False
     except Exception:
         return False
 
@@ -47,7 +50,10 @@ def check_pubmed_connection(timeout=10):
         r = requests.get(test_url, params=params, timeout=timeout)
         r.raise_for_status()
         data = r.json()
-        return "esearchresult" in data
+        if "esearchresult" in data:
+            return True
+        else:
+            return False
     except Exception:
         return False
 
@@ -61,85 +67,58 @@ def check_europe_pmc_connection(timeout=10):
         r = requests.get(test_url, params=params, timeout=timeout)
         r.raise_for_status()
         data = r.json()
-        return "resultList" in data and "result" in data["resultList"]
+        if "resultList" in data and "result" in data["resultList"]:
+            return True
+        else:
+            return False
     except Exception:
         return False
 
 #############################################
-# Draw the API Selection Bar (persistent at the top)
+# Sidebar Module: API Selection (Persistent)
 #############################################
-def draw_api_selection_bar():
-    # Use a container and HTML styling to create a green bar that spans the full width.
-    # Note: interactive widgets cannot be placed directly inside st.markdown, so we create a container.
-    with st.container():
-        st.markdown(
-            """
-            <style>
-            .api-bar {
-                background-color: green;
-                padding: 10px;
-                width: 100%;
-                min-height: 3cm;
-                display: flex;
-                align-items: center;
-            }
-            .api-bar h2 {
-                color: white;
-                margin: 0 20px 0 0;
-            }
-            </style>
-            <div class="api-bar">
-                <h2>API Selection</h2>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        # Now add the API multiselect below the green header so that it remains at the top.
-        # Use session_state to preserve selection.
-        options = [
-            "Europe PMC",
-            "PubMed",
-            "CORE Aggregate",
-            "OpenAlex",
-            "Google Scholar",
-            "Semantic Scholar"
-        ]
-        if "selected_apis" not in st.session_state:
-            st.session_state["selected_apis"] = ["Europe PMC"]
-        selected_apis = st.multiselect("Select APIs to use:", options, default=st.session_state["selected_apis"])
-        st.session_state["selected_apis"] = selected_apis
+def module_api_select():
+    st.sidebar.header("Module 1: Select APIs to Use")
+    
+    # Available API options
+    options = [
+        "Europe PMC",
+        "PubMed",
+        "CORE Aggregate",
+        "OpenAlex",
+        "Google Scholar",
+        "Semantic Scholar"
+    ]
+    
+    # Use session_state to preserve the selection
+    if "selected_apis" not in st.session_state:
+        st.session_state["selected_apis"] = ["Europe PMC"]
+    
+    selected_apis = st.sidebar.multiselect("Which APIs do you want to use?", options, default=st.session_state["selected_apis"])
+    st.session_state["selected_apis"] = selected_apis  # update session state
 
-        # Display the current selection in a subheader with green background
-        if selected_apis:
-            selected_str = ", ".join(selected_apis)
-            st.markdown(
-                f"<div style='background-color: green; color: white; padding: 5px;'>Currently selected APIs: {selected_str}</div>",
-                unsafe_allow_html=True
-            )
+    st.sidebar.write("Currently selected:", selected_apis)
+
+    # Check connections for selected APIs and display the result
+    if "PubMed" in selected_apis:
+        if check_pubmed_connection():
+            st.sidebar.success("PubMed connection established!")
         else:
-            st.markdown(
-                "<div style='background-color: red; color: white; padding: 5px;'>No APIs selected!</div>",
-                unsafe_allow_html=True
-            )
-        
-        # Check connections for selected APIs and display the results in the same container.
-        if "PubMed" in selected_apis:
-            if check_pubmed_connection():
-                st.success("PubMed connection established!")
-            else:
-                st.error("PubMed connection failed!")
-        if "Europe PMC" in selected_apis:
-            if check_europe_pmc_connection():
-                st.success("Europe PMC connection established!")
-            else:
-                st.error("Europe PMC connection failed!")
-        if "CORE Aggregate" in selected_apis:
-            # Retrieve CORE API key from Streamlit secrets
-            CORE_API_KEY = st.secrets.get("CORE_API_KEY", "your_core_api_key_here")
-            if CORE_API_KEY and check_core_aggregate_connection(CORE_API_KEY):
-                st.success("CORE Aggregate connection established!")
-            else:
-                st.error("CORE Aggregate connection failed!")
+            st.sidebar.error("PubMed connection failed!")
+    
+    if "Europe PMC" in selected_apis:
+        if check_europe_pmc_connection():
+            st.sidebar.success("Europe PMC connection established!")
+        else:
+            st.sidebar.error("Europe PMC connection failed!")
+    
+    if "CORE Aggregate" in selected_apis:
+        # Get the CORE Aggregate API key from secrets
+        CORE_API_KEY = st.secrets.get("CORE_API_KEY", "your_core_api_key_here")
+        if CORE_API_KEY and check_core_aggregate_connection(CORE_API_KEY):
+            st.sidebar.success("CORE Aggregate connection established!")
+        else:
+            st.sidebar.error("CORE Aggregate connection failed!")
 
 #############################################
 # Main Streamlit App
@@ -147,14 +126,15 @@ def draw_api_selection_bar():
 def main():
     st.title("API Connection Checker")
     
-    # Draw the persistent API Selection Bar at the top.
-    draw_api_selection_bar()
+    # Always display the API selection sidebar so that the choices remain visible
+    module_api_select()
     
-    st.write("This app checks the connections for the selected APIs.")
-    st.write("The API selection above remains visible even if you navigate to other modules.")
-    
-    # (Additional modules or app logic can be added here.)
-    st.write("You can now build further modules that use the selected API list from the session state.")
-    
+    st.write("This app checks the connections for selected APIs.")
+    st.write("You can use the sidebar to select and see the status of the following APIs:")
+    st.write("- Europe PMC")
+    st.write("- PubMed")
+    st.write("- CORE Aggregate")
+    st.write("- (Other options like OpenAlex, Google Scholar, Semantic Scholar are available for selection)")
+
 if __name__ == '__main__':
     main()
