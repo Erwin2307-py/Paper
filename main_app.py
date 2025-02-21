@@ -56,7 +56,6 @@ class CoreAPI:
         r.raise_for_status()
         return r.json()
 
-
 def check_core_aggregate_connection(api_key, timeout=15):
     try:
         core = CoreAPI(api_key)
@@ -163,10 +162,8 @@ def convert_to_excel(data):
     """
     df = pd.DataFrame(data)
     output = BytesIO()
-    # Benutzen den Kontextmanager
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         df.to_excel(writer, index=False, sheet_name="PubMed")
-        # fix: wrap in try/except, so .save() doesn't break if method is removed
         try:
             writer.save()
         except:
@@ -326,12 +323,11 @@ def main():
     if st.session_state["pubmed_results"]:
         st.subheader("Search Results")
         
-        # CSS-Override, damit NUR die Ergebnisse-Liste kleiner ist (10px).
-        # Anschließend st.table(...).
+        # CSS-Override: Tabelle mit 8px Schrift
         st.markdown("""
         <style>
         table, thead, tbody, tr, td, th {
-            font-size: 10px !important;
+            font-size: 8px !important;
         }
         </style>
         """, unsafe_allow_html=True)
@@ -358,7 +354,7 @@ def main():
         # Liste für Download-Daten
         selected_details = []
         
-        # Abstracts der ausgewählten Paper -> Standard-Schrift (z.B. 14px)
+        # Abstracts der ausgewählten Paper -> standard-größe (z.B. st.write)
         for paper_str in st.session_state["selected_papers"]:
             try:
                 pmid = paper_str.split("PMID: ")[1].rstrip(")")
@@ -368,7 +364,6 @@ def main():
                 meta = next((x for x in st.session_state["pubmed_results"] if x["PMID"] == pmid), {})
                 abstract_text = fetch_pubmed_abstract(pmid)
                 
-                # Abstract-Anzeige in normaler Schrift (z.B. st.write) -> Größer
                 st.subheader(f"Abstract for PMID {pmid}")
                 st.write(f"**Title:** {meta.get('Title','n/a')}")
                 st.write(f"**Year:** {meta.get('Year','n/a')}")
@@ -420,4 +415,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
