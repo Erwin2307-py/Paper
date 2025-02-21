@@ -80,7 +80,6 @@ def check_pubmed_connection(timeout=10):
     except Exception:
         return False
 
-
 def search_pubmed(query):
     """
     Führt eine PubMed-Suche durch und gibt eine Liste mit Dictionaries zurück,
@@ -108,6 +107,7 @@ def search_pubmed(query):
             info = summary_data.get(pmid, {})
             title = info.get("title", "n/a")
             pubdate = info.get("pubdate", "")
+            # Extrahieren wir das Jahr aus pubdate (z.B. "2021 Dec" -> "2021")
             year = pubdate[:4] if pubdate else "n/a"
             journal = info.get("fulljournalname", "n/a")
             
@@ -121,7 +121,6 @@ def search_pubmed(query):
     except Exception as e:
         st.error(f"Error searching PubMed: {e}")
         return []
-
 
 def fetch_pubmed_abstract(pmid):
     """Holt das Abstract zu einer PubMed-ID via eFetch."""
@@ -139,7 +138,6 @@ def fetch_pubmed_abstract(pmid):
     except Exception as e:
         return f"(Error: {e})"
 
-
 #############################################
 # Europe PMC Connection Check
 #############################################
@@ -154,7 +152,6 @@ def check_europe_pmc_connection(timeout=10):
     except Exception:
         return False
 
-
 #############################################
 # Excel-Hilfsfunktion
 #############################################
@@ -167,9 +164,14 @@ def convert_to_excel(data):
     """
     df = pd.DataFrame(data)
     output = BytesIO()
+    # Benutzen den Kontextmanager
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         df.to_excel(writer, index=False, sheet_name="PubMed")
-        writer.save()
+        # fix: wrap in try/except, so .save() doesn't break if method is removed
+        try:
+            writer.save()
+        except:
+            pass
     return output.getvalue()
 
 #############################################
@@ -362,6 +364,10 @@ def main():
                 # Anzeigen
                 st.subheader(f"Abstract for PMID {pmid}")
                 st.write(f"**Title:** {meta.get('Title', 'n/a')}")
+                # Journal + Year anzeigen
+                st.write(f"**Year:** {meta.get('Year', 'n/a')}")
+                st.write(f"**Journal:** {meta.get('Journal', 'n/a')}")
+
                 st.write("**Abstract:**")
                 st.write(abstract_text)
                 
@@ -369,6 +375,8 @@ def main():
                 selected_details.append({
                     "PMID": pmid,
                     "Title": meta.get("Title", "n/a"),
+                    "Year": meta.get("Year", "n/a"),
+                    "Journal": meta.get("Journal", "n/a"),
                     "Abstract": abstract_text
                 })
         
@@ -404,6 +412,7 @@ def main():
         module_extended_topics()
     
     st.write("Selected APIs are checked above. Use the sidebar buttons to switch modules.")
+
 
 if __name__ == '__main__':
     main()
