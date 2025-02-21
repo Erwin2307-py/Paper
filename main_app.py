@@ -1,6 +1,31 @@
 import streamlit as st
 import requests
 
+# Must be the very first Streamlit command!
+st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
+
+# Inject custom CSS to remove default margins and paddings so the green bar is flush.
+st.markdown(
+    """
+    <style>
+    html, body {
+        margin: 0;
+        padding: 0;
+    }
+    /* Force sidebar buttons to be full width and equally sized */
+    div[data-testid="stSidebar"] button {
+         width: 100% !important;
+         margin: 0px !important;
+         padding: 10px !important;
+         font-size: 16px !important;
+         text-align: center !important;
+         box-sizing: border-box;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 #############################################
 # CORE Aggregate API Class and Connection Check
 #############################################
@@ -68,7 +93,7 @@ def check_europe_pmc_connection(timeout=10):
 # Top Green Bar with API Selection (Fixed at the top)
 #############################################
 def top_api_selection():
-    # This creates a full-width green bar (3cm high) fixed at the top.
+    # Create a full-width green bar (3 cm high) fixed at the top.
     st.markdown(
         """
         <div style="
@@ -88,7 +113,7 @@ def top_api_selection():
         """,
         unsafe_allow_html=True
     )
-    # Place the API selection multiselect widget inside the green bar.
+    # API selection widget inside the green bar:
     options = [
         "Europe PMC",
         "PubMed",
@@ -102,7 +127,17 @@ def top_api_selection():
     selected = st.multiselect("Select APIs:", options, default=st.session_state["selected_apis"], key="top_api_select", label_visibility="collapsed")
     st.session_state["selected_apis"] = selected
 
-    # Display connection statuses as inline "labels"
+    # Display the selected APIs in white text inside the bar:
+    st.markdown(
+        f"""
+        <div style="color: white; font-size: 16px; margin-top: 10px;">
+            Currently selected: {", ".join(selected)}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # Check connection statuses and display them as inline labels.
     status_msgs = []
     if "PubMed" in selected:
         if check_pubmed_connection():
@@ -136,23 +171,6 @@ def top_api_selection():
 #############################################
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
-    
-    # Inject CSS to force buttons to be equal width and stacked vertically.
-    st.sidebar.markdown(
-        """
-        <style>
-        .module-btn {
-            width: 100%;
-            padding: 10px;
-            margin-bottom: 10px;
-            font-size: 16px;
-            text-align: center;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-    
     modules = [
         ("1) API Selection", "api_selection"),
         ("2) Online Filter", "online_filter"),
@@ -163,7 +181,6 @@ def sidebar_module_navigation():
     ]
     
     for label, key in modules:
-        # We use st.sidebar.button() without css_class.
         if st.sidebar.button(label, key=key, help=label):
             st.session_state["selected_module"] = key
 
@@ -175,7 +192,6 @@ def sidebar_module_navigation():
 # Main Streamlit App
 #############################################
 def main():
-    # Remove default margins so the green bar is flush.
     st.markdown(
         """
         <style>
@@ -188,20 +204,18 @@ def main():
         unsafe_allow_html=True
     )
     
-    # Call the top green bar so it remains fixed at the top.
+    # Render the fixed top green bar with API selection.
     top_api_selection()
     
-    # Add top padding so main content doesn't hide behind the fixed green bar.
+    # Add top padding so the main content doesn't hide behind the fixed green bar.
     st.markdown("<div style='padding-top: 3.2cm;'></div>", unsafe_allow_html=True)
     
     st.title("API Connection Checker")
     st.write("This app checks the connections for selected APIs and provides several modules for further processing.")
     st.write("Use the sidebar to navigate between modules. The top green bar with API selection remains visible at all times.")
     
-    # Sidebar navigation with vertical buttons.
     sidebar_module_navigation()
     
-    # Load module based on the selection.
     module = st.session_state.get("selected_module", "api_selection")
     if module == "api_selection":
         st.info("API Selection is available in the top green bar.")
