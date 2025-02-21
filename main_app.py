@@ -78,6 +78,7 @@ def top_api_selection():
             margin: 0;
             padding: 0;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
             position: fixed;
@@ -87,7 +88,7 @@ def top_api_selection():
         """,
         unsafe_allow_html=True
     )
-    # Inside the green bar, place the API multiselect.
+    # Place the API selection multiselect inside the green bar.
     options = [
         "Europe PMC",
         "PubMed",
@@ -101,7 +102,7 @@ def top_api_selection():
     selected = st.multiselect("Select APIs:", options, default=st.session_state["selected_apis"], key="top_api_select", label_visibility="collapsed")
     st.session_state["selected_apis"] = selected
 
-    # Display connection statuses as small colored "buttons" (divs) inside the bar.
+    # Display connection statuses as inline "buttons" (styled divs)
     status_msgs = []
     if "PubMed" in selected:
         if check_pubmed_connection():
@@ -122,7 +123,7 @@ def top_api_selection():
     status_html = " ".join(status_msgs)
     st.markdown(
         f"""
-        <div style="margin-top: 10px;">
+        <div style="color: white; font-size: 16px; margin-top: 10px;">
             {status_html}
         </div>
         """,
@@ -131,11 +132,26 @@ def top_api_selection():
     st.markdown("</div>", unsafe_allow_html=True)
 
 #############################################
-# Sidebar Module Navigation with Buttons
+# Sidebar Module Navigation with Vertical Buttons
 #############################################
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
-    # Define modules as (Label, key) tuples.
+    
+    # Inject CSS to force buttons to be equal width and stacked vertically.
+    st.markdown(
+        """
+        <style>
+        .module-btn {
+            width: 100%;
+            padding: 10px 0;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+    
     modules = [
         ("1) API Selection", "api_selection"),
         ("2) Online Filter", "online_filter"),
@@ -144,10 +160,11 @@ def sidebar_module_navigation():
         ("5) Analysis & Evaluation", "analysis"),
         ("6) Extended Topics", "extended_topics")
     ]
+    
     for label, key in modules:
-        if st.sidebar.button(label, key=key):
+        if st.sidebar.button(label, key=key, help=label, css_class="module-btn"):
             st.session_state["selected_module"] = key
-    # Set a default module if not yet chosen.
+
     if "selected_module" not in st.session_state:
         st.session_state["selected_module"] = "api_selection"
     st.sidebar.write("Selected Module:", st.session_state["selected_module"])
@@ -156,7 +173,7 @@ def sidebar_module_navigation():
 # Main Streamlit App
 #############################################
 def main():
-    # Inject CSS to remove margins and ensure the top bar is flush.
+    # Remove margins so that the top bar is flush.
     st.markdown(
         """
         <style>
@@ -168,24 +185,24 @@ def main():
         """,
         unsafe_allow_html=True
     )
-
-    # Call the top green bar so that it remains fixed at the top.
+    
+    # Call the top green bar so it remains fixed at the top.
     top_api_selection()
     
-    # Add top padding so that the main content does not get hidden behind the fixed bar.
+    # Add top padding so the main content does not hide behind the fixed green bar.
     st.markdown("<div style='padding-top: 3.2cm;'></div>", unsafe_allow_html=True)
     
     st.title("API Connection Checker")
     st.write("This app checks the connections for selected APIs and provides several modules for further processing.")
     st.write("Use the sidebar to navigate between modules. The top green bar with API selection remains visible at all times.")
     
-    # Sidebar navigation with buttons.
+    # Sidebar navigation with vertical buttons.
     sidebar_module_navigation()
     
-    # Load the module based on the sidebar selection.
+    # Load module based on selection.
     module = st.session_state.get("selected_module", "api_selection")
     if module == "api_selection":
-        st.info("API Selection is now available in the top bar.")
+        st.info("API Selection is available in the top bar.")
     elif module == "online_filter":
         from modules.online_filter import module_online_filter
         module_online_filter()
@@ -203,6 +220,6 @@ def main():
         module_extended_topics()
     
     st.write("Selected APIs are checked above. Use the sidebar buttons to switch modules.")
-    
+
 if __name__ == '__main__':
     main()
