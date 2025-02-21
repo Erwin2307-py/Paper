@@ -324,11 +324,11 @@ def main():
     if st.session_state["pubmed_results"]:
         st.subheader("Search Results")
         
-        # CSS-Override: Tabelle mit 4px Schrift
+        # CSS-Override: Tabelle auf 2px (hier 2px, was sehr klein ist).
         st.markdown("""
         <style>
         table, thead, tbody, tr, td, th {
-            font-size: 4px !important;
+            font-size: 2px !important;
         }
         </style>
         """, unsafe_allow_html=True)
@@ -355,7 +355,7 @@ def main():
         # Liste für Download-Daten
         selected_details = []
         
-        # Abstracts der ausgewählten Paper -> Standard-Größe
+        # Abstract-Anzeige (Standard-Schriftgröße)
         for paper_str in st.session_state["selected_papers"]:
             try:
                 pmid = paper_str.split("PMID: ")[1].rstrip(")")
