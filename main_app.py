@@ -115,7 +115,7 @@ def fetch_pubmed_abstract(pmid):
         for elem in root.findall(".//AbstractText"):
             if elem.text:
                 abs_text += elem.text + "\n"
-        return abs_text.strip() if abs_text.strip() != "" else "(No abstract available)"
+        return abs_text if abs_text.strip() != "" else "(No abstract available)"
     except Exception as e:
         return f"(Error: {e})"
 
@@ -260,60 +260,33 @@ def main():
     
     sidebar_module_navigation()
     
-    # ---------------- PUBMED MULTI-SELECTION LOGIK ----------------
-    st.header("Search PubMed with Multi-Selection")
-    
-    # Textfeld für die Suche
+    # Beispiel: PubMed-Suchfeld, das auch die Anzahl gefundener Paper anzeigt.
+    st.header("Search PubMed")
     search_query = st.text_input("Enter a search query for PubMed:", "")
-    
-    # Falls noch nicht vorhanden, hier eine Liste für die Suchergebnisse in session_state
-    if "pubmed_results" not in st.session_state:
-        st.session_state["pubmed_results"] = []
-    
-    # Falls noch nicht vorhanden, Session-State für Multi-Selection
-    if "selected_papers" not in st.session_state:
-        st.session_state["selected_papers"] = []
-    
-    # Such-Button
     if st.button("Search"):
         if not search_query.strip():
             st.warning("Please enter a search query.")
         else:
             results = search_pubmed(search_query)
-            st.session_state["pubmed_results"] = results
             st.write(f"Found {len(results)} paper(s).")
-    
-    # Immer anzeigen, wenn wir Ergebnisse haben
-    if st.session_state["pubmed_results"]:
-        st.subheader("Search Results")
-        st.table(st.session_state["pubmed_results"])
-        
-        # Mehrfach-Auswahl basierend auf den aktuellen Suchergebnissen
-        paper_options = [f"{r['Title']} (PMID: {r['PMID']})" for r in st.session_state["pubmed_results"]]
-        
-        # Persistent multiselect
-        selected_now = st.multiselect(
-            "Select paper(s) to view abstracts:",
-            options=paper_options,
-            default=st.session_state["selected_papers"],
-            key="paper_multiselect"
-        )
-        
-        # Nachdem der Nutzer die Auswahl geändert hat, updaten wir st.session_state["selected_papers"]
-        st.session_state["selected_papers"] = selected_now
-        
-        # Abstracts der ausgewählten Paper anzeigen
-        for paper_str in st.session_state["selected_papers"]:
-            try:
-                pmid = paper_str.split("PMID: ")[1].rstrip(")")
-            except IndexError:
-                pmid = ""
-            if pmid:
-                abstract_text = fetch_pubmed_abstract(pmid)
-                st.subheader(f"Abstract for PMID {pmid}")
-                st.write(abstract_text)
-    
-    # -------------------------------------------------------------
+            if results:
+                # Zeige in einer Tabelle die Titel und PubMed IDs an.
+                st.table(results)
+                
+                # Auswahlfeld zum Anklicken eines Paper für den Abstract.
+                paper_options = [f"{r['Title']} (PMID: {r['PMID']})" for r in results]
+                selected_paper = st.selectbox("Select a paper to view its abstract:", paper_options)
+                # Extrahiere die PMID aus der Auswahl:
+                try:
+                    selected_pmid = selected_paper.split("PMID: ")[1].rstrip(")")
+                except IndexError:
+                    selected_pmid = ""
+                if selected_pmid:
+                    abstract = fetch_pubmed_abstract(selected_pmid)
+                    st.subheader("Abstract")
+                    st.write(abstract)
+            else:
+                st.info("No results found.")
     
     module = st.session_state.get("selected_module", "api_selection")
     if module == "api_selection":
@@ -338,5 +311,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
