@@ -1,10 +1,36 @@
 import streamlit as st
 import requests
 
-#############################################
 # Must be the very first Streamlit command!
-#############################################
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
+
+#############################################
+# Inject CSS to remove default margins so the top green bar is flush,
+# and to style sidebar buttons.
+#############################################
+st.markdown(
+    """
+    <style>
+    /* Remove margins from html and body */
+    html, body {
+        margin: 0;
+        padding: 0;
+    }
+    /* Ensure the main container is flush with screen edges */
+    .block-container {
+        padding: 0rem 1rem;
+    }
+    /* Style for sidebar buttons: full width, equal height, vertical spacing */
+    .stButton button {
+        width: 100% !important;
+        height: 50px;
+        font-size: 16px;
+        margin-bottom: 10px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 #############################################
 # CORE Aggregate API Class and Connection Check
@@ -68,12 +94,30 @@ def check_europe_pmc_connection(timeout=10):
         return False
 
 #############################################
-# Sidebar Module: API Selection (Persistent)
+# Top Green Bar with API Selection (Fixed at the top)
 #############################################
-def module_api_select():
-    st.sidebar.header("Module 1: Select APIs to Use")
-    
-    # Available API options
+def top_api_selection():
+    # Create a fixed full-width green bar at the top (3 cm high)
+    st.markdown(
+        """
+        <div style="
+            background-color: #8BC34A;
+            width: 100vw;
+            height: 3cm;
+            margin: 0;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 1000;">
+        """,
+        unsafe_allow_html=True
+    )
+    # API selection widget inside the green bar:
     options = [
         "Europe PMC",
         "PubMed",
@@ -82,86 +126,123 @@ def module_api_select():
         "Google Scholar",
         "Semantic Scholar"
     ]
-    
-    # Use session_state to persist the selection
     if "selected_apis" not in st.session_state:
         st.session_state["selected_apis"] = ["Europe PMC"]
-    
-    selected_apis = st.sidebar.multiselect(
-        "Which APIs do you want to use?", 
-        options, 
-        default=st.session_state["selected_apis"]
-    )
-    st.session_state["selected_apis"] = selected_apis  # update session state
+    selected = st.multiselect("Select APIs:", options, default=st.session_state["selected_apis"],
+                                key="top_api_select", label_visibility="collapsed")
+    st.session_state["selected_apis"] = selected
 
-    st.sidebar.write("Currently selected:", selected_apis)
-    
-    # Check each API connection and display a button-like status message
-    if "PubMed" in selected_apis:
+    st.markdown(
+        f"""
+        <div style="color: white; font-size: 16px; margin-top: 5px;">
+            Currently selected: {", ".join(selected)}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # Check connection statuses and display inline status labels:
+    status_msgs = []
+    if "PubMed" in selected:
         if check_pubmed_connection():
-            st.sidebar.button("PubMed: Connected", key="pubmed_ok", disabled=True, help="Connected", 
-                              on_click=lambda: None, 
-                              help_icon="✅")
+            status_msgs.append("<span style='background-color: darkgreen; color: white; padding: 5px; margin-right: 5px;'>PubMed: OK</span>")
         else:
-            st.sidebar.button("PubMed: Not Connected", key="pubmed_fail", disabled=True, help="Failed", 
-                              on_click=lambda: None, 
-                              help_icon="❌")
-    
-    if "Europe PMC" in selected_apis:
+            status_msgs.append("<span style='background-color: red; color: white; padding: 5px; margin-right: 5px;'>PubMed: Fail</span>")
+    if "Europe PMC" in selected:
         if check_europe_pmc_connection():
-            st.sidebar.button("Europe PMC: Connected", key="europepmc_ok", disabled=True, help="Connected", 
-                              on_click=lambda: None, 
-                              help_icon="✅")
+            status_msgs.append("<span style='background-color: darkgreen; color: white; padding: 5px; margin-right: 5px;'>Europe PMC: OK</span>")
         else:
-            st.sidebar.button("Europe PMC: Not Connected", key="europepmc_fail", disabled=True, help="Failed", 
-                              on_click=lambda: None, 
-                              help_icon="❌")
-    
-    if "CORE Aggregate" in selected_apis:
+            status_msgs.append("<span style='background-color: red; color: white; padding: 5px; margin-right: 5px;'>Europe PMC: Fail</span>")
+    if "CORE Aggregate" in selected:
         CORE_API_KEY = st.secrets.get("CORE_API_KEY", "your_core_api_key_here")
         if CORE_API_KEY and check_core_aggregate_connection(CORE_API_KEY):
-            st.sidebar.button("CORE Aggregate: Connected", key="core_ok", disabled=True, help="Connected", 
-                              on_click=lambda: None, 
-                              help_icon="✅")
+            status_msgs.append("<span style='background-color: darkgreen; color: white; padding: 5px; margin-right: 5px;'>CORE Aggregate: OK</span>")
         else:
-            st.sidebar.button("CORE Aggregate: Not Connected", key="core_fail", disabled=True, help="Failed", 
-                              on_click=lambda: None, 
-                              help_icon="❌")
+            status_msgs.append("<span style='background-color: red; color: white; padding: 5px; margin-right: 5px;'>CORE Aggregate: Fail</span>")
+    st.markdown(
+        f"""
+        <div style="color: white; font-size: 16px; margin-top: 5px;">
+            {' '.join(status_msgs)}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+#############################################
+# Sidebar Module Navigation with Vertical Buttons
+#############################################
+def sidebar_module_navigation():
+    st.sidebar.title("Module Navigation")
+    # Define the modules with labels and keys.
+    modules = [
+        ("1) API Selection", "api_selection"),
+        ("2) Online Filter", "online_filter"),
+        ("3) Codewords & PubMed", "codewords_pubmed"),
+        ("4) Paper Selection", "paper_selection"),
+        ("5) Analysis & Evaluation", "analysis"),
+        ("6) Extended Topics", "extended_topics")
+    ]
+    # Create vertical buttons (one per module).
+    for label, key in modules:
+        if st.sidebar.button(label, key=key, help=label):
+            st.session_state["selected_module"] = key
+
+    if "selected_module" not in st.session_state:
+        st.session_state["selected_module"] = "api_selection"
+    st.sidebar.write("Selected Module:", st.session_state["selected_module"])
 
 #############################################
 # Main Streamlit App
 #############################################
 def main():
-    # Top fixed green bar (3cm high, flush to screen edges)
+    # Remove extra margins so the top green bar is flush.
     st.markdown(
         """
-        <div style="
-            background-color: #8BC34A;
-            width: 100vw;
-            height: 3cm;
+        <style>
+        html, body {
             margin: 0;
             padding: 0;
-            position: fixed;
-            top: 0;
-            left: 0;
-            z-index: 1000;">
-        </div>
+        }
+        </style>
         """,
         unsafe_allow_html=True
     )
     
-    # Add padding at the top so content does not hide under the fixed bar
+    # Render the fixed top green bar with API selection.
+    top_api_selection()
+    
+    # Add top padding so the main content doesn't hide behind the fixed green bar.
     st.markdown("<div style='padding-top: 3.2cm;'></div>", unsafe_allow_html=True)
     
     st.title("API Connection Checker")
-    st.write("This app checks the connections for selected APIs. Use the sidebar above to select which APIs to test.")
+    st.write("This app checks the connections for selected APIs and provides several modules for further processing.")
+    st.write("Use the sidebar buttons to switch modules. The top green bar with API selection remains visible at all times.")
     
-    # Always display the API selection sidebar
-    module_api_select()
+    # Render vertical module navigation buttons in the sidebar.
+    sidebar_module_navigation()
     
-    # (You can add further content or module navigation below.)
-    st.write("Selected APIs are automatically tested. The buttons above indicate the connection status for each API.")
+    # Load and call the module corresponding to the selected module.
+    module = st.session_state.get("selected_module", "api_selection")
+    if module == "api_selection":
+        st.info("API selection is available in the top green bar.")
+    elif module == "online_filter":
+        from modules.online_filter import module_online_filter
+        module_online_filter()
+    elif module == "codewords_pubmed":
+        from modules.codewords_pubmed import module_codewords_pubmed
+        module_codewords_pubmed()
+    elif module == "paper_selection":
+        from modules.paper_select_remove import module_select_remove
+        module_select_remove()
+    elif module == "analysis":
+        from modules.analysis import module_analysis
+        module_analysis()
+    elif module == "extended_topics":
+        from modules.extended_topics import module_extended_topics
+        module_extended_topics()
+    
+    st.write("Selected APIs are checked above. Use the sidebar buttons to switch modules.")
 
 if __name__ == '__main__':
     main()
-
