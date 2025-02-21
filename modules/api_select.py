@@ -62,7 +62,7 @@ def search_pubmed(query):
         idlist = data.get("esearchresult", {}).get("idlist", [])
         if not idlist:
             return []
-        # Abruf der Details über eSummary
+        # Details über eSummary abrufen
         esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
         sum_params = {"db": "pubmed", "id": ",".join(idlist), "retmode": "json"}
         r2 = requests.get(esummary_url, params=sum_params, timeout=10)
@@ -193,10 +193,10 @@ def main():
     st.write("- Europe PMC")
     st.write("- PubMed")
     st.write("- CORE Aggregate")
-    st.write("- (Other options like OpenAlex, Google Scholar, Semantic Scholar are available for selection)")
+    st.write("- (Other options are available for selection)")
     st.write("If the API connections are working, you'll see a dark green message in the sidebar.")
     
-    # Suchfeld für PubMed-Suche
+    # PubMed-Suchfeld
     st.header("Search PubMed")
     search_query = st.text_input("Enter a search query for PubMed:")
     if st.button("Search"):
@@ -206,20 +206,23 @@ def main():
             results = search_pubmed(search_query)
             st.write(f"Found {len(results)} paper(s).")
             if results:
-                # Zeige die Ergebnisse in einer Tabelle (Titel und PMID)
+                # Zeige die Suchergebnisse in einer Tabelle
                 st.table(results)
                 
-                # Auswahlbox, um ein Paper auszuwählen, dessen Abstract angezeigt wird.
+                # Multiselect, um mehrere Paper auszuwählen, deren Abstract angezeigt werden sollen.
                 paper_options = [f"{r['Title']} (PMID: {r['PMID']})" for r in results]
-                selected_paper = st.selectbox("Select a paper to view its abstract:", paper_options)
-                try:
-                    selected_pmid = selected_paper.split("PMID: ")[1].rstrip(")")
-                except IndexError:
-                    selected_pmid = ""
-                if selected_pmid:
-                    abstract = fetch_pubmed_abstract(selected_pmid)
-                    st.subheader("Abstract")
-                    st.write(abstract)
+                selected_papers = st.multiselect("Select paper(s) to view their abstracts:", paper_options)
+                
+                # Für jedes ausgewählte Paper den Abstract abrufen und anzeigen
+                for option in selected_papers:
+                    try:
+                        pmid = option.split("PMID: ")[1].rstrip(")")
+                    except IndexError:
+                        pmid = ""
+                    if pmid:
+                        abstract = fetch_pubmed_abstract(pmid)
+                        st.subheader(f"Abstract for PMID {pmid}")
+                        st.write(abstract)
             else:
                 st.info("No results found.")
     
