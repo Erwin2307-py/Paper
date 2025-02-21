@@ -153,7 +153,7 @@ def module_api_select():
                 unsafe_allow_html=True
             )
     if "CORE Aggregate" in selected_apis:
-        CORE_API_KEY = st.secrets.get("CORE_API_KEY", "your_core_api_key_here")
+        CORE_API_KEY = st.secrets.get("CORE_API_KEY", "LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF")
         if CORE_API_KEY and check_core_aggregate_connection(CORE_API_KEY):
             st.sidebar.markdown(
                 "<div style='background-color: darkgreen; color: white; padding: 5px; text-align: center;'>CORE Aggregate connection established!</div>",
@@ -172,7 +172,7 @@ def convert_results_to_excel(data):
     df = pd.DataFrame(data)
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name="Results")
+        df.to_excel(writer, index=False, sheet_name="PubMedResults")
         writer.save()
     return output.getvalue()
 
@@ -204,69 +204,62 @@ def main():
     
     module_api_select()
     
-    st.write("This app checks API connections and provides a PubMed search module. The search results remain stable.")
+    st.write("This app checks API connections and provides a PubMed search module.")
+    st.write("If the API connections are working, you'll see dark green messages in the sidebar.")
     
-    # --- PubMed Search ---
+    # PubMed Search-Sektion
     st.header("Search PubMed")
     search_query = st.text_input("Enter a search query for PubMed:")
-    
     if st.button("Search"):
         if not search_query.strip():
             st.warning("Please enter a search query.")
         else:
             results = search_pubmed(search_query)
+            st.write(f"Found {len(results)} paper(s).")
+            # Ergebnisse in der Session speichern
             st.session_state["pubmed_results"] = results
-            st.success(f"Found {len(results)} paper(s).")
     
-    # Anzeige der Suchergebnisse (immer sichtbar, wenn vorhanden)
+    # Ergebnisse anzeigen, falls vorhanden
     if "pubmed_results" in st.session_state and st.session_state["pubmed_results"]:
-        st.subheader("Search Results")
-        st.table(st.session_state["pubmed_results"])
+        results = st.session_state["pubmed_results"]
+        st.table(results)
         
-        # Selectbox zum Auswählen eines Papers, das hinzugefügt werden soll
-        paper_options = [f"{r['Title']} (PMID: {r['PMID']})" for r in st.session_state["pubmed_results"]]
-        selected_paper = st.selectbox("Select a paper to add to your selection:", paper_options, key="paper_select")
-        if st.button("Add Paper"):
-            if "displayed_papers" not in st.session_state:
-                st.session_state["displayed_papers"] = []
-            if selected_paper not in st.session_state["displayed_papers"]:
-                st.session_state["displayed_papers"].append(selected_paper)
-    
-    # Anzeige der persistierten ausgewählten Paper und deren Abstracts in einem Expander
-    with st.expander("Selected Papers Details", expanded=True):
-        if "displayed_papers" in st.session_state and st.session_state["displayed_papers"]:
-            selected_info = []
-            for option in st.session_state["displayed_papers"]:
-                try:
-                    pmid = option.split("PMID: ")[1].rstrip(")")
-                except IndexError:
-                    pmid = ""
-                if pmid:
-                    abstract = fetch_pubmed_abstract(pmid)
-                    selected_info.append({"Paper": option, "Abstract": abstract})
-                    st.subheader(f"Abstract for PMID {pmid}")
-                    st.write(abstract)
-            # Download-Button für die ausgewählten Paper
-            if selected_info:
-                excel_data_selected = convert_results_to_excel(selected_info)
-                st.download_button(
-                    label="Download Selected Papers as Excel",
-                    data=excel_data_selected,
-                    file_name="Selected_Papers.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-        else:
-            st.info("No papers have been added yet.")
-    
-    # Download-Button für alle Suchergebnisse
-    if "pubmed_results" in st.session_state and st.session_state["pubmed_results"]:
-        excel_data_all = convert_results_to_excel(st.session_state["pubmed_results"])
+        # Multiselect: Auswahl der Paper, deren Abstracts angezeigt werden sollen
+        paper_options = [f"{r['Title']} (PMID: {r['PMID']})" for r in results]
+        selected_papers = st.multiselect("Select paper(s) to view their abstracts:", paper_options, key="paper_multiselect")
+        st.session_state["selected_papers"] = selected_papers
+        
+        # Für jedes ausgewählte Paper den Abstract abrufen und anzeigen
+        selected_results = []
+        for option in selected_papers:
+            try:
+                pmid = option.split("PMID: ")[1].rstrip(")")
+            except IndexError:
+                pmid = ""
+            if pmid:
+                selected_results.append({"PMID": pmid, "Title": option.split(" (PMID")[0]})
+                abstract = fetch_pubmed_abstract(pmid)
+                st.subheader(f"Abstract for PMID {pmid}")
+                st.write(abstract)
+        
+        # Download-Button für alle Ergebnisse
+        excel_all = convert_results_to_excel(results)
         st.download_button(
-            label="Download All Search Results as Excel",
-            data=excel_data_all,
+            label="Download all results as Excel",
+            data=excel_all,
             file_name="PubMed_Results.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+        
+        # Download-Button für ausgewählte Paper (nur Titel und PMID)
+        if selected_results:
+            excel_selected = convert_results_to_excel(selected_results)
+            st.download_button(
+                label="Download selected results as Excel",
+                data=excel_selected,
+                file_name="Selected_PubMed_Results.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
     
     st.write("Use the sidebar for further module navigation.")
 
