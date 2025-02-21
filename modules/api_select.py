@@ -52,7 +52,7 @@ def check_pubmed_connection(timeout=10):
         return False
 
 def search_pubmed(query):
-    """Führt eine PubMed-Suche durch und gibt eine Liste mit Titel und PMID zurück."""
+    """Conducts a PubMed search and returns a list of dictionaries with PMID and Title."""
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 20}
     try:
@@ -62,7 +62,7 @@ def search_pubmed(query):
         idlist = data.get("esearchresult", {}).get("idlist", [])
         if not idlist:
             return []
-        # Details über eSummary abrufen
+        # Retrieve details via eSummary
         esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
         sum_params = {"db": "pubmed", "id": ",".join(idlist), "retmode": "json"}
         r2 = requests.get(esummary_url, params=sum_params, timeout=10)
@@ -79,7 +79,7 @@ def search_pubmed(query):
         return []
 
 def fetch_pubmed_abstract(pmid):
-    """Holt das Abstract zu einer PubMed-ID via eFetch."""
+    """Fetches the abstract for a given PubMed ID using eFetch."""
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
     params = {"db": "pubmed", "id": pmid, "retmode": "xml"}
     try:
@@ -95,7 +95,7 @@ def fetch_pubmed_abstract(pmid):
         return f"(Error fetching abstract: {e})"
 
 #############################################
-# Europe PMC Connection Check
+# Europe PMC Connection Check and Search Function
 #############################################
 def check_europe_pmc_connection(timeout=10):
     test_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
@@ -109,11 +109,40 @@ def check_europe_pmc_connection(timeout=10):
         return False
 
 #############################################
-# Sidebar Module: API Selection (Persistent)
+# Convert search results to Excel (for download)
 #############################################
-def module_api_select():
-    st.sidebar.header("Module 1: Select APIs to Use")
-    
+def convert_results_to_excel(data):
+    df = pd.DataFrame(data)
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False, sheet_name="PubMedResults")
+    return output.getvalue()
+
+#############################################
+# Top Green Bar with API Selection and Search Area
+#############################################
+def top_api_selection():
+    # Create a full-width fixed green bar (3 cm high) at the top.
+    st.markdown(
+        """
+        <div style="
+            background-color: #8BC34A;
+            width: 100vw;
+            height: 3cm;
+            margin: 0;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 1000;">
+        """,
+        unsafe_allow_html=True
+    )
+    # API selection widget inside the green bar:
     options = [
         "Europe PMC",
         "PubMed",
@@ -122,146 +151,156 @@ def module_api_select():
         "Google Scholar",
         "Semantic Scholar"
     ]
-    
     if "selected_apis" not in st.session_state:
         st.session_state["selected_apis"] = ["Europe PMC"]
-    
-    selected_apis = st.sidebar.multiselect("Which APIs do you want to use?", options, default=st.session_state["selected_apis"])
-    st.session_state["selected_apis"] = selected_apis  
-    st.sidebar.write("Currently selected:", selected_apis)
+    selected = st.multiselect("Select APIs:", options, default=st.session_state["selected_apis"], key="top_api_select", label_visibility="collapsed")
+    st.session_state["selected_apis"] = selected
 
-    if "PubMed" in selected_apis:
+    # Display the selected APIs in white text inside the bar:
+    st.markdown(
+        f"""
+        <div style="color: white; font-size: 16px;">
+            Currently selected: {", ".join(selected)}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    
+    # Display connection statuses as inline labels.
+    status_msgs = []
+    if "PubMed" in selected:
         if check_pubmed_connection():
-            st.sidebar.markdown(
-                "<div style='background-color: darkgreen; color: white; padding: 5px; text-align: center;'>PubMed connection established!</div>",
-                unsafe_allow_html=True
-            )
+            status_msgs.append("<span style='background-color: darkgreen; color: white; padding: 5px; margin-right: 5px;'>PubMed: OK</span>")
         else:
-            st.sidebar.markdown(
-                "<div style='background-color: red; color: white; padding: 5px; text-align: center;'>PubMed connection failed!</div>",
-                unsafe_allow_html=True
-            )
-    if "Europe PMC" in selected_apis:
+            status_msgs.append("<span style='background-color: red; color: white; padding: 5px; margin-right: 5px;'>PubMed: Fail</span>")
+    if "Europe PMC" in selected:
         if check_europe_pmc_connection():
-            st.sidebar.markdown(
-                "<div style='background-color: darkgreen; color: white; padding: 5px; text-align: center;'>Europe PMC connection established!</div>",
-                unsafe_allow_html=True
-            )
+            status_msgs.append("<span style='background-color: darkgreen; color: white; padding: 5px; margin-right: 5px;'>Europe PMC: OK</span>")
         else:
-            st.sidebar.markdown(
-                "<div style='background-color: red; color: white; padding: 5px; text-align: center;'>Europe PMC connection failed!</div>",
-                unsafe_allow_html=True
-            )
-    if "CORE Aggregate" in selected_apis:
+            status_msgs.append("<span style='background-color: red; color: white; padding: 5px; margin-right: 5px;'>Europe PMC: Fail</span>")
+    if "CORE Aggregate" in selected:
         CORE_API_KEY = st.secrets.get("CORE_API_KEY", "your_core_api_key_here")
         if CORE_API_KEY and check_core_aggregate_connection(CORE_API_KEY):
-            st.sidebar.markdown(
-                "<div style='background-color: darkgreen; color: white; padding: 5px; text-align: center;'>CORE Aggregate connection established!</div>",
-                unsafe_allow_html=True
-            )
+            status_msgs.append("<span style='background-color: darkgreen; color: white; padding: 5px; margin-right: 5px;'>CORE Aggregate: OK</span>")
         else:
-            st.sidebar.markdown(
-                "<div style='background-color: red; color: white; padding: 5px; text-align: center;'>CORE Aggregate connection failed!</div>",
-                unsafe_allow_html=True
-            )
+            status_msgs.append("<span style='background-color: red; color: white; padding: 5px; margin-right: 5px;'>CORE Aggregate: Fail</span>")
+    status_html = " ".join(status_msgs)
+    st.markdown(
+        f"""
+        <div style="color: white; font-size: 16px; margin-top: 5px;">
+            {status_html}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+def top_api_search_area():
+    # Add padding so main content doesn't hide behind fixed bar.
+    st.markdown("<div style='padding-top: 3.2cm;'></div>", unsafe_allow_html=True)
+    st.header("API Search")
+    search_query = st.text_input("Enter search query for PubMed:", key="pubmed_search_query")
+    chosen_api = st.selectbox("Select API for search:", st.session_state.get("selected_apis", []), key="api_search_select")
+    if st.button("Search", key="api_search_button"):
+        if not search_query.strip():
+            st.info("Please enter a search query.")
+        else:
+            if chosen_api == "PubMed":
+                count = search_pubmed_count(search_query)
+                results = search_pubmed(search_query)
+            elif chosen_api == "Europe PMC":
+                count = search_europe_pmc_count(search_query)
+                # For demonstration, we just use count; full results can be implemented similarly.
+                results = []  
+            elif chosen_api == "CORE Aggregate":
+                CORE_API_KEY = st.secrets.get("CORE_API_KEY", "your_core_api_key_here")
+                count = search_core_aggregate_count(search_query, CORE_API_KEY)
+                results = []  
+            else:
+                st.info(f"Search functionality for {chosen_api} is not implemented.")
+                return
+            st.success(f"{chosen_api} reports {count} papers found for query: '{search_query}'")
+            # Save results in session state so they persist
+            st.session_state["pubmed_results"] = results
+
+def search_pubmed_count(query):
+    """Return count of papers for a given query in PubMed."""
+    esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+    params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 0}
+    try:
+        r = requests.get(esearch_url, params=params, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        return int(data.get("esearchresult", {}).get("count", "0"))
+    except Exception:
+        return 0
+
+def search_europe_pmc_count(query):
+    """Return count of papers for a given query in Europe PMC."""
+    test_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+    params = {"query": query, "format": "json", "pageSize": 0}
+    try:
+        r = requests.get(test_url, params=params, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        return int(data.get("hitCount", 0))
+    except Exception:
+        return 0
+
+def search_core_aggregate_count(query, api_key):
+    """Return count of papers for a given query in CORE Aggregate."""
+    try:
+        core = CoreAPI(api_key)
+        result = core.search_publications(query, limit=1)
+        return int(result.get("count", 0))
+    except Exception:
+        return 0
 
 #############################################
-# Excel Download Funktion
+# Sidebar Module Navigation with Vertical Buttons
 #############################################
-def convert_results_to_excel(data):
-    df = pd.DataFrame(data)
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name="PubMedResults")
-        writer.save()
-    return output.getvalue()
+def sidebar_module_navigation():
+    st.sidebar.title("Module Navigation")
+    modules = [
+        ("1) API Search", "api_search"),
+        ("2) Online Filter", "online_filter"),
+        ("3) Codewords & PubMed", "codewords_pubmed"),
+        ("4) Paper Selection", "paper_selection"),
+        ("5) Analysis & Evaluation", "analysis"),
+        ("6) Extended Topics", "extended_topics")
+    ]
+    
+    for label, key in modules:
+        if st.sidebar.button(label, key=key, help=label):
+            st.session_state["selected_module"] = key
+
+    if "selected_module" not in st.session_state:
+        st.session_state["selected_module"] = "api_search"
+    st.sidebar.write("Selected Module:", st.session_state["selected_module"])
 
 #############################################
 # Main Streamlit App
 #############################################
 def main():
-    st.markdown(
-        """
-        <style>
-        html, body {
-            margin: 0;
-            padding: 0;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
+    # Render the fixed top green bar with API selection and status.
+    top_api_selection()
     
-    # Top Green Bar
-    st.markdown(
-        """
-        <div style="background-color: green; width: 100%; height: 3cm; margin: 0; padding: 0;"></div>
-        """,
-        unsafe_allow_html=True
-    )
+    # Render the API search area below the fixed bar.
+    top_api_search_area()
     
     st.title("API Connection Checker & PubMed Search")
+    st.write("This app checks API connections and allows you to search for papers using selected APIs.")
+    st.write("Use the sidebar buttons to switch modules. The top green bar with API selection remains visible at all times.")
     
-    module_api_select()
+    sidebar_module_navigation()
     
-    st.write("This app checks API connections and provides a PubMed search module.")
-    st.write("If the API connections are working, you'll see dark green messages in the sidebar.")
+    # For now, if the selected module is "api_search", we display the API search area.
+    module = st.session_state.get("selected_module", "api_search")
+    if module == "api_search":
+        top_api_search_area()
+    # Additional modules can be imported and called here.
     
-    # PubMed Search-Sektion
-    st.header("Search PubMed")
-    search_query = st.text_input("Enter a search query for PubMed:")
-    if st.button("Search"):
-        if not search_query.strip():
-            st.warning("Please enter a search query.")
-        else:
-            results = search_pubmed(search_query)
-            st.write(f"Found {len(results)} paper(s).")
-            # Ergebnisse in der Session speichern
-            st.session_state["pubmed_results"] = results
-    
-    # Ergebnisse anzeigen, falls vorhanden
-    if "pubmed_results" in st.session_state and st.session_state["pubmed_results"]:
-        results = st.session_state["pubmed_results"]
-        st.table(results)
-        
-        # Multiselect: Auswahl der Paper, deren Abstracts angezeigt werden sollen
-        paper_options = [f"{r['Title']} (PMID: {r['PMID']})" for r in results]
-        selected_papers = st.multiselect("Select paper(s) to view their abstracts:", paper_options, key="paper_multiselect")
-        st.session_state["selected_papers"] = selected_papers
-        
-        # Für jedes ausgewählte Paper den Abstract abrufen und anzeigen
-        selected_results = []
-        for option in selected_papers:
-            try:
-                pmid = option.split("PMID: ")[1].rstrip(")")
-            except IndexError:
-                pmid = ""
-            if pmid:
-                selected_results.append({"PMID": pmid, "Title": option.split(" (PMID")[0]})
-                abstract = fetch_pubmed_abstract(pmid)
-                st.subheader(f"Abstract for PMID {pmid}")
-                st.write(abstract)
-        
-        # Download-Button für alle Ergebnisse
-        excel_all = convert_results_to_excel(results)
-        st.download_button(
-            label="Download all results as Excel",
-            data=excel_all,
-            file_name="PubMed_Results.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-        
-        # Download-Button für ausgewählte Paper (nur Titel und PMID)
-        if selected_results:
-            excel_selected = convert_results_to_excel(selected_results)
-            st.download_button(
-                label="Download selected results as Excel",
-                data=excel_selected,
-                file_name="Selected_PubMed_Results.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-    
-    st.write("Use the sidebar for further module navigation.")
+    st.write("Selected APIs are checked above. Use the sidebar buttons to switch modules.")
 
 if __name__ == '__main__':
     main()
