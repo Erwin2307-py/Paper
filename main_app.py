@@ -1,6 +1,8 @@
 import streamlit as st
 import requests
 import xml.etree.ElementTree as ET
+import pandas as pd
+from io import BytesIO
 
 # Must be the very first Streamlit command!
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
@@ -54,6 +56,7 @@ class CoreAPI:
         r.raise_for_status()
         return r.json()
 
+
 def check_core_aggregate_connection(api_key, timeout=15):
     try:
         core = CoreAPI(api_key)
@@ -65,6 +68,7 @@ def check_core_aggregate_connection(api_key, timeout=15):
 #############################################
 # PubMed Connection Check and Search Function
 #############################################
+
 def check_pubmed_connection(timeout=10):
     test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": "test", "retmode": "json"}
@@ -76,8 +80,12 @@ def check_pubmed_connection(timeout=10):
     except Exception:
         return False
 
+
 def search_pubmed(query):
-    """Führt eine PubMed-Suche durch und gibt eine Liste mit Titel und PMID zurück."""
+    """
+    Führt eine PubMed-Suche durch und gibt eine Liste mit Dictionaries zurück,
+    die PMID, Title, Year und Journal enthalten.
+    """
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 100}
     try:
@@ -87,21 +95,33 @@ def search_pubmed(query):
         idlist = data.get("esearchresult", {}).get("idlist", [])
         if not idlist:
             return []
-        # Abruf der Details über eSummary
+        
+        # eSummary zum Abrufen weiterer Felder (z.B. Jahr, Journal)
         esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
         sum_params = {"db": "pubmed", "id": ",".join(idlist), "retmode": "json"}
         r2 = requests.get(esummary_url, params=sum_params, timeout=10)
         r2.raise_for_status()
-        summary_data = r2.json()
+        summary_data = r2.json().get("result", {})
+        
         results = []
         for pmid in idlist:
-            summ = summary_data.get("result", {}).get(pmid, {})
-            title = summ.get("title", "n/a")
-            results.append({"PMID": pmid, "Title": title})
+            info = summary_data.get(pmid, {})
+            title = info.get("title", "n/a")
+            pubdate = info.get("pubdate", "")
+            year = pubdate[:4] if pubdate else "n/a"
+            journal = info.get("fulljournalname", "n/a")
+            
+            results.append({
+                "PMID": pmid,
+                "Title": title,
+                "Year": year,
+                "Journal": journal
+            })
         return results
     except Exception as e:
         st.error(f"Error searching PubMed: {e}")
         return []
+
 
 def fetch_pubmed_abstract(pmid):
     """Holt das Abstract zu einer PubMed-ID via eFetch."""
@@ -115,9 +135,10 @@ def fetch_pubmed_abstract(pmid):
         for elem in root.findall(".//AbstractText"):
             if elem.text:
                 abs_text += elem.text + "\n"
-        return abs_text if abs_text.strip() != "" else "(No abstract available)"
+        return abs_text.strip() if abs_text.strip() != "" else "(No abstract available)"
     except Exception as e:
         return f"(Error: {e})"
+
 
 #############################################
 # Europe PMC Connection Check
@@ -133,11 +154,28 @@ def check_europe_pmc_connection(timeout=10):
     except Exception:
         return False
 
+
+#############################################
+# Excel-Hilfsfunktion
+#############################################
+import pandas as pd
+from io import BytesIO
+
+def convert_to_excel(data):
+    """
+    data: Liste von Dicts, z.B. [{"PMID":..., "Title":..., "Year":..., "Journal":..., "Abstract":...}, ...]
+    """
+    df = pd.DataFrame(data)
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False, sheet_name="PubMed")
+        writer.save()
+    return output.getvalue()
+
 #############################################
 # Top Green Bar with API Selection (Fixed at the top)
 #############################################
 def top_api_selection():
-    # Create a full-width green bar (3 cm high) fixed at the top.
     st.markdown(
         """
         <div style="
@@ -157,7 +195,6 @@ def top_api_selection():
         """,
         unsafe_allow_html=True
     )
-    # API selection widget inside the green bar:
     options = [
         "Europe PMC",
         "PubMed",
@@ -181,7 +218,7 @@ def top_api_selection():
         unsafe_allow_html=True
     )
 
-    # Check connection statuses and display them as inline labels.
+    # Connection checks
     status_msgs = []
     if "PubMed" in selected:
         if check_pubmed_connection():
@@ -199,6 +236,7 @@ def top_api_selection():
             status_msgs.append("<span style='background-color: darkgreen; color: white; padding: 5px; margin-right: 5px;'>CORE Aggregate: OK</span>")
         else:
             status_msgs.append("<span style='background-color: red; color: white; padding: 5px; margin-right: 5px;'>CORE Aggregate: Fail</span>")
+
     status_html = " ".join(status_msgs)
     st.markdown(
         f"""
@@ -210,8 +248,9 @@ def top_api_selection():
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
+
 #############################################
-# Sidebar Module Navigation with Vertical Buttons
+# Sidebar Module Navigation
 #############################################
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
@@ -260,33 +299,90 @@ def main():
     
     sidebar_module_navigation()
     
-    # Beispiel: PubMed-Suchfeld, das auch die Anzahl gefundener Paper anzeigt.
-    st.header("Search PubMed")
+    # ---------------- PUBMED MULTI-SELECTION LOGIK ----------------
+    st.header("Search PubMed with Multi-Selection")
+    
+    # Textfeld für die Suche
     search_query = st.text_input("Enter a search query for PubMed:", "")
+    
+    # Falls noch nicht vorhanden, hier eine Liste für die Suchergebnisse in session_state
+    if "pubmed_results" not in st.session_state:
+        st.session_state["pubmed_results"] = []
+    
+    # Falls noch nicht vorhanden, Session-State für Multi-Selection
+    if "selected_papers" not in st.session_state:
+        st.session_state["selected_papers"] = []
+    
+    # Such-Button
     if st.button("Search"):
         if not search_query.strip():
             st.warning("Please enter a search query.")
         else:
             results = search_pubmed(search_query)
+            st.session_state["pubmed_results"] = results
             st.write(f"Found {len(results)} paper(s).")
-            if results:
-                # Zeige in einer Tabelle die Titel und PubMed IDs an.
-                st.table(results)
+    
+    # Immer anzeigen, wenn wir Ergebnisse haben
+    if st.session_state["pubmed_results"]:
+        st.subheader("Search Results")
+        st.table(st.session_state["pubmed_results"])
+        
+        # Mehrfach-Auswahl basierend auf den aktuellen Suchergebnissen
+        paper_options = [
+            f"{r['Title']} (PMID: {r['PMID']})"
+            for r in st.session_state["pubmed_results"]
+        ]
+        
+        # Persistent multiselect
+        selected_now = st.multiselect(
+            "Select paper(s) to view abstracts:",
+            options=paper_options,
+            default=st.session_state["selected_papers"],
+            key="paper_multiselect"
+        )
+        
+        # Nachdem der Nutzer die Auswahl geändert hat, updaten wir st.session_state["selected_papers"]
+        st.session_state["selected_papers"] = selected_now
+        
+        # Liste für Download-Daten
+        selected_details = []
+        
+        # Abstracts der ausgewählten Paper anzeigen
+        for paper_str in st.session_state["selected_papers"]:
+            try:
+                pmid = paper_str.split("PMID: ")[1].rstrip(")")
+            except IndexError:
+                pmid = ""
+            if pmid:
+                # Metadaten (Titel etc.) aus pubmed_results
+                meta = next((x for x in st.session_state["pubmed_results"] if x["PMID"] == pmid), {})
+                # Hole Abstract
+                abstract_text = fetch_pubmed_abstract(pmid)
                 
-                # Auswahlfeld zum Anklicken eines Paper für den Abstract.
-                paper_options = [f"{r['Title']} (PMID: {r['PMID']})" for r in results]
-                selected_paper = st.selectbox("Select a paper to view its abstract:", paper_options)
-                # Extrahiere die PMID aus der Auswahl:
-                try:
-                    selected_pmid = selected_paper.split("PMID: ")[1].rstrip(")")
-                except IndexError:
-                    selected_pmid = ""
-                if selected_pmid:
-                    abstract = fetch_pubmed_abstract(selected_pmid)
-                    st.subheader("Abstract")
-                    st.write(abstract)
-            else:
-                st.info("No results found.")
+                # Anzeigen
+                st.subheader(f"Abstract for PMID {pmid}")
+                st.write(f"**Title:** {meta.get('Title', 'n/a')}")
+                st.write("**Abstract:**")
+                st.write(abstract_text)
+                
+                # Speichern für Excel-Download
+                selected_details.append({
+                    "PMID": pmid,
+                    "Title": meta.get("Title", "n/a"),
+                    "Abstract": abstract_text
+                })
+        
+        # Download-Button für ausgewählte Paper
+        if selected_details:
+            excel_bytes = convert_to_excel(selected_details)
+            st.download_button(
+                label="Download selected papers as Excel",
+                data=excel_bytes,
+                file_name="Selected_Papers.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+    
+    # -------------------------------------------------------------
     
     module = st.session_state.get("selected_module", "api_selection")
     if module == "api_selection":
