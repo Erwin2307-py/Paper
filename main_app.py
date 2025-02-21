@@ -90,6 +90,36 @@ def check_europe_pmc_connection(timeout=10):
         return False
 
 #############################################
+# Search Function for PubMed (for example)
+#############################################
+def search_pubmed(query):
+    """Führt eine Suche über PubMed durch und gibt eine Liste mit Titel und PMID zurück."""
+    esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+    params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 100}
+    try:
+        r = requests.get(esearch_url, params=params, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        idlist = data.get("esearchresult", {}).get("idlist", [])
+        if not idlist:
+            return []
+        # Abruf der Details über eSummary
+        esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+        sum_params = {"db": "pubmed", "id": ",".join(idlist), "retmode": "json"}
+        r2 = requests.get(esummary_url, params=sum_params, timeout=10)
+        r2.raise_for_status()
+        summary_data = r2.json()
+        results = []
+        for pmid in idlist:
+            summ = summary_data.get("result", {}).get(pmid, {})
+            title = summ.get("title", "n/a")
+            results.append({"PMID": pmid, "Title": title})
+        return results
+    except Exception as e:
+        st.error(f"Error searching PubMed: {e}")
+        return []
+
+#############################################
 # Top Green Bar with API Selection (Fixed at the top)
 #############################################
 def top_api_selection():
@@ -216,6 +246,21 @@ def main():
     
     sidebar_module_navigation()
     
+    # Beispiel: Wir integrieren hier ein einfaches Suchfeld, mit dem über PubMed gesucht werden kann.
+    st.header("Search PubMed")
+    search_query = st.text_input("Enter a search query for PubMed:", "")
+    if st.button("Search"):
+        if not search_query.strip():
+            st.warning("Please enter a search query.")
+        else:
+            results = search_pubmed(search_query)
+            st.write(f"Found {len(results)} paper(s).")
+            if results:
+                # Zeige in einer Tabelle die Titel und PubMed IDs an.
+                st.table(results)
+            else:
+                st.info("No results found.")
+    
     module = st.session_state.get("selected_module", "api_selection")
     if module == "api_selection":
         st.info("API Selection is available in the top green bar.")
@@ -239,4 +284,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
