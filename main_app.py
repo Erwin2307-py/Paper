@@ -56,6 +56,7 @@ class CoreAPI:
         r.raise_for_status()
         return r.json()
 
+
 def check_core_aggregate_connection(api_key, timeout=15):
     try:
         core = CoreAPI(api_key)
@@ -323,11 +324,11 @@ def main():
     if st.session_state["pubmed_results"]:
         st.subheader("Search Results")
         
-        # CSS-Override: Tabelle mit 8px Schrift
+        # CSS-Override: Tabelle mit 4px Schrift
         st.markdown("""
         <style>
         table, thead, tbody, tr, td, th {
-            font-size: 8px !important;
+            font-size: 4px !important;
         }
         </style>
         """, unsafe_allow_html=True)
@@ -354,7 +355,7 @@ def main():
         # Liste für Download-Daten
         selected_details = []
         
-        # Abstracts der ausgewählten Paper -> standard-größe (z.B. st.write)
+        # Abstracts der ausgewählten Paper -> Standard-Größe
         for paper_str in st.session_state["selected_papers"]:
             try:
                 pmid = paper_str.split("PMID: ")[1].rstrip(")")
