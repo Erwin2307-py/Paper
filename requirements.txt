@@ -8,3 +8,6 @@ scholarly
 selenium
 urllib3
 xlsxwriter
+pandas
+openpyxl
+requests
