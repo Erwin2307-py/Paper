@@ -56,7 +56,6 @@ class CoreAPI:
         r.raise_for_status()
         return r.json()
 
-
 def check_core_aggregate_connection(api_key, timeout=15):
     try:
         core = CoreAPI(api_key)
@@ -106,7 +105,7 @@ def search_pubmed(query):
             info = summary_data.get(pmid, {})
             title = info.get("title", "n/a")
             pubdate = info.get("pubdate", "")
-            # Extrahieren wir das Jahr aus pubdate (z.B. "2021 Dec" -> "2021")
+            # Jahr herausfiltern, z.B. "2022 Dec" -> "2022"
             year = pubdate[:4] if pubdate else "n/a"
             journal = info.get("fulljournalname", "n/a")
             
@@ -324,7 +323,8 @@ def main():
     if st.session_state["pubmed_results"]:
         st.subheader("Search Results")
         
-        # CSS-Override: Tabelle auf 2px (hier 2px, was sehr klein ist).
+        # CSS-Override, damit die Tabelle (Ergebnisliste) um die Hälfte kleiner wird.
+        # Wir nehmen an, vorher war ~4px, jetzt 2px (extrem klein).
         st.markdown("""
         <style>
         table, thead, tbody, tr, td, th {
@@ -341,21 +341,17 @@ def main():
             for r in st.session_state["pubmed_results"]
         ]
         
-        # Persistent multiselect
         selected_now = st.multiselect(
             "Select paper(s) to view abstracts:",
             options=paper_options,
             default=st.session_state["selected_papers"],
             key="paper_multiselect"
         )
-        
-        # Nachdem der Nutzer die Auswahl geändert hat, updaten wir st.session_state["selected_papers"]
         st.session_state["selected_papers"] = selected_now
         
-        # Liste für Download-Daten
         selected_details = []
         
-        # Abstract-Anzeige (Standard-Schriftgröße)
+        # Abstract-Anzeige in normaler Schriftgröße
         for paper_str in st.session_state["selected_papers"]:
             try:
                 pmid = paper_str.split("PMID: ")[1].rstrip(")")
@@ -380,7 +376,6 @@ def main():
                     "Abstract": abstract_text
                 })
         
-        # Download-Button für ausgewählte Paper
         if selected_details:
             excel_bytes = convert_to_excel(selected_details)
             st.download_button(
@@ -389,8 +384,6 @@ def main():
                 file_name="Selected_Papers.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-    
-    # -------------------------------------------------------------
     
     module = st.session_state.get("selected_module", "api_selection")
     if module == "api_selection":
