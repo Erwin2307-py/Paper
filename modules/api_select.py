@@ -16,9 +16,7 @@ class CoreAPI:
         endpoint = "search/works"
         params = {"q": query, "limit": limit}
         if filters:
-            filter_expressions = []
-            for key, value in filters.items():
-                filter_expressions.append(f"{key}:{value}")
+            filter_expressions = [f"{key}:{value}" for key, value in filters.items()]
             params["filter"] = ",".join(filter_expressions)
         if sort:
             params["sort"] = sort
@@ -206,7 +204,7 @@ def main():
     
     module_api_select()
     
-    st.write("This app checks the connections for selected APIs and provides a PubMed search module.")
+    st.write("This app checks API connections and provides a PubMed search module.")
     st.write("If the API connections are working, you'll see dark green messages in the sidebar.")
     
     # PubMed Search-Sektion
@@ -218,36 +216,50 @@ def main():
         else:
             results = search_pubmed(search_query)
             st.write(f"Found {len(results)} paper(s).")
-            # Speichere die Ergebnisse in der Session, damit sie stabil bleiben
+            # Ergebnisse in der Session speichern
             st.session_state["pubmed_results"] = results
     
-    # Wenn Suchergebnisse vorhanden sind, anzeigen
+    # Ergebnisse anzeigen, falls vorhanden
     if "pubmed_results" in st.session_state and st.session_state["pubmed_results"]:
         results = st.session_state["pubmed_results"]
         st.table(results)
         
-        # Multiselect zum Auswählen mehrerer Paper
+        # Multiselect: Auswahl der Paper, deren Abstracts angezeigt werden sollen
         paper_options = [f"{r['Title']} (PMID: {r['PMID']})" for r in results]
         selected_papers = st.multiselect("Select paper(s) to view their abstracts:", paper_options, key="paper_multiselect")
+        st.session_state["selected_papers"] = selected_papers
         
+        # Für jedes ausgewählte Paper den Abstract abrufen und anzeigen
+        selected_results = []
         for option in selected_papers:
             try:
                 pmid = option.split("PMID: ")[1].rstrip(")")
             except IndexError:
                 pmid = ""
             if pmid:
+                selected_results.append({"PMID": pmid, "Title": option.split(" (PMID")[0]})
                 abstract = fetch_pubmed_abstract(pmid)
                 st.subheader(f"Abstract for PMID {pmid}")
                 st.write(abstract)
         
-        # Excel Download-Button
-        excel_data = convert_results_to_excel(results)
+        # Download-Button für alle Ergebnisse
+        excel_all = convert_results_to_excel(results)
         st.download_button(
-            label="Download results as Excel",
-            data=excel_data,
+            label="Download all results as Excel",
+            data=excel_all,
             file_name="PubMed_Results.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+        
+        # Download-Button für ausgewählte Paper (nur Titel und PMID)
+        if selected_results:
+            excel_selected = convert_results_to_excel(selected_results)
+            st.download_button(
+                label="Download selected results as Excel",
+                data=excel_selected,
+                file_name="Selected_PubMed_Results.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
     
     st.write("Use the sidebar for further module navigation.")
 
