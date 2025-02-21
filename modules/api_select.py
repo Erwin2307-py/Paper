@@ -1,6 +1,8 @@
 import streamlit as st
 import requests
 import xml.etree.ElementTree as ET
+import pandas as pd
+from io import BytesIO
 
 #############################################
 # CORE Aggregate API Class and Connection Check
@@ -114,7 +116,6 @@ def check_europe_pmc_connection(timeout=10):
 def module_api_select():
     st.sidebar.header("Module 1: Select APIs to Use")
     
-    # Available API options
     options = [
         "Europe PMC",
         "PubMed",
@@ -124,16 +125,13 @@ def module_api_select():
         "Semantic Scholar"
     ]
     
-    # Use session_state to preserve the selection
     if "selected_apis" not in st.session_state:
         st.session_state["selected_apis"] = ["Europe PMC"]
     
     selected_apis = st.sidebar.multiselect("Which APIs do you want to use?", options, default=st.session_state["selected_apis"])
-    st.session_state["selected_apis"] = selected_apis  # update session state
-
+    st.session_state["selected_apis"] = selected_apis  
     st.sidebar.write("Currently selected:", selected_apis)
 
-    # For each selected API, check connection and display a colored message.
     if "PubMed" in selected_apis:
         if check_pubmed_connection():
             st.sidebar.markdown(
@@ -145,7 +143,6 @@ def module_api_select():
                 "<div style='background-color: red; color: white; padding: 5px; text-align: center;'>PubMed connection failed!</div>",
                 unsafe_allow_html=True
             )
-    
     if "Europe PMC" in selected_apis:
         if check_europe_pmc_connection():
             st.sidebar.markdown(
@@ -157,7 +154,6 @@ def module_api_select():
                 "<div style='background-color: red; color: white; padding: 5px; text-align: center;'>Europe PMC connection failed!</div>",
                 unsafe_allow_html=True
             )
-    
     if "CORE Aggregate" in selected_apis:
         CORE_API_KEY = st.secrets.get("CORE_API_KEY", "your_core_api_key_here")
         if CORE_API_KEY and check_core_aggregate_connection(CORE_API_KEY):
@@ -172,10 +168,35 @@ def module_api_select():
             )
 
 #############################################
+# Excel Download Funktion
+#############################################
+def convert_results_to_excel(data):
+    # data sollte eine Liste von Dictionaries sein.
+    df = pd.DataFrame(data)
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False, sheet_name="PubMedResults")
+        writer.save()
+    processed_data = output.getvalue()
+    return processed_data
+
+#############################################
 # Main Streamlit App
 #############################################
 def main():
-    # Top Green Bar: full width, 3 cm high
+    st.markdown(
+        """
+        <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+    
+    # Top Green Bar
     st.markdown(
         """
         <div style="background-color: green; width: 100%; height: 3cm; margin: 0; padding: 0;"></div>
@@ -185,18 +206,12 @@ def main():
     
     st.title("API Connection Checker & PubMed Search")
     
-    # Always display the API selection sidebar so that the choices remain visible.
     module_api_select()
     
-    st.write("This app checks the connections for selected APIs and provides a PubMed search module.")
-    st.write("Use the sidebar to select and see the status of the following APIs:")
-    st.write("- Europe PMC")
-    st.write("- PubMed")
-    st.write("- CORE Aggregate")
-    st.write("- (Other options are available for selection)")
-    st.write("If the API connections are working, you'll see a dark green message in the sidebar.")
+    st.write("This app checks API connections and provides a PubMed search module.")
+    st.write("If the API connections are working, you'll see dark green messages in the sidebar.")
     
-    # PubMed-Suchfeld
+    # PubMed Search-Sektion
     st.header("Search PubMed")
     search_query = st.text_input("Enter a search query for PubMed:")
     if st.button("Search"):
@@ -206,14 +221,14 @@ def main():
             results = search_pubmed(search_query)
             st.write(f"Found {len(results)} paper(s).")
             if results:
-                # Zeige die Suchergebnisse in einer Tabelle
+                # Ergebnisse in einer Tabelle anzeigen und in Session speichern
+                st.session_state["pubmed_results"] = results
                 st.table(results)
                 
-                # Multiselect, um mehrere Paper auszuwählen, deren Abstract angezeigt werden sollen.
+                # Multiselect zum Auswählen mehrerer Paper, deren Abstracts angezeigt werden sollen
                 paper_options = [f"{r['Title']} (PMID: {r['PMID']})" for r in results]
                 selected_papers = st.multiselect("Select paper(s) to view their abstracts:", paper_options)
                 
-                # Für jedes ausgewählte Paper den Abstract abrufen und anzeigen
                 for option in selected_papers:
                     try:
                         pmid = option.split("PMID: ")[1].rstrip(")")
@@ -223,10 +238,19 @@ def main():
                         abstract = fetch_pubmed_abstract(pmid)
                         st.subheader(f"Abstract for PMID {pmid}")
                         st.write(abstract)
+                
+                # Button zum Download der Ergebnisse als Excel
+                excel_data = convert_results_to_excel(results)
+                st.download_button(
+                    label="Download results as Excel",
+                    data=excel_data,
+                    file_name="PubMed_Results.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
             else:
                 st.info("No results found.")
     
-    st.write("Use the sidebar buttons for further module navigation.")
+    st.write("Use the sidebar for further module navigation.")
 
 if __name__ == '__main__':
     main()
