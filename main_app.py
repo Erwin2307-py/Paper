@@ -249,7 +249,6 @@ def top_api_selection():
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
-
 #############################################
 # Sidebar Module Navigation
 #############################################
@@ -326,6 +325,17 @@ def main():
     # Immer anzeigen, wenn wir Ergebnisse haben
     if st.session_state["pubmed_results"]:
         st.subheader("Search Results")
+        
+        # CSS-Override, damit NUR die Ergebnisse-Liste kleiner ist (10px).
+        # Anschließend st.table(...).
+        st.markdown("""
+        <style>
+        table, thead, tbody, tr, td, th {
+            font-size: 10px !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
         st.table(st.session_state["pubmed_results"])
         
         # Mehrfach-Auswahl basierend auf den aktuellen Suchergebnissen
@@ -348,7 +358,7 @@ def main():
         # Liste für Download-Daten
         selected_details = []
         
-        # Abstracts der ausgewählten Paper anzeigen -> Fontsize=10px per HTML/CSS.
+        # Abstracts der ausgewählten Paper -> Standard-Schrift (z.B. 14px)
         for paper_str in st.session_state["selected_papers"]:
             try:
                 pmid = paper_str.split("PMID: ")[1].rstrip(")")
@@ -358,25 +368,13 @@ def main():
                 meta = next((x for x in st.session_state["pubmed_results"] if x["PMID"] == pmid), {})
                 abstract_text = fetch_pubmed_abstract(pmid)
                 
-                # Infos zum Paper in kleiner Schriftgröße (10px).
-                st.markdown(
-                    f"<p style='font-size:10px;'><strong>Abstract for PMID {pmid}</strong></p>",
-                    unsafe_allow_html=True
-                )
-                st.markdown(
-                    f"<p style='font-size:10px;'><strong>Title:</strong> {meta.get('Title','n/a')}</p>",
-                    unsafe_allow_html=True
-                )
-                st.markdown(
-                    f"<p style='font-size:10px;'><strong>Year:</strong> {meta.get('Year','n/a')}</p>",
-                    unsafe_allow_html=True
-                )
-                st.markdown(
-                    f"<p style='font-size:10px;'><strong>Journal:</strong> {meta.get('Journal','n/a')}</p>",
-                    unsafe_allow_html=True
-                )
-                st.markdown("<p style='font-size:10px;'><strong>Abstract:</strong></p>", unsafe_allow_html=True)
-                st.markdown(f"<p style='font-size:10px;'>{abstract_text}</p>", unsafe_allow_html=True)
+                # Abstract-Anzeige in normaler Schrift (z.B. st.write) -> Größer
+                st.subheader(f"Abstract for PMID {pmid}")
+                st.write(f"**Title:** {meta.get('Title','n/a')}")
+                st.write(f"**Year:** {meta.get('Year','n/a')}")
+                st.write(f"**Journal:** {meta.get('Journal','n/a')}")
+                st.write("**Abstract:**")
+                st.write(abstract_text)
                 
                 selected_details.append({
                     "PMID": pmid,
@@ -422,5 +420,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-
 
