@@ -1,29 +1,8 @@
 import streamlit as st
 import requests
 
-# Must be the very first Streamlit command!
-st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
-
-# Inject custom CSS to remove default margins and paddings so the green bar is flush
-st.markdown(
-    """
-    <style>
-    html, body {
-        margin: 0;
-        padding: 0;
-    }
-    /* Optional: Remove extra container margins */
-    .css-18e3th9, .css-1d391kg {
-        margin: 0;
-        padding: 0;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
 #############################################
-# Define connection-check functions and CoreAPI
+# CORE Aggregate API Class and Connection Check
 #############################################
 class CoreAPI:
     def __init__(self, api_key):
@@ -57,6 +36,9 @@ def check_core_aggregate_connection(api_key, timeout=15):
     except Exception:
         return False
 
+#############################################
+# PubMed Connection Check
+#############################################
 def check_pubmed_connection(timeout=10):
     test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": "test", "retmode": "json"}
@@ -68,6 +50,9 @@ def check_pubmed_connection(timeout=10):
     except Exception:
         return False
 
+#############################################
+# Europe PMC Connection Check
+#############################################
 def check_europe_pmc_connection(timeout=10):
     test_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {"query": "test", "format": "json"}
@@ -80,11 +65,10 @@ def check_europe_pmc_connection(timeout=10):
         return False
 
 #############################################
-# Top Green Bar with API Selection
+# Top API Selection Bar (fixed at the top)
 #############################################
 def top_api_selection():
-    # This container creates a full-width green bar with a height of 3cm.
-    # The API selection widget will be placed inside.
+    # Create a full-width green bar at the top with a height of 3cm.
     st.markdown(
         """
         <div style="
@@ -103,7 +87,7 @@ def top_api_selection():
         """,
         unsafe_allow_html=True
     )
-    # Place a multiselect widget for API selection inside the bar.
+    # Inside the green bar, place the API multiselect.
     options = [
         "Europe PMC",
         "PubMed",
@@ -112,36 +96,34 @@ def top_api_selection():
         "Google Scholar",
         "Semantic Scholar"
     ]
-    # Use session_state to persist selection.
     if "selected_apis" not in st.session_state:
         st.session_state["selected_apis"] = ["Europe PMC"]
-    selected = st.multiselect("Select APIs:", options, default=st.session_state["selected_apis"], key="top_api_select",
-                              label_visibility="collapsed")
+    selected = st.multiselect("Select APIs:", options, default=st.session_state["selected_apis"], key="top_api_select", label_visibility="collapsed")
     st.session_state["selected_apis"] = selected
 
-    # Optionally, you can show a success message in the bar (e.g., connection statuses)
-    messages = []
+    # Display connection statuses as small colored "buttons" (divs) inside the bar.
+    status_msgs = []
     if "PubMed" in selected:
         if check_pubmed_connection():
-            messages.append("PubMed: OK")
+            status_msgs.append("<span style='background-color: darkgreen; color: white; padding: 5px; margin-right: 5px;'>PubMed: OK</span>")
         else:
-            messages.append("PubMed: Fail")
+            status_msgs.append("<span style='background-color: red; color: white; padding: 5px; margin-right: 5px;'>PubMed: Fail</span>")
     if "Europe PMC" in selected:
         if check_europe_pmc_connection():
-            messages.append("Europe PMC: OK")
+            status_msgs.append("<span style='background-color: darkgreen; color: white; padding: 5px; margin-right: 5px;'>Europe PMC: OK</span>")
         else:
-            messages.append("Europe PMC: Fail")
+            status_msgs.append("<span style='background-color: red; color: white; padding: 5px; margin-right: 5px;'>Europe PMC: Fail</span>")
     if "CORE Aggregate" in selected:
-        core_key = st.secrets.get("CORE_API_KEY", "your_core_api_key_here")
-        if core_key and check_core_aggregate_connection(core_key):
-            messages.append("CORE Aggregate: OK")
+        CORE_API_KEY = st.secrets.get("CORE_API_KEY", "your_core_api_key_here")
+        if CORE_API_KEY and check_core_aggregate_connection(CORE_API_KEY):
+            status_msgs.append("<span style='background-color: darkgreen; color: white; padding: 5px; margin-right: 5px;'>CORE Aggregate: OK</span>")
         else:
-            messages.append("CORE Aggregate: Fail")
-    status_msg = " | ".join(messages)
+            status_msgs.append("<span style='background-color: red; color: white; padding: 5px; margin-right: 5px;'>CORE Aggregate: Fail</span>")
+    status_html = " ".join(status_msgs)
     st.markdown(
         f"""
-        <div style="color: white; font-size: 16px; margin-top: 10px;">
-            {status_msg}
+        <div style="margin-top: 10px;">
+            {status_html}
         </div>
         """,
         unsafe_allow_html=True
@@ -149,54 +131,78 @@ def top_api_selection():
     st.markdown("</div>", unsafe_allow_html=True)
 
 #############################################
+# Sidebar Module Navigation with Buttons
+#############################################
+def sidebar_module_navigation():
+    st.sidebar.title("Module Navigation")
+    # Define modules as (Label, key) tuples.
+    modules = [
+        ("1) API Selection", "api_selection"),
+        ("2) Online Filter", "online_filter"),
+        ("3) Codewords & PubMed", "codewords_pubmed"),
+        ("4) Paper Selection", "paper_selection"),
+        ("5) Analysis & Evaluation", "analysis"),
+        ("6) Extended Topics", "extended_topics")
+    ]
+    for label, key in modules:
+        if st.sidebar.button(label, key=key):
+            st.session_state["selected_module"] = key
+    # Set a default module if not yet chosen.
+    if "selected_module" not in st.session_state:
+        st.session_state["selected_module"] = "api_selection"
+    st.sidebar.write("Selected Module:", st.session_state["selected_module"])
+
+#############################################
 # Main Streamlit App
 #############################################
 def main():
-    # Call the top API selection bar so it remains fixed.
+    # Inject CSS to remove margins and ensure the top bar is flush.
+    st.markdown(
+        """
+        <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # Call the top green bar so that it remains fixed at the top.
     top_api_selection()
-
-    # Add some top padding so the content doesn't hide behind the fixed green bar.
+    
+    # Add top padding so that the main content does not get hidden behind the fixed bar.
     st.markdown("<div style='padding-top: 3.2cm;'></div>", unsafe_allow_html=True)
-
+    
     st.title("API Connection Checker")
     st.write("This app checks the connections for selected APIs and provides several modules for further processing.")
     st.write("Use the sidebar to navigate between modules. The top green bar with API selection remains visible at all times.")
-
-    # Sidebar navigation for additional modules.
-    st.sidebar.title("Module Navigation")
-    selection = st.sidebar.radio(
-        "Select a Module:",
-        (
-            "1) API Selection (Deprecated)",
-            "2) Online Filter",
-            "3) Codewords & PubMed",
-            "4) Paper Selection",
-            "5) Analysis & Evaluation",
-            "6) Extended Topics"
-        
-        )
-    )
-
-    # Depending on the selection, call the corresponding module.
-    if selection.startswith("1"):
-        # If you wish, you can call module_api_select() here,
-        # but note that API selection is now at the top.
-        st.info("API selection is now in the top green bar.")
-    elif selection.startswith("2"):
+    
+    # Sidebar navigation with buttons.
+    sidebar_module_navigation()
+    
+    # Load the module based on the sidebar selection.
+    module = st.session_state.get("selected_module", "api_selection")
+    if module == "api_selection":
+        st.info("API Selection is now available in the top bar.")
+    elif module == "online_filter":
         from modules.online_filter import module_online_filter
         module_online_filter()
-    elif selection.startswith("3"):
+    elif module == "codewords_pubmed":
         from modules.codewords_pubmed import module_codewords_pubmed
         module_codewords_pubmed()
-    elif selection.startswith("4"):
+    elif module == "paper_selection":
         from modules.paper_select_remove import module_select_remove
         module_select_remove()
-    elif selection.startswith("5"):
+    elif module == "analysis":
         from modules.analysis import module_analysis
         module_analysis()
-    elif selection.startswith("6"):
+    elif module == "extended_topics":
         from modules.extended_topics import module_extended_topics
         module_extended_topics()
-
+    
+    st.write("Selected APIs are checked above. Use the sidebar buttons to switch modules.")
+    
 if __name__ == '__main__':
     main()
