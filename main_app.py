@@ -56,6 +56,7 @@ class CoreAPI:
         r.raise_for_status()
         return r.json()
 
+
 def check_core_aggregate_connection(api_key, timeout=15):
     try:
         core = CoreAPI(api_key)
@@ -67,6 +68,7 @@ def check_core_aggregate_connection(api_key, timeout=15):
 #############################################
 # PubMed Connection Check and Search Function
 #############################################
+
 def check_pubmed_connection(timeout=10):
     test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": "test", "retmode": "json"}
@@ -105,7 +107,7 @@ def search_pubmed(query):
             info = summary_data.get(pmid, {})
             title = info.get("title", "n/a")
             pubdate = info.get("pubdate", "")
-            # Jahr herausfiltern, z.B. "2022 Dec" -> "2022"
+            # Extrahieren wir das Jahr aus pubdate (z.B. "2021 Dec" -> "2021")
             year = pubdate[:4] if pubdate else "n/a"
             journal = info.get("fulljournalname", "n/a")
             
@@ -162,8 +164,10 @@ def convert_to_excel(data):
     """
     df = pd.DataFrame(data)
     output = BytesIO()
+    # Benutzen den Kontextmanager
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         df.to_excel(writer, index=False, sheet_name="PubMed")
+        # fix: wrap in try/except, so .save() doesn't break if method is removed
         try:
             writer.save()
         except:
@@ -246,6 +250,7 @@ def top_api_selection():
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
+
 #############################################
 # Sidebar Module Navigation
 #############################################
@@ -322,17 +327,6 @@ def main():
     # Immer anzeigen, wenn wir Ergebnisse haben
     if st.session_state["pubmed_results"]:
         st.subheader("Search Results")
-        
-        # CSS-Override, damit die Tabelle (Ergebnisliste) um die Hälfte kleiner wird.
-        # Wir nehmen an, vorher war ~4px, jetzt 2px (extrem klein).
-        st.markdown("""
-        <style>
-        table, thead, tbody, tr, td, th {
-            font-size: 2px !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-        
         st.table(st.session_state["pubmed_results"])
         
         # Mehrfach-Auswahl basierend auf den aktuellen Suchergebnissen
@@ -341,33 +335,43 @@ def main():
             for r in st.session_state["pubmed_results"]
         ]
         
+        # Persistent multiselect
         selected_now = st.multiselect(
             "Select paper(s) to view abstracts:",
             options=paper_options,
             default=st.session_state["selected_papers"],
             key="paper_multiselect"
         )
+        
+        # Nachdem der Nutzer die Auswahl geändert hat, updaten wir st.session_state["selected_papers"]
         st.session_state["selected_papers"] = selected_now
         
+        # Liste für Download-Daten
         selected_details = []
         
-        # Abstract-Anzeige in normaler Schriftgröße
+        # Abstracts der ausgewählten Paper anzeigen
         for paper_str in st.session_state["selected_papers"]:
             try:
                 pmid = paper_str.split("PMID: ")[1].rstrip(")")
             except IndexError:
                 pmid = ""
             if pmid:
+                # Metadaten (Titel etc.) aus pubmed_results
                 meta = next((x for x in st.session_state["pubmed_results"] if x["PMID"] == pmid), {})
+                # Hole Abstract
                 abstract_text = fetch_pubmed_abstract(pmid)
                 
+                # Anzeigen
                 st.subheader(f"Abstract for PMID {pmid}")
-                st.write(f"**Title:** {meta.get('Title','n/a')}")
-                st.write(f"**Year:** {meta.get('Year','n/a')}")
-                st.write(f"**Journal:** {meta.get('Journal','n/a')}")
+                st.write(f"**Title:** {meta.get('Title', 'n/a')}")
+                # Journal + Year anzeigen
+                st.write(f"**Year:** {meta.get('Year', 'n/a')}")
+                st.write(f"**Journal:** {meta.get('Journal', 'n/a')}")
+
                 st.write("**Abstract:**")
                 st.write(abstract_text)
                 
+                # Speichern für Excel-Download
                 selected_details.append({
                     "PMID": pmid,
                     "Title": meta.get("Title", "n/a"),
@@ -376,6 +380,7 @@ def main():
                     "Abstract": abstract_text
                 })
         
+        # Download-Button für ausgewählte Paper
         if selected_details:
             excel_bytes = convert_to_excel(selected_details)
             st.download_button(
@@ -384,6 +389,8 @@ def main():
                 file_name="Selected_Papers.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
+    
+    # -------------------------------------------------------------
     
     module = st.session_state.get("selected_module", "api_selection")
     if module == "api_selection":
