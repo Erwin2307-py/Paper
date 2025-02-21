@@ -4,22 +4,28 @@ import requests
 # Must be the very first Streamlit command!
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
-# Inject custom CSS to remove default margins and paddings so the green bar is flush.
+#############################################
+# Inject CSS to remove default margins so the top green bar is flush,
+# and to style sidebar buttons.
+#############################################
 st.markdown(
     """
     <style>
+    /* Remove margins from html and body */
     html, body {
         margin: 0;
         padding: 0;
     }
-    /* Force sidebar buttons to be full width and equally sized */
-    div[data-testid="stSidebar"] button {
-         width: 100% !important;
-         margin: 0px !important;
-         padding: 10px !important;
-         font-size: 16px !important;
-         text-align: center !important;
-         box-sizing: border-box;
+    /* Ensure the main container is flush with screen edges */
+    .block-container {
+        padding: 0rem 1rem;
+    }
+    /* Style for sidebar buttons: full width, equal height, vertical spacing */
+    .stButton button {
+        width: 100% !important;
+        height: 50px;
+        font-size: 16px;
+        margin-bottom: 10px;
     }
     </style>
     """,
@@ -38,9 +44,7 @@ class CoreAPI:
         endpoint = "search/works"
         params = {"q": query, "limit": limit}
         if filters:
-            filter_expressions = []
-            for key, value in filters.items():
-                filter_expressions.append(f"{key}:{value}")
+            filter_expressions = [f"{key}:{value}" for key, value in filters.items()]
             params["filter"] = ",".join(filter_expressions)
         if sort:
             params["sort"] = sort
@@ -93,7 +97,7 @@ def check_europe_pmc_connection(timeout=10):
 # Top Green Bar with API Selection (Fixed at the top)
 #############################################
 def top_api_selection():
-    # Create a full-width green bar (3 cm high) fixed at the top.
+    # Create a fixed full-width green bar at the top (3 cm high)
     st.markdown(
         """
         <div style="
@@ -101,7 +105,7 @@ def top_api_selection():
             width: 100vw;
             height: 3cm;
             margin: 0;
-            padding: 0;
+            padding: 10px;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -124,20 +128,20 @@ def top_api_selection():
     ]
     if "selected_apis" not in st.session_state:
         st.session_state["selected_apis"] = ["Europe PMC"]
-    selected = st.multiselect("Select APIs:", options, default=st.session_state["selected_apis"], key="top_api_select", label_visibility="collapsed")
+    selected = st.multiselect("Select APIs:", options, default=st.session_state["selected_apis"],
+                                key="top_api_select", label_visibility="collapsed")
     st.session_state["selected_apis"] = selected
 
-    # Display the selected APIs in white text inside the bar:
     st.markdown(
         f"""
-        <div style="color: white; font-size: 16px; margin-top: 10px;">
+        <div style="color: white; font-size: 16px; margin-top: 5px;">
             Currently selected: {", ".join(selected)}
         </div>
         """,
         unsafe_allow_html=True
     )
 
-    # Check connection statuses and display them as inline labels.
+    # Check connection statuses and display inline status labels:
     status_msgs = []
     if "PubMed" in selected:
         if check_pubmed_connection():
@@ -155,11 +159,10 @@ def top_api_selection():
             status_msgs.append("<span style='background-color: darkgreen; color: white; padding: 5px; margin-right: 5px;'>CORE Aggregate: OK</span>")
         else:
             status_msgs.append("<span style='background-color: red; color: white; padding: 5px; margin-right: 5px;'>CORE Aggregate: Fail</span>")
-    status_html = " ".join(status_msgs)
     st.markdown(
         f"""
-        <div style="color: white; font-size: 16px; margin-top: 10px;">
-            {status_html}
+        <div style="color: white; font-size: 16px; margin-top: 5px;">
+            {' '.join(status_msgs)}
         </div>
         """,
         unsafe_allow_html=True
@@ -171,6 +174,7 @@ def top_api_selection():
 #############################################
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
+    # Define the modules with labels and keys.
     modules = [
         ("1) API Selection", "api_selection"),
         ("2) Online Filter", "online_filter"),
@@ -179,7 +183,7 @@ def sidebar_module_navigation():
         ("5) Analysis & Evaluation", "analysis"),
         ("6) Extended Topics", "extended_topics")
     ]
-    
+    # Create vertical buttons (one per module).
     for label, key in modules:
         if st.sidebar.button(label, key=key, help=label):
             st.session_state["selected_module"] = key
@@ -192,6 +196,7 @@ def sidebar_module_navigation():
 # Main Streamlit App
 #############################################
 def main():
+    # Remove extra margins so the top green bar is flush.
     st.markdown(
         """
         <style>
@@ -212,13 +217,15 @@ def main():
     
     st.title("API Connection Checker")
     st.write("This app checks the connections for selected APIs and provides several modules for further processing.")
-    st.write("Use the sidebar to navigate between modules. The top green bar with API selection remains visible at all times.")
+    st.write("Use the sidebar buttons to switch modules. The top green bar with API selection remains visible at all times.")
     
+    # Render vertical module navigation buttons in the sidebar.
     sidebar_module_navigation()
     
+    # Load and call the module corresponding to the selected module.
     module = st.session_state.get("selected_module", "api_selection")
     if module == "api_selection":
-        st.info("API Selection is available in the top green bar.")
+        st.info("API selection is available in the top green bar.")
     elif module == "online_filter":
         from modules.online_filter import module_online_filter
         module_online_filter()
