@@ -204,12 +204,13 @@ def main():
     
     module_api_select()
     
-    st.write("This app checks API connections and provides a PubMed search module.")
-    st.write("If the API connections are working, you'll see dark green messages in the sidebar.")
+    st.write("This app checks API connections and provides a PubMed search module. The search results remain stable.")
     
     # --- PubMed Search ---
     st.header("Search PubMed")
     search_query = st.text_input("Enter a search query for PubMed:")
+    
+    # Wenn "Search" geklickt wird, speichern wir die Ergebnisse in der Session
     if st.button("Search"):
         if not search_query.strip():
             st.warning("Please enter a search query.")
@@ -218,42 +219,41 @@ def main():
             st.session_state["pubmed_results"] = results
             st.success(f"Found {len(results)} paper(s).")
     
-    # Anzeige der Suchergebnisse (stabil in der Session)
+    # Wenn Suchergebnisse in der Session vorhanden sind, diese anzeigen:
     if "pubmed_results" in st.session_state and st.session_state["pubmed_results"]:
         st.subheader("Search Results")
         st.table(st.session_state["pubmed_results"])
         
-        # Multiselect zum Auswählen von Paper, deren Abstracts angezeigt werden sollen.
+        # Multiselect zur Auswahl der Paper (mit persistentem Key)
         paper_options = [f"{r['Title']} (PMID: {r['PMID']})" for r in st.session_state["pubmed_results"]]
-        selected_papers = st.multiselect("Select paper(s) to view abstracts:", paper_options, key="paper_multiselect")
+        if "selected_papers" not in st.session_state:
+            st.session_state["selected_papers"] = []
+        selected_papers = st.multiselect("Select paper(s) to view abstracts:", paper_options, key="paper_multiselect",
+                                         default=st.session_state["selected_papers"])
         st.session_state["selected_papers"] = selected_papers
         
-        # Zweites "Fenster" (Expander) für die ausgewählten Paper
+        # Separates Fenster (Expander) zur Anzeige der Abstracts
         with st.expander("Selected Papers Details", expanded=True):
-            if st.session_state["selected_papers"]:
-                selected_info = []
-                for option in st.session_state["selected_papers"]:
-                    try:
-                        pmid = option.split("PMID: ")[1].rstrip(")")
-                    except IndexError:
-                        pmid = ""
-                    if pmid:
-                        abstract = fetch_pubmed_abstract(pmid)
-                        # Sammle die Infos in einer Liste für den Download
-                        selected_info.append({"Paper": option, "Abstract": abstract})
-                        st.subheader(f"Abstract for PMID {pmid}")
-                        st.write(abstract)
-                if selected_info:
-                    # Download-Button für die ausgewählten Paper
-                    excel_data_selected = convert_results_to_excel(selected_info)
-                    st.download_button(
-                        label="Download Selected Papers as Excel",
-                        data=excel_data_selected,
-                        file_name="Selected_Papers.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-            else:
-                st.info("No papers selected.")
+            selected_info = []
+            for option in selected_papers:
+                try:
+                    pmid = option.split("PMID: ")[1].rstrip(")")
+                except IndexError:
+                    pmid = ""
+                if pmid:
+                    abstract = fetch_pubmed_abstract(pmid)
+                    selected_info.append({"Paper": option, "Abstract": abstract})
+                    st.subheader(f"Abstract for PMID {pmid}")
+                    st.write(abstract)
+            # Download-Button für die ausgewählten Paper
+            if selected_info:
+                excel_data_selected = convert_results_to_excel(selected_info)
+                st.download_button(
+                    label="Download Selected Papers as Excel",
+                    data=excel_data_selected,
+                    file_name="Selected_Papers.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
         
         # Download-Button für alle Suchergebnisse
         excel_data_all = convert_results_to_excel(st.session_state["pubmed_results"])
@@ -268,3 +268,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
