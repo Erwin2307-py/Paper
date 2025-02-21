@@ -65,10 +65,10 @@ def check_europe_pmc_connection(timeout=10):
         return False
 
 #############################################
-# Top API Selection Bar (fixed at the top)
+# Top Green Bar with API Selection (Fixed at the top)
 #############################################
 def top_api_selection():
-    # Create a full-width green bar at the top with a height of 3cm.
+    # This creates a full-width green bar (3cm high) fixed at the top.
     st.markdown(
         """
         <div style="
@@ -88,7 +88,7 @@ def top_api_selection():
         """,
         unsafe_allow_html=True
     )
-    # Place the API selection multiselect inside the green bar.
+    # Place the API selection multiselect widget inside the green bar.
     options = [
         "Europe PMC",
         "PubMed",
@@ -102,7 +102,7 @@ def top_api_selection():
     selected = st.multiselect("Select APIs:", options, default=st.session_state["selected_apis"], key="top_api_select", label_visibility="collapsed")
     st.session_state["selected_apis"] = selected
 
-    # Display connection statuses as inline "buttons" (styled divs)
+    # Display connection statuses as inline "labels"
     status_msgs = []
     if "PubMed" in selected:
         if check_pubmed_connection():
@@ -138,14 +138,15 @@ def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
     
     # Inject CSS to force buttons to be equal width and stacked vertically.
-    st.markdown(
+    st.sidebar.markdown(
         """
         <style>
         .module-btn {
             width: 100%;
-            padding: 10px 0;
+            padding: 10px;
             margin-bottom: 10px;
             font-size: 16px;
+            text-align: center;
         }
         </style>
         """,
@@ -162,7 +163,8 @@ def sidebar_module_navigation():
     ]
     
     for label, key in modules:
-        if st.sidebar.button(label, key=key, help=label, css_class="module-btn"):
+        # We use st.sidebar.button() without css_class.
+        if st.sidebar.button(label, key=key, help=label):
             st.session_state["selected_module"] = key
 
     if "selected_module" not in st.session_state:
@@ -173,7 +175,7 @@ def sidebar_module_navigation():
 # Main Streamlit App
 #############################################
 def main():
-    # Remove margins so that the top bar is flush.
+    # Remove default margins so the green bar is flush.
     st.markdown(
         """
         <style>
@@ -189,7 +191,7 @@ def main():
     # Call the top green bar so it remains fixed at the top.
     top_api_selection()
     
-    # Add top padding so the main content does not hide behind the fixed green bar.
+    # Add top padding so main content doesn't hide behind the fixed green bar.
     st.markdown("<div style='padding-top: 3.2cm;'></div>", unsafe_allow_html=True)
     
     st.title("API Connection Checker")
@@ -199,10 +201,10 @@ def main():
     # Sidebar navigation with vertical buttons.
     sidebar_module_navigation()
     
-    # Load module based on selection.
+    # Load module based on the selection.
     module = st.session_state.get("selected_module", "api_selection")
     if module == "api_selection":
-        st.info("API Selection is available in the top bar.")
+        st.info("API Selection is available in the top green bar.")
     elif module == "online_filter":
         from modules.online_filter import module_online_filter
         module_online_filter()
