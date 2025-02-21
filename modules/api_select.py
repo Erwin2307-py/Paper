@@ -210,7 +210,6 @@ def main():
     st.header("Search PubMed")
     search_query = st.text_input("Enter a search query for PubMed:")
     
-    # Wenn "Search" geklickt wird, speichern wir die Ergebnisse in der Session
     if st.button("Search"):
         if not search_query.strip():
             st.warning("Please enter a search query.")
@@ -219,23 +218,25 @@ def main():
             st.session_state["pubmed_results"] = results
             st.success(f"Found {len(results)} paper(s).")
     
-    # Wenn Suchergebnisse in der Session vorhanden sind, diese anzeigen:
+    # Anzeige der Suchergebnisse (immer sichtbar, wenn vorhanden)
     if "pubmed_results" in st.session_state and st.session_state["pubmed_results"]:
         st.subheader("Search Results")
         st.table(st.session_state["pubmed_results"])
         
-        # Multiselect zur Auswahl der Paper (mit persistentem Key)
+        # Selectbox zum Auswählen eines Papers, das hinzugefügt werden soll
         paper_options = [f"{r['Title']} (PMID: {r['PMID']})" for r in st.session_state["pubmed_results"]]
-        if "selected_papers" not in st.session_state:
-            st.session_state["selected_papers"] = []
-        selected_papers = st.multiselect("Select paper(s) to view abstracts:", paper_options, key="paper_multiselect",
-                                         default=st.session_state["selected_papers"])
-        st.session_state["selected_papers"] = selected_papers
-        
-        # Separates Fenster (Expander) zur Anzeige der Abstracts
-        with st.expander("Selected Papers Details", expanded=True):
+        selected_paper = st.selectbox("Select a paper to add to your selection:", paper_options, key="paper_select")
+        if st.button("Add Paper"):
+            if "displayed_papers" not in st.session_state:
+                st.session_state["displayed_papers"] = []
+            if selected_paper not in st.session_state["displayed_papers"]:
+                st.session_state["displayed_papers"].append(selected_paper)
+    
+    # Anzeige der persistierten ausgewählten Paper und deren Abstracts in einem Expander
+    with st.expander("Selected Papers Details", expanded=True):
+        if "displayed_papers" in st.session_state and st.session_state["displayed_papers"]:
             selected_info = []
-            for option in selected_papers:
+            for option in st.session_state["displayed_papers"]:
                 try:
                     pmid = option.split("PMID: ")[1].rstrip(")")
                 except IndexError:
@@ -254,8 +255,11 @@ def main():
                     file_name="Selected_Papers.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
-        
-        # Download-Button für alle Suchergebnisse
+        else:
+            st.info("No papers have been added yet.")
+    
+    # Download-Button für alle Suchergebnisse
+    if "pubmed_results" in st.session_state and st.session_state["pubmed_results"]:
         excel_data_all = convert_results_to_excel(st.session_state["pubmed_results"])
         st.download_button(
             label="Download All Search Results as Excel",
@@ -268,4 +272,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
