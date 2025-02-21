@@ -68,7 +68,6 @@ def check_core_aggregate_connection(api_key, timeout=15):
 #############################################
 # PubMed Connection Check and Search Function
 #############################################
-
 def check_pubmed_connection(timeout=10):
     test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": "test", "retmode": "json"}
@@ -349,29 +348,36 @@ def main():
         # Liste für Download-Daten
         selected_details = []
         
-        # Abstracts der ausgewählten Paper anzeigen
+        # Abstracts der ausgewählten Paper anzeigen -> Fontsize=10px per HTML/CSS.
         for paper_str in st.session_state["selected_papers"]:
             try:
                 pmid = paper_str.split("PMID: ")[1].rstrip(")")
             except IndexError:
                 pmid = ""
             if pmid:
-                # Metadaten (Titel etc.) aus pubmed_results
                 meta = next((x for x in st.session_state["pubmed_results"] if x["PMID"] == pmid), {})
-                # Hole Abstract
                 abstract_text = fetch_pubmed_abstract(pmid)
                 
-                # Anzeigen
-                st.subheader(f"Abstract for PMID {pmid}")
-                st.write(f"**Title:** {meta.get('Title', 'n/a')}")
-                # Journal + Year anzeigen
-                st.write(f"**Year:** {meta.get('Year', 'n/a')}")
-                st.write(f"**Journal:** {meta.get('Journal', 'n/a')}")
-
-                st.write("**Abstract:**")
-                st.write(abstract_text)
+                # Infos zum Paper in kleiner Schriftgröße (10px).
+                st.markdown(
+                    f"<p style='font-size:10px;'><strong>Abstract for PMID {pmid}</strong></p>",
+                    unsafe_allow_html=True
+                )
+                st.markdown(
+                    f"<p style='font-size:10px;'><strong>Title:</strong> {meta.get('Title','n/a')}</p>",
+                    unsafe_allow_html=True
+                )
+                st.markdown(
+                    f"<p style='font-size:10px;'><strong>Year:</strong> {meta.get('Year','n/a')}</p>",
+                    unsafe_allow_html=True
+                )
+                st.markdown(
+                    f"<p style='font-size:10px;'><strong>Journal:</strong> {meta.get('Journal','n/a')}</p>",
+                    unsafe_allow_html=True
+                )
+                st.markdown("<p style='font-size:10px;'><strong>Abstract:</strong></p>", unsafe_allow_html=True)
+                st.markdown(f"<p style='font-size:10px;'>{abstract_text}</p>", unsafe_allow_html=True)
                 
-                # Speichern für Excel-Download
                 selected_details.append({
                     "PMID": pmid,
                     "Title": meta.get("Title", "n/a"),
@@ -416,3 +422,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
