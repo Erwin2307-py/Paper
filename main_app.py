@@ -1,5 +1,6 @@
 import streamlit as st
 import requests
+import xml.etree.ElementTree as ET
 
 # Must be the very first Streamlit command!
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
@@ -62,7 +63,7 @@ def check_core_aggregate_connection(api_key, timeout=15):
         return False
 
 #############################################
-# PubMed Connection Check
+# PubMed Connection Check and Search Function
 #############################################
 def check_pubmed_connection(timeout=10):
     test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
@@ -75,25 +76,8 @@ def check_pubmed_connection(timeout=10):
     except Exception:
         return False
 
-#############################################
-# Europe PMC Connection Check
-#############################################
-def check_europe_pmc_connection(timeout=10):
-    test_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
-    params = {"query": "test", "format": "json"}
-    try:
-        r = requests.get(test_url, params=params, timeout=timeout)
-        r.raise_for_status()
-        data = r.json()
-        return "resultList" in data and "result" in data["resultList"]
-    except Exception:
-        return False
-
-#############################################
-# Search Function for PubMed (for example)
-#############################################
 def search_pubmed(query):
-    """Führt eine Suche über PubMed durch und gibt eine Liste mit Titel und PMID zurück."""
+    """Führt eine PubMed-Suche durch und gibt eine Liste mit Titel und PMID zurück."""
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 100}
     try:
@@ -118,6 +102,36 @@ def search_pubmed(query):
     except Exception as e:
         st.error(f"Error searching PubMed: {e}")
         return []
+
+def fetch_pubmed_abstract(pmid):
+    """Holt das Abstract zu einer PubMed-ID via eFetch."""
+    url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+    params = {"db": "pubmed", "id": pmid, "retmode": "xml"}
+    try:
+        r = requests.get(url, params=params, timeout=10)
+        r.raise_for_status()
+        root = ET.fromstring(r.content)
+        abs_text = ""
+        for elem in root.findall(".//AbstractText"):
+            if elem.text:
+                abs_text += elem.text + "\n"
+        return abs_text if abs_text.strip() != "" else "(No abstract available)"
+    except Exception as e:
+        return f"(Error: {e})"
+
+#############################################
+# Europe PMC Connection Check
+#############################################
+def check_europe_pmc_connection(timeout=10):
+    test_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+    params = {"query": "test", "format": "json"}
+    try:
+        r = requests.get(test_url, params=params, timeout=timeout)
+        r.raise_for_status()
+        data = r.json()
+        return "resultList" in data and "result" in data["resultList"]
+    except Exception:
+        return False
 
 #############################################
 # Top Green Bar with API Selection (Fixed at the top)
@@ -246,7 +260,7 @@ def main():
     
     sidebar_module_navigation()
     
-    # Beispiel: Wir integrieren hier ein einfaches Suchfeld, mit dem über PubMed gesucht werden kann.
+    # Beispiel: PubMed-Suchfeld, das auch die Anzahl gefundener Paper anzeigt.
     st.header("Search PubMed")
     search_query = st.text_input("Enter a search query for PubMed:", "")
     if st.button("Search"):
@@ -258,6 +272,19 @@ def main():
             if results:
                 # Zeige in einer Tabelle die Titel und PubMed IDs an.
                 st.table(results)
+                
+                # Auswahlfeld zum Anklicken eines Paper für den Abstract.
+                paper_options = [f"{r['Title']} (PMID: {r['PMID']})" for r in results]
+                selected_paper = st.selectbox("Select a paper to view its abstract:", paper_options)
+                # Extrahiere die PMID aus der Auswahl:
+                try:
+                    selected_pmid = selected_paper.split("PMID: ")[1].rstrip(")")
+                except IndexError:
+                    selected_pmid = ""
+                if selected_pmid:
+                    abstract = fetch_pubmed_abstract(selected_pmid)
+                    st.subheader("Abstract")
+                    st.write(abstract)
             else:
                 st.info("No results found.")
     
@@ -284,5 +311,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
 
 
