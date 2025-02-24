@@ -4,12 +4,10 @@ import xml.etree.ElementTree as ET
 import pandas as pd
 from io import BytesIO
 
-# Wenn du Hilfsfunktionen im gleichen Skript haben willst, kannst du sie hier behalten.
-# Sollten sie jedoch in "api_select.py" benötigt werden, dürfen wir keinen
-# zirkulären Import erzeugen. Dann wäre es ratsam, sie in ein drittes Modul
-# (z.B. "helpers.py") auszulagern.
+st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
+
 #############################################
-# CORE Aggregate API Class und Verbindungstest
+# CORE Aggregate API Class and Connection Check
 #############################################
 class CoreAPI:
     def __init__(self, api_key):
@@ -68,7 +66,7 @@ def search_core_aggregate(query):
         return []
 
 #############################################
-# PubMed Verbindungstest und Suche
+# PubMed Connection Check + Search
 #############################################
 def check_pubmed_connection(timeout=10):
     test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
@@ -135,7 +133,7 @@ def fetch_pubmed_abstract(pmid):
         return f"(Error: {e})"
 
 #############################################
-# Europe PMC Verbindungstest und Suche
+# Europe PMC Connection Check + Search
 #############################################
 def check_europe_pmc_connection(timeout=10):
     test_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
@@ -184,6 +182,9 @@ def search_europe_pmc(query):
 #############################################
 # Excel-Hilfsfunktion
 #############################################
+import pandas as pd
+from io import BytesIO
+
 def convert_results_to_excel(data):
     df = pd.DataFrame(data)
     output = BytesIO()
@@ -196,11 +197,66 @@ def convert_results_to_excel(data):
     return output.getvalue()
 
 #############################################
-# Beispiel-Seitenfunktionen
+# Pages
 #############################################
+
 def page_home():
     st.title("Welcome to the Main Menu")
     st.write("Choose a module in the sidebar to proceed.")
+
+def page_api_selection():
+    st.title("API Selection & Connection Status")
+    st.write("Auf dieser Seite kannst du die zu verwendenden APIs wählen und den Verbindungsstatus prüfen.")
+
+    # Wir ermöglichen hier direkt die Auswahl der APIs:
+    all_apis = [
+        "Europe PMC",
+        "PubMed",
+        "CORE Aggregate",
+        "OpenAlex",
+        "Google Scholar",
+        "Semantic Scholar"
+    ]
+    if "selected_apis" not in st.session_state:
+        st.session_state["selected_apis"] = ["Europe PMC"]
+
+    chosen_apis = st.multiselect(
+        "Select APIs to use:",
+        all_apis,
+        default=st.session_state["selected_apis"]
+    )
+    st.session_state["selected_apis"] = chosen_apis
+
+    st.write("Currently selected APIs:", chosen_apis)
+
+    # Verbindungstest
+    st.subheader("Connection Tests")
+    msgs = []
+    if "PubMed" in chosen_apis:
+        if check_pubmed_connection():
+            msgs.append("PubMed: OK")
+        else:
+            msgs.append("PubMed: FAIL")
+    if "Europe PMC" in chosen_apis:
+        if check_europe_pmc_connection():
+            msgs.append("Europe PMC: OK")
+        else:
+            msgs.append("Europe PMC: FAIL")
+    if "CORE Aggregate" in chosen_apis:
+        core_key = st.secrets.get("CORE_API_KEY", "")
+        if core_key and check_core_aggregate_connection(core_key):
+            msgs.append("CORE: OK")
+        else:
+            msgs.append("CORE: FAIL (No valid key or no connection)")
+
+    if msgs:
+        for m in msgs:
+            st.write("- ", m)
+    else:
+        st.write("No APIs selected or no checks performed.")
+
+    if st.button("Back to Main Menu"):
+        st.session_state["current_page"] = "Home"
 
 def page_online_filter():
     st.title("Online Filter Settings")
@@ -233,18 +289,15 @@ def page_extended_topics():
         st.session_state["current_page"] = "Home"
 
 #############################################
-# Seiten-Navigation über Sidebar
+# Sidebar Module Navigation
 #############################################
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
-    
-    # (1) Modul-Funktion importieren
-    from modul.api_select import page_api_selection
 
-    # Dictionary: Label -> Seiten-Funktion
+    # Wir legen ein Dictionary an, das die Seiten-Funktionen referenziert
     pages = {
         "Home": page_home,
-        "API Selection": page_api_selection,
+        "1) API Selection": page_api_selection,
         "2) Online Filter": page_online_filter,
         "3) Codewords & PubMed": page_codewords_pubmed,
         "4) Paper Selection": page_paper_selection,
@@ -252,6 +305,7 @@ def sidebar_module_navigation():
         "6) Extended Topics": page_extended_topics
     }
 
+    # Erzeugen Buttons für jede Seite
     for label in pages.keys():
         if st.sidebar.button(label):
             st.session_state["current_page"] = label
@@ -259,15 +313,13 @@ def sidebar_module_navigation():
     if "current_page" not in st.session_state:
         st.session_state["current_page"] = "Home"
 
+    # Gib die gerade gewählte Seitenfunktion zurück
     return pages[st.session_state["current_page"]]
 
 #############################################
-# Hauptfunktion
+# Main Streamlit App
 #############################################
 def main():
-    st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
-    
-    # Kleines Style-Block
     st.markdown(
         """
         <style>
@@ -280,7 +332,9 @@ def main():
         unsafe_allow_html=True
     )
 
+    # Navigation
     page_fn = sidebar_module_navigation()
+    # Rendering der ausgewählten Seite
     page_fn()
 
 if __name__ == '__main__':
