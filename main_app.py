@@ -19,7 +19,7 @@ class CoreAPI:
         params = {"q": query, "limit": limit}
         if filters:
             filter_expressions = []
-            for key, value in filters.items():
+            for key, value in (filters or {}).items():
                 filter_expressions.append(f"{key}:{value}")
             params["filter"] = ",".join(filter_expressions)
         if sort:
@@ -36,7 +36,7 @@ class CoreAPI:
 def check_core_aggregate_connection(api_key, timeout=15):
     try:
         core = CoreAPI(api_key)
-        result = core.search_publications("test", limit=100)
+        result = core.search_publications("test", limit=1)
         return "results" in result
     except Exception:
         return False
@@ -204,11 +204,57 @@ def page_home():
     st.title("Welcome to the Main Menu")
     st.write("Choose a module in the sidebar to proceed.")
 
-
 def page_api_selection():
     st.title("API Selection & Connection Status")
-    st.write("Here you can see / choose which APIs are currently selected and see if their connection is working.")
-    st.info("Use the sidebar to change your API selections. This page only displays the status.")
+    st.write("Auf dieser Seite kannst du die zu verwendenden APIs wählen und den Verbindungsstatus prüfen.")
+
+    # Wir ermöglichen hier direkt die Auswahl der APIs:
+    all_apis = [
+        "Europe PMC",
+        "PubMed",
+        "CORE Aggregate",
+        "OpenAlex",
+        "Google Scholar",
+        "Semantic Scholar"
+    ]
+    if "selected_apis" not in st.session_state:
+        st.session_state["selected_apis"] = ["Europe PMC"]
+
+    chosen_apis = st.multiselect(
+        "Select APIs to use:",
+        all_apis,
+        default=st.session_state["selected_apis"]
+    )
+    st.session_state["selected_apis"] = chosen_apis
+
+    st.write("Currently selected APIs:", chosen_apis)
+
+    # Verbindungstest
+    st.subheader("Connection Tests")
+    msgs = []
+    if "PubMed" in chosen_apis:
+        if check_pubmed_connection():
+            msgs.append("PubMed: OK")
+        else:
+            msgs.append("PubMed: FAIL")
+    if "Europe PMC" in chosen_apis:
+        if check_europe_pmc_connection():
+            msgs.append("Europe PMC: OK")
+        else:
+            msgs.append("Europe PMC: FAIL")
+    if "CORE Aggregate" in chosen_apis:
+        core_key = st.secrets.get("CORE_API_KEY", "")
+        if core_key and check_core_aggregate_connection(core_key):
+            msgs.append("CORE: OK")
+        else:
+            msgs.append("CORE: FAIL (No valid key or no connection)")
+
+    if msgs:
+        for m in msgs:
+            st.write("- ", m)
+    else:
+        st.write("No APIs selected or no checks performed.")
+
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
@@ -263,16 +309,13 @@ def sidebar_module_navigation():
 
     if "current_page" not in st.session_state:
         st.session_state["current_page"] = "Home"
-    # st.sidebar.write(f"Selected page: {st.session_state['current_page']}")
     
-    # Return the function for the current page
     return pages[st.session_state["current_page"]]
 
 #############################################
 # Main Streamlit App
 #############################################
 def main():
-    # Default page is "Home"
     st.markdown(
         """
         <style>
@@ -284,11 +327,9 @@ def main():
         """,
         unsafe_allow_html=True
     )
-    
-    # Draw the selected page
+
     page_fn = sidebar_module_navigation()
     page_fn()
 
 if __name__ == '__main__':
     main()
-
