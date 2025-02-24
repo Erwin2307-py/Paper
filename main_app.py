@@ -220,11 +220,7 @@ def page_api_selection():
     if "selected_apis" not in st.session_state:
         st.session_state["selected_apis"] = ["Europe PMC"]
 
-    chosen_apis = st.multiselect(
-        "Select APIs to use:",
-        all_apis,
-        default=st.session_state["selected_apis"]
-    )
+    chosen_apis = [api for api in all_apis if st.checkbox(api, value=api in st.session_state["selected_apis"])]
     st.session_state["selected_apis"] = chosen_apis
 
     st.write("Currently selected APIs:", chosen_apis)
