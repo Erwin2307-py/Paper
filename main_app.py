@@ -6,9 +6,10 @@ from io import BytesIO
 
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
-#############################################
-# CORE Aggregate API Class and Connection Check
-#############################################
+# -------------------------------
+# Hier stehen alle Hilfsfunktionen
+# (CORE, PubMed, Europe PMC, etc.)
+# -------------------------------
 class CoreAPI:
     def __init__(self, api_key):
         self.base_url = "https://api.core.ac.uk/v3/"
@@ -65,9 +66,6 @@ def search_core_aggregate(query):
         st.error(f"CORE search error: {e}")
         return []
 
-#############################################
-# PubMed Connection Check + Search
-#############################################
 def check_pubmed_connection(timeout=10):
     test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": "test", "retmode": "json"}
@@ -96,7 +94,7 @@ def search_pubmed(query):
         r2 = requests.get(esummary_url, params=sum_params, timeout=10)
         r2.raise_for_status()
         summary_data = r2.json().get("result", {})
-
+        
         for pmid in idlist:
             info = summary_data.get(pmid, {})
             title = info.get("title", "n/a")
@@ -132,9 +130,6 @@ def fetch_pubmed_abstract(pmid):
     except Exception as e:
         return f"(Error: {e})"
 
-#############################################
-# Europe PMC Connection Check + Search
-#############################################
 def check_europe_pmc_connection(timeout=10):
     test_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {"query": "test", "format": "json", "pageSize": 100}
@@ -179,9 +174,6 @@ def search_europe_pmc(query):
         st.error(f"Europe PMC search error: {e}")
         return []
 
-#############################################
-# Excel-Hilfsfunktion
-#############################################
 import pandas as pd
 from io import BytesIO
 
@@ -196,19 +188,32 @@ def convert_results_to_excel(data):
             pass
     return output.getvalue()
 
-#############################################
-# Pages
-#############################################
+# --------------- PAGES ---------------
 
 def page_home():
     st.title("Welcome to the Main Menu")
     st.write("Choose a module in the sidebar to proceed.")
 
-def page_api_selection():
-    st.title("API Selection & Connection Status")
-    st.write("Auf dieser Seite kannst du die zu verwendenden APIs wählen und den Verbindungsstatus prüfen.")
 
-    # Wir ermöglichen hier direkt die Auswahl der APIs:
+def page_api_selection():
+    """
+    Hier verwenden wir Checkboxen statt Multiselect.
+    """
+    st.title("API Selection & Connection Status (Checkbox Version)")
+
+    # Kleines CSS für den Confirm-Button
+    st.markdown(
+        """
+        <style>
+        div.stButton > button:first-child {
+            background-color: green;
+            color: white;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
     all_apis = [
         "Europe PMC",
         "PubMed",
@@ -220,43 +225,64 @@ def page_api_selection():
     if "selected_apis" not in st.session_state:
         st.session_state["selected_apis"] = ["Europe PMC"]
 
-    chosen_apis = st.multiselect(
-        "Select APIs to use:",
-        all_apis,
-        default=st.session_state["selected_apis"]
-    )
-    st.session_state["selected_apis"] = chosen_apis
+    st.write("Wähle deine APIs über Checkboxen:")
 
-    st.write("Currently selected APIs:", chosen_apis)
+    # Temporäre Set-Struktur
+    selected_apis_temp = set(st.session_state["selected_apis"])
+
+    for api in all_apis:
+        is_checked = (api in selected_apis_temp)
+        chk_state = st.checkbox(api, value=is_checked, key=f"chk_{api}")
+
+        if chk_state:
+            # Roter Hinweis
+            st.markdown(
+                f"<div style='background-color:red; color:white; padding:4px; margin-bottom:8px;'>"
+                f"{api} is selected</div>",
+                unsafe_allow_html=True
+            )
+        else:
+            st.write(f"{api} is not selected")
+
+    st.write("---")
+    # Button zum Speichern der Auswahl
+    if st.button("Confirm selection"):
+        new_selection = []
+        for api in all_apis:
+            if st.session_state.get(f"chk_{api}", False):
+                new_selection.append(api)
+        st.session_state["selected_apis"] = new_selection
+        st.success(f"API selection updated: {new_selection}")
 
     # Verbindungstest
     st.subheader("Connection Tests")
     msgs = []
-    if "PubMed" in chosen_apis:
+    if "PubMed" in st.session_state["selected_apis"]:
         if check_pubmed_connection():
             msgs.append("PubMed: OK")
         else:
             msgs.append("PubMed: FAIL")
-    if "Europe PMC" in chosen_apis:
+    if "Europe PMC" in st.session_state["selected_apis"]:
         if check_europe_pmc_connection():
             msgs.append("Europe PMC: OK")
         else:
             msgs.append("Europe PMC: FAIL")
-    if "CORE Aggregate" in chosen_apis:
+    if "CORE Aggregate" in st.session_state["selected_apis"]:
         core_key = st.secrets.get("CORE_API_KEY", "")
         if core_key and check_core_aggregate_connection(core_key):
             msgs.append("CORE: OK")
         else:
-            msgs.append("CORE: FAIL (No valid key or no connection)")
+            msgs.append("CORE: FAIL")
 
     if msgs:
         for m in msgs:
             st.write("- ", m)
     else:
-        st.write("No APIs selected or no checks performed.")
+        st.write("(No APIs selected or no checks performed)")
 
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
+
 
 def page_online_filter():
     st.title("Online Filter Settings")
@@ -288,13 +314,11 @@ def page_extended_topics():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-#############################################
-# Sidebar Module Navigation
-#############################################
+# --------------- SIDEBAR NAV --------------
+
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
 
-    # Wir legen ein Dictionary an, das die Seiten-Funktionen referenziert
     pages = {
         "Home": page_home,
         "1) API Selection": page_api_selection,
@@ -305,7 +329,6 @@ def sidebar_module_navigation():
         "6) Extended Topics": page_extended_topics
     }
 
-    # Erzeugen Buttons für jede Seite
     for label in pages.keys():
         if st.sidebar.button(label):
             st.session_state["current_page"] = label
@@ -313,12 +336,9 @@ def sidebar_module_navigation():
     if "current_page" not in st.session_state:
         st.session_state["current_page"] = "Home"
 
-    # Gib die gerade gewählte Seitenfunktion zurück
     return pages[st.session_state["current_page"]]
 
-#############################################
-# Main Streamlit App
-#############################################
+
 def main():
     st.markdown(
         """
@@ -334,9 +354,8 @@ def main():
 
     # Navigation
     page_fn = sidebar_module_navigation()
-    # Rendering der ausgewählten Seite
+    # Rendering
     page_fn()
 
 if __name__ == '__main__':
     main()
-
