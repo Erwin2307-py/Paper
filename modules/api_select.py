@@ -1,13 +1,17 @@
-# -------------------- api_select.py --------------------
+# modulapi_select.py
+
 import streamlit as st
 import requests
 import xml.etree.ElementTree as ET
 
 ###############################################################################
-# Hier stehen die Funktionen für PubMed/Europe PMC/CORE Checks + die Page-Funktion
+# Verbindungstest-Funktionen für PubMed, Europe PMC und CORE
 ###############################################################################
 
 def check_pubmed_connection(timeout=10):
+    """
+    Prüft, ob eine Verbindung zu PubMed hergestellt werden kann.
+    """
     test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": "test", "retmode": "json"}
     try:
@@ -19,6 +23,9 @@ def check_pubmed_connection(timeout=10):
         return False
 
 def check_europe_pmc_connection(timeout=10):
+    """
+    Prüft, ob eine Verbindung zu Europe PMC hergestellt werden kann.
+    """
     test_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {"query": "test", "format": "json", "pageSize": 100}
     try:
@@ -30,16 +37,20 @@ def check_europe_pmc_connection(timeout=10):
         return False
 
 class CoreAPI:
+    """
+    Klasse für CORE Aggregate-Abfragen.
+    """
     def __init__(self, api_key):
         self.base_url = "https://api.core.ac.uk/v3/"
         self.headers = {"Authorization": f"Bearer {api_key}"}
 
     def test_connection(self):
-        # Ein Minimal-Test
-        url = self.base_url + "search/works"
-        params = {"q": "test", "limit": 1}
+        """
+        Testet die Verbindung, indem wir nach 'test' suchen (limit=1).
+        """
         try:
-            import requests
+            url = self.base_url + "search/works"
+            params = {"q": "test", "limit": 1}
             r = requests.get(url, headers=self.headers, params=params, timeout=10)
             r.raise_for_status()
             js = r.json()
@@ -48,23 +59,31 @@ class CoreAPI:
             return False
 
 def check_core_aggregate_connection():
-    # Lesen wir den KEY aus st.secrets (alternativ kann man ihn anders übergeben)
+    """
+    Prüft, ob eine Verbindung zu CORE Aggregate möglich ist.
+    Erwartet den CORE_API_KEY in st.secrets.
+    """
     key = st.secrets.get("CORE_API_KEY", "")
     if not key:
         return False
+
     c = CoreAPI(key)
     return c.test_connection()
 
+###############################################################################
+# Haupt-Seitenfunktion: page_api_selection
+###############################################################################
 
 def page_api_selection():
     """
-    Zeigt alle APIs als Checkboxen an,
-    markiert sie rot/grün je nach Verbindung
-    und speichert die Auswahl in st.session_state["selected_apis"].
+    Zeigt die Seite "API Selection & Connection Status" an.
+    Hier verwenden wir Checkboxen (statt Dropdown), 
+    prüfen bei Bedarf die Verbindung (rot/grün) 
+    und speichern die Auswahl in st.session_state["selected_apis"].
     """
-    st.title("API Selection & Connection Status (Ausgelagertes Modul: api_select)")
+    st.title("API Selection & Connection Status (Modul: modulapi_select.py)")
 
-    # Ein wenig CSS, um ggf. den Confirm-Button grün zu färben.
+    # Kleines CSS, um den Confirm-Button grün zu färben:
     st.markdown(
         """
         <style>
@@ -77,30 +96,28 @@ def page_api_selection():
         unsafe_allow_html=True
     )
 
-    # Liste der möglichen APIs
+    # Liste der APIs
     all_apis = [
         "Europe PMC",
         "PubMed",
         "CORE Aggregate"
     ]
-
-    # Falls noch keine Auswahl existiert
+    # Standard-Auswahl
     if "selected_apis" not in st.session_state:
         st.session_state["selected_apis"] = ["Europe PMC"]
 
-    st.write("Bitte wähle die gewünschten APIs via Checkbox:")
+    st.write("Bitte wähle deine APIs per Checkbox:")
 
-    # Temporäre Set, um initiale Auswahl zu erkennen
+    # Vorbelegung
     selected_apis_temp = set(st.session_state["selected_apis"])
 
+    # Checkboxen + farbliche Markierung
     for api in all_apis:
-        # Prüfe, ob diese API bisher ausgewählt ist
         is_checked = (api in selected_apis_temp)
-        check_state = st.checkbox(api, value=is_checked, key="chk_"+api)
+        cb_value = st.checkbox(api, value=is_checked, key=f"chk_{api}")
 
-        # Nun machen wir eine Verbindungskontrolle, wenn checkbox = True
-        # Rote = offline, Grüne = online
-        if check_state:
+        if cb_value:
+            # Verbindung testen
             connected = False
             if api == "PubMed":
                 connected = check_pubmed_connection()
@@ -110,33 +127,36 @@ def page_api_selection():
                 connected = check_core_aggregate_connection()
 
             if connected:
+                # Grün
                 st.markdown(
                     f"<div style='background-color:green; color:white; padding:4px; margin-bottom:8px;'>"
                     f"{api} -> Connection OK</div>",
                     unsafe_allow_html=True
                 )
             else:
+                # Rot
                 st.markdown(
                     f"<div style='background-color:red; color:white; padding:4px; margin-bottom:8px;'>"
-                    f"{api} -> Connection FAILED</div>",
+                    f"{api} -> Connection FAIL</div>",
                     unsafe_allow_html=True
                 )
         else:
             st.write(f"{api} is not selected")
 
     st.write("---")
-    # Confirm-Button
+
+    # Confirm-Button: aktualisiert st.session_state["selected_apis"]
     if st.button("Confirm selection"):
-        # Lese die Checkbox-Zustände aus
         new_list = []
         for api in all_apis:
-            if st.session_state.get("chk_"+api, False):
+            if st.session_state.get(f"chk_{api}", False):
                 new_list.append(api)
         st.session_state["selected_apis"] = new_list
         st.success(f"API selection updated: {new_list}")
 
-    st.write("Aktuell ausgewählte APIs:", st.session_state["selected_apis"])
+    st.write("Derzeit gewählte APIs:", st.session_state["selected_apis"])
 
-    # Zurück-Button
+    # Back-Button
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
+
