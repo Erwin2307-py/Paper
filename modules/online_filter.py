@@ -31,40 +31,52 @@ def search_papers(api_name, query):
         url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
         params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 100}
         response = requests.get(url, params=params)
-        ids = response.json().get("esearchresult", {}).get("idlist", [])
-        for id in ids:
-            details_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id={id}&retmode=json"
-            details_response = requests.get(details_url)
-            result = details_response.json().get("result", {}).get(id, {})
-            results.append({
-                "PubMed ID": id,
-                "Title": result.get("title", "N/A"),
-                "Year": result.get("pubdate", "N/A"),
-                "Publisher": result.get("source", "N/A")
-            })
+        try:
+            ids = response.json().get("esearchresult", {}).get("idlist", [])
+            for id in ids:
+                details_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id={id}&retmode=json"
+                details_response = requests.get(details_url)
+                result = details_response.json().get("result", {}).get(id, {})
+                results.append({
+                    "PubMed ID": id,
+                    "Title": result.get("title", "N/A"),
+                    "Year": result.get("pubdate", "N/A"),
+                    "Publisher": result.get("source", "N/A")
+                })
+        except requests.exceptions.JSONDecodeError:
+            st.write("Error decoding JSON from PubMed API")
+
     elif api_name == "Europe PMC":
         url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
         params = {"query": query, "format": "json", "pageSize": 100}
         response = requests.get(url, params=params)
-        for item in response.json().get("resultList", {}).get("result", []):
-            results.append({
-                "PubMed ID": item.get("id", "N/A"),
-                "Title": item.get("title", "N/A"),
-                "Year": item.get("pubYear", "N/A"),
-                "Publisher": item.get("source", "N/A")
-            })
+        try:
+            for item in response.json().get("resultList", {}).get("result", []):
+                results.append({
+                    "PubMed ID": item.get("id", "N/A"),
+                    "Title": item.get("title", "N/A"),
+                    "Year": item.get("pubYear", "N/A"),
+                    "Publisher": item.get("source", "N/A")
+                })
+        except requests.exceptions.JSONDecodeError:
+            st.write("Error decoding JSON from Europe PMC API")
+
     elif api_name == "CORE":
         url = "https://api.core.ac.uk/v3/search/works"
         headers = {"Authorization": "Bearer YOUR_CORE_API_KEY"}
         params = {"q": query, "limit": 100}
         response = requests.get(url, headers=headers, params=params)
-        for item in response.json().get("results", []):
-            results.append({
-                "PubMed ID": item.get("id", "N/A"),
-                "Title": item.get("title", "N/A"),
-                "Year": item.get("year", "N/A"),
-                "Publisher": item.get("publisher", "N/A")
-            })
+        try:
+            for item in response.json().get("results", []):
+                results.append({
+                    "PubMed ID": item.get("id", "N/A"),
+                    "Title": item.get("title", "N/A"),
+                    "Year": item.get("year", "N/A"),
+                    "Publisher": item.get("publisher", "N/A")
+                })
+        except requests.exceptions.JSONDecodeError:
+            st.write("Error decoding JSON from CORE API")
+
     return results
 
 def module_online_filter():
