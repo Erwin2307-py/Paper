@@ -43,7 +43,7 @@ def search_papers(api_name, query):
                     "Year": result.get("pubdate", "N/A"),
                     "Publisher": result.get("source", "N/A")
                 })
-        except requests.exceptions.JSONDecodeError:
+        except (requests.exceptions.JSONDecodeError, ValueError):
             st.write("Error decoding JSON from PubMed API")
 
     elif api_name == "Europe PMC":
@@ -58,7 +58,7 @@ def search_papers(api_name, query):
                     "Year": item.get("pubYear", "N/A"),
                     "Publisher": item.get("source", "N/A")
                 })
-        except requests.exceptions.JSONDecodeError:
+        except (requests.exceptions.JSONDecodeError, ValueError):
             st.write("Error decoding JSON from Europe PMC API")
 
     elif api_name == "CORE":
@@ -74,7 +74,7 @@ def search_papers(api_name, query):
                     "Year": item.get("year", "N/A"),
                     "Publisher": item.get("publisher", "N/A")
                 })
-        except requests.exceptions.JSONDecodeError:
+        except (requests.exceptions.JSONDecodeError, ValueError):
             st.write("Error decoding JSON from CORE API")
 
     return results
