@@ -74,7 +74,9 @@ def module_online_filter():
             selected_sheet = st.selectbox("Select Sheet", sheet_names)
             if selected_sheet:
                 df = pd.read_excel(xls, sheet_name=selected_sheet)
-                names = df['Names'].tolist()
+                column_names = df.columns.tolist()
+                selected_column = st.selectbox("Select Column", column_names)
+                names = df[selected_column].tolist()
                 st.write("Names from Excel:", names)
                 flt["extra_term"] = " OR ".join(names)  # Combine names for search query
         except Exception as e:
