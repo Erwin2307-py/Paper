@@ -52,8 +52,11 @@ def search_papers(api_name, query):
         url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
         params = {"query": query, "format": "json", "pageSize": 100}
         response = requests.post(url, data=params)
+        st.write(f"Europe PMC request URL: {url}")
+        st.write(f"Request parameters: {params}")
         try:
             if response.content:
+                st.write(f"Europe PMC response content: {response.content}")
                 for item in response.json().get("resultList", {}).get("result", []):
                     results.append({
                         "PubMed ID": item.get("id", "N/A"),
