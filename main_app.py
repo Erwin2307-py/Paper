@@ -6,10 +6,9 @@ from io import BytesIO
 
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
-# -------------------------------
-# Hier stehen alle Hilfsfunktionen
-# (CORE, PubMed, Europe PMC, etc.)
-# -------------------------------
+#############################################
+# Hilfsfunktionen (Checks + Search)
+#############################################
 class CoreAPI:
     def __init__(self, api_key):
         self.base_url = "https://api.core.ac.uk/v3/"
@@ -25,12 +24,7 @@ class CoreAPI:
             params["filter"] = ",".join(filter_expressions)
         if sort:
             params["sort"] = sort
-        r = requests.get(
-            self.base_url + endpoint,
-            headers=self.headers,
-            params=params,
-            timeout=15
-        )
+        r = requests.get(self.base_url + endpoint, headers=self.headers, params=params, timeout=15)
         r.raise_for_status()
         return r.json()
 
@@ -42,30 +36,6 @@ def check_core_aggregate_connection(api_key, timeout=15):
     except Exception:
         return False
 
-def search_core_aggregate(query):
-    CORE_API_KEY = st.secrets.get("CORE_API_KEY", "")
-    if not CORE_API_KEY:
-        return []
-    try:
-        core = CoreAPI(CORE_API_KEY)
-        raw = core.search_publications(query, limit=100)
-        out = []
-        results = raw.get("results", [])
-        for item in results:
-            title = item.get("title", "n/a")
-            year = str(item.get("yearPublished", "n/a"))
-            journal = item.get("publisher", "n/a")
-            out.append({
-                "PMID": "n/a",
-                "Title": title,
-                "Year": year,
-                "Journal": journal
-            })
-        return out
-    except Exception as e:
-        st.error(f"CORE search error: {e}")
-        return []
-
 def check_pubmed_connection(timeout=10):
     test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": "test", "retmode": "json"}
@@ -74,61 +44,8 @@ def check_pubmed_connection(timeout=10):
         r.raise_for_status()
         data = r.json()
         return "esearchresult" in data
-    except Exception:
+    except:
         return False
-
-def search_pubmed(query):
-    esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-    params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 100}
-    out = []
-    try:
-        r = requests.get(esearch_url, params=params, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        idlist = data.get("esearchresult", {}).get("idlist", [])
-        if not idlist:
-            return out
-        
-        esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
-        sum_params = {"db": "pubmed", "id": ",".join(idlist), "retmode": "json"}
-        r2 = requests.get(esummary_url, params=sum_params, timeout=10)
-        r2.raise_for_status()
-        summary_data = r2.json().get("result", {})
-        
-        for pmid in idlist:
-            info = summary_data.get(pmid, {})
-            title = info.get("title", "n/a")
-            pubdate = info.get("pubdate", "")
-            year = pubdate[:4] if pubdate else "n/a"
-            journal = info.get("fulljournalname", "n/a")
-            out.append({
-                "PMID": pmid,
-                "Title": title,
-                "Year": year,
-                "Journal": journal
-            })
-        return out
-    except Exception as e:
-        st.error(f"Error searching PubMed: {e}")
-        return []
-
-def fetch_pubmed_abstract(pmid):
-    url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
-    params = {"db": "pubmed", "id": pmid, "retmode": "xml"}
-    try:
-        r = requests.get(url, params=params, timeout=10)
-        r.raise_for_status()
-        root = ET.fromstring(r.content)
-        abs_text = []
-        for elem in root.findall(".//AbstractText"):
-            if elem.text:
-                abs_text.append(elem.text.strip())
-        if abs_text:
-            return "\n".join(abs_text)
-        else:
-            return "(No abstract available)"
-    except Exception as e:
-        return f"(Error: {e})"
 
 def check_europe_pmc_connection(timeout=10):
     test_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
@@ -138,73 +55,26 @@ def check_europe_pmc_connection(timeout=10):
         r.raise_for_status()
         data = r.json()
         return "resultList" in data and "result" in data["resultList"]
-    except Exception:
+    except:
         return False
 
-def search_europe_pmc(query):
-    url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
-    params = {
-        "query": query,
-        "format": "json",
-        "pageSize": 100,
-        "resultType": "core"
-    }
-    out = []
-    try:
-        r = requests.get(url, params=params, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        if "resultList" not in data or "result" not in data["resultList"]:
-            return out
-        results = data["resultList"]["result"]
-        for item in results:
-            pmid = item.get("pmid", "n/a")
-            title = item.get("title", "n/a")
-            year = str(item.get("pubYear", "n/a"))
-            journal = item.get("journalTitle", "n/a")
-
-            out.append({
-                "PMID": pmid if pmid else "n/a",
-                "Title": title,
-                "Year": year,
-                "Journal": journal
-            })
-        return out
-    except Exception as e:
-        st.error(f"Europe PMC search error: {e}")
-        return []
-
-import pandas as pd
-from io import BytesIO
-
-def convert_results_to_excel(data):
-    df = pd.DataFrame(data)
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name="Results")
-        try:
-            writer.save()
-        except:
-            pass
-    return output.getvalue()
-
-# --------------- PAGES ---------------
-
+#############################################
+# Sonstige
+#############################################
 def page_home():
     st.title("Welcome to the Main Menu")
     st.write("Choose a module in the sidebar to proceed.")
 
-
+#############################################
+# API SELECTION (Checkbox-Version mit Farbe)
+#############################################
 def page_api_selection():
-    """
-    Hier verwenden wir Checkboxen statt Multiselect.
-    """
-    st.title("API Selection & Connection Status (Checkbox Version)")
+    st.title("API Selection & Connection Status (mit Farbe)")
 
-    # Kleines CSS für den Confirm-Button
     st.markdown(
         """
         <style>
+        /* Mache den Confirm-Button grün */
         div.stButton > button:first-child {
             background-color: green;
             color: white;
@@ -214,6 +84,7 @@ def page_api_selection():
         unsafe_allow_html=True
     )
 
+    # APIs, die wir anbieten
     all_apis = [
         "Europe PMC",
         "PubMed",
@@ -222,64 +93,76 @@ def page_api_selection():
         "Google Scholar",
         "Semantic Scholar"
     ]
+    
+    # SessionState
     if "selected_apis" not in st.session_state:
-        st.session_state["selected_apis"] = ["Europe PMC"]
+        st.session_state["selected_apis"] = []
 
-    st.write("Wähle deine APIs über Checkboxen:")
+    st.write("Bitte wähle deine APIs über Checkboxen:")
 
-    # Temporäre Set-Struktur
-    selected_apis_temp = set(st.session_state["selected_apis"])
-
+    # Schleife über alle APIs
     for api in all_apis:
-        is_checked = (api in selected_apis_temp)
-        chk_state = st.checkbox(api, value=is_checked, key=f"chk_{api}")
+        # Ist diese API in st.session_state["selected_apis"]?
+        is_currently_checked = (api in st.session_state["selected_apis"])
 
-        if chk_state:
-            # Roter Hinweis
+        # Checkbox zeichnen
+        cb_state = st.checkbox(api, value=is_currently_checked, key=f"chk_{api}")
+
+        # Wenn der User sie jetzt ausgewählt hat, machen wir den Connection-Check:
+        if cb_state:
+            # Falls API noch nicht in selected_apis => hinzufügen
+            if api not in st.session_state["selected_apis"]:
+                st.session_state["selected_apis"].append(api)
+
+            # Hier den Check
+            # Nur bedingt echtes Checking, wir zeigen Demonstration:
+            # - PubMed => check_pubmed_connection()
+            # - Europe PMC => check_europe_pmc_connection()
+            # - CORE => check_core_aggregate_connection()
+            # => Falls OK => grün, sonst rot
+            success = False
+            if api == "PubMed":
+                success = check_pubmed_connection()
+            elif api == "Europe PMC":
+                success = check_europe_pmc_connection()
+            elif api == "CORE Aggregate":
+                core_key = st.secrets.get("CORE_API_KEY", "")
+                if core_key:
+                    success = check_core_aggregate_connection(core_key)
+                else:
+                    success = False
+            else:
+                # Z. B. bei "OpenAlex", "Google Scholar", "Semantic Scholar"
+                # (noch kein Check implementiert => wir tun so, als ob immer FAIL)
+                success = False
+
+            # Hintergrundfarbe basierend auf success
+            if success:
+                color = "green"
+                txt = "OK"
+            else:
+                color = "red"
+                txt = "FAIL (No valid check or no connection)"
+
             st.markdown(
-                f"<div style='background-color:red; color:white; padding:4px; margin-bottom:8px;'>"
-                f"{api} is selected</div>",
+                f"<div style='background-color:{color}; color:white; padding:6px; margin-bottom:8px;'>"
+                f"{api} connection -> {txt}</div>",
                 unsafe_allow_html=True
             )
         else:
+            # Falls das Häkchen entfernt wurde -> aus st.session_state entfernen
+            if api in st.session_state["selected_apis"]:
+                st.session_state["selected_apis"].remove(api)
+
             st.write(f"{api} is not selected")
 
     st.write("---")
-    # Button zum Speichern der Auswahl
+    # Bestätigungs-Button
     if st.button("Confirm selection"):
-        new_selection = []
-        for api in all_apis:
-            if st.session_state.get(f"chk_{api}", False):
-                new_selection.append(api)
-        st.session_state["selected_apis"] = new_selection
-        st.success(f"API selection updated: {new_selection}")
-
-    # Verbindungstest
-    st.subheader("Connection Tests")
-    msgs = []
-    if "PubMed" in st.session_state["selected_apis"]:
-        if check_pubmed_connection():
-            msgs.append("PubMed: OK")
-        else:
-            msgs.append("PubMed: FAIL")
-    if "Europe PMC" in st.session_state["selected_apis"]:
-        if check_europe_pmc_connection():
-            msgs.append("Europe PMC: OK")
-        else:
-            msgs.append("Europe PMC: FAIL")
-    if "CORE Aggregate" in st.session_state["selected_apis"]:
-        core_key = st.secrets.get("CORE_API_KEY", "")
-        if core_key and check_core_aggregate_connection(core_key):
-            msgs.append("CORE: OK")
-        else:
-            msgs.append("CORE: FAIL")
-
-    if msgs:
-        for m in msgs:
-            st.write("- ", m)
-    else:
-        st.write("(No APIs selected or no checks performed)")
-
+        st.success(f"Final selection: {st.session_state['selected_apis']}")
+    
+    st.write("---")
+    # Zurück
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
@@ -314,8 +197,7 @@ def page_extended_topics():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-# --------------- SIDEBAR NAV --------------
-
+# -----------------Sidebar & NAV-------------------
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
 
@@ -328,7 +210,7 @@ def sidebar_module_navigation():
         "5) Analysis & Evaluation": page_analysis,
         "6) Extended Topics": page_extended_topics
     }
-
+    # Buttons
     for label in pages.keys():
         if st.sidebar.button(label):
             st.session_state["current_page"] = label
@@ -352,9 +234,7 @@ def main():
         unsafe_allow_html=True
     )
 
-    # Navigation
     page_fn = sidebar_module_navigation()
-    # Rendering
     page_fn()
 
 if __name__ == '__main__':
