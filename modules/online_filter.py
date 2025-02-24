@@ -26,24 +26,46 @@ def filter_abstracts_with_chatgpt(abstracts, keywords):
     return results
 
 def search_papers(api_name, query):
+    results = []
     if api_name == "PubMed":
         url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
         params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 100}
         response = requests.get(url, params=params)
-        return response.json().get("esearchresult", {}).get("idlist", [])
+        ids = response.json().get("esearchresult", {}).get("idlist", [])
+        for id in ids:
+            details_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id={id}&retmode=json"
+            details_response = requests.get(details_url)
+            result = details_response.json().get("result", {}).get(id, {})
+            results.append({
+                "PubMed ID": id,
+                "Title": result.get("title", "N/A"),
+                "Year": result.get("pubdate", "N/A"),
+                "Publisher": result.get("source", "N/A")
+            })
     elif api_name == "Europe PMC":
         url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
         params = {"query": query, "format": "json", "pageSize": 100}
         response = requests.get(url, params=params)
-        return response.json().get("resultList", {}).get("result", [])
+        for item in response.json().get("resultList", {}).get("result", []):
+            results.append({
+                "PubMed ID": item.get("id", "N/A"),
+                "Title": item.get("title", "N/A"),
+                "Year": item.get("pubYear", "N/A"),
+                "Publisher": item.get("source", "N/A")
+            })
     elif api_name == "CORE":
         url = "https://api.core.ac.uk/v3/search/works"
         headers = {"Authorization": "Bearer YOUR_CORE_API_KEY"}
         params = {"q": query, "limit": 100}
         response = requests.get(url, headers=headers, params=params)
-        return response.json().get("results", [])
-    # Add more APIs as needed
-    return []
+        for item in response.json().get("results", []):
+            results.append({
+                "PubMed ID": item.get("id", "N/A"),
+                "Title": item.get("title", "N/A"),
+                "Year": item.get("year", "N/A"),
+                "Publisher": item.get("publisher", "N/A")
+            })
+    return results
 
 def module_online_filter():
     st.header("Modul 2: Online-Filter")
@@ -73,9 +95,8 @@ def module_online_filter():
             sheet_names = xls.sheet_names
             selected_sheet = st.selectbox("Select Sheet", sheet_names)
             if selected_sheet:
-                df = pd.read_excel(xls, sheet_name=selected_sheet)
-                names = df['Names'].tolist()
-                st.write("Names from Excel:", names)
+                df = pd.read_excel(xls, sheet_name=selected_sheet, usecols="C", skiprows=2)
+                names = df.iloc[:, 0].tolist()
                 flt["extra_term"] = " OR ".join(names)  # Combine names for search query
         except Exception as e:
             st.write("Error reading Excel file:", e)
@@ -96,4 +117,10 @@ def module_online_filter():
             papers.extend(search_papers(api, query))
         st.write("Found Papers:")
         for paper in papers:
-            st.write(paper)
+            st.write(f"PubMed ID: {paper['PubMed ID']}")
+            st.write(f"Title: {paper['Title']}")
+            st.write(f"Year: {paper['Year']}")
+            st.write(f"Publisher: {paper['Publisher']}")
+            st.write("---")
+
+module_online_filter()
