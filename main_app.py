@@ -33,7 +33,7 @@ class CoreAPI:
         r.raise_for_status()
         return r.json()
 
-def check_core_aggregate_connection(api_key, timeout=15):
+def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", timeout=15):
     try:
         core = CoreAPI(api_key)
         result = core.search_publications("test", limit=1)
@@ -41,12 +41,11 @@ def check_core_aggregate_connection(api_key, timeout=15):
     except Exception:
         return False
 
-def search_core_aggregate(query):
-    CORE_API_KEY = st.secrets.get("CORE_API_KEY", "")
-    if not CORE_API_KEY:
+def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
+    if not api_key:
         return []
     try:
-        core = CoreAPI(CORE_API_KEY)
+        core = CoreAPI(api_key)
         raw = core.search_publications(query, limit=100)
         out = []
         results = raw.get("results", [])
@@ -239,7 +238,7 @@ def page_api_selection():
         else:
             msgs.append("Europe PMC: FAIL")
     if "CORE Aggregate" in chosen_apis:
-        core_key = st.secrets.get("CORE_API_KEY", "")
+        core_key = "LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"
         if core_key and check_core_aggregate_connection(core_key):
             msgs.append("CORE: OK")
         else:
