@@ -53,13 +53,16 @@ def search_papers(api_name, query):
         params = {"query": query, "format": "json", "pageSize": 100}
         response = requests.post(url, data=params)
         try:
-            for item in response.json().get("resultList", {}).get("result", []):
-                results.append({
-                    "PubMed ID": item.get("id", "N/A"),
-                    "Title": item.get("title", "N/A"),
-                    "Year": item.get("pubYear", "N/A"),
-                    "Publisher": item.get("source", "N/A")
-                })
+            if response.content:
+                for item in response.json().get("resultList", {}).get("result", []):
+                    results.append({
+                        "PubMed ID": item.get("id", "N/A"),
+                        "Title": item.get("title", "N/A"),
+                        "Year": item.get("pubYear", "N/A"),
+                        "Publisher": item.get("source", "N/A")
+                    })
+            else:
+                st.write("Europe PMC API returned an empty response.")
         except (requests.exceptions.JSONDecodeError, ValueError) as e:
             st.write(f"Error decoding JSON from Europe PMC API: {e}")
             st.write(f"Response content: {response.content}")
