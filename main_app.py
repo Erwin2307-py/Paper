@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 import pandas as pd
 from io import BytesIO
 from scholarly import scholarly
+from modules.online_filter import module_online_filter
 
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
@@ -387,7 +388,11 @@ def page_api_selection():
 
 def page_online_filter():
     st.title("Online Filter Settings")
-    st.write("Configure your online filter here. (Dummy placeholder...)")
+    st.write("Configure your online filter here.")
+
+    # Call the module_online_filter function from modules/online_filter.py
+    module_online_filter()
+
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
