@@ -3,6 +3,7 @@ import requests
 import xml.etree.ElementTree as ET
 import pandas as pd
 from io import BytesIO
+from scholarly import scholarly
 
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
@@ -184,14 +185,6 @@ def search_europe_pmc(query):
 BASE_URL = "https://api.openalex.org"
 
 def fetch_openalex_data(entity_type, entity_id=None, params=None):
-    """
-    Ruft Daten von der OpenAlex API ab.
-
-    :param entity_type: Typ der Entität (z.B. "works", "authors", "institutions")
-    :param entity_id: ID der spezifischen Entität (optional)
-    :param params: Zusätzliche Parameter für die Anfrage (optional)
-    :return: JSON-Antwort der API
-    """
     url = f"{BASE_URL}/{entity_type}"
     if entity_id:
         url += f"/{entity_id}"
@@ -211,6 +204,47 @@ def fetch_openalex_data(entity_type, entity_id=None, params=None):
 def search_openalex(query):
     search_params = {"search": query}
     return fetch_openalex_data("works", params=search_params)
+
+#############################################
+# Google Scholar API Communication
+#############################################
+class GoogleScholarSearch:
+    def __init__(self):
+        self.all_results = []
+
+    def search_google_scholar(self, base_query):
+        try:
+            search_results = scholarly.search_pubs(base_query)
+            
+            for _ in range(5):
+                result = next(search_results)
+                title = result['bib'].get('title', "n/a")
+                authors = result['bib'].get('author', "n/a")
+                year = result['bib'].get('pub_year', "n/a")
+                url_article = result.get('url_scholarbib', "n/a")
+                abstract_text = result['bib'].get('abstract', "")
+
+                self.all_results.append({
+                    "Source": "Google Scholar",
+                    "Title": title,
+                    "Authors/Description": authors,
+                    "Journal/Organism": "n/a",
+                    "Year": year,
+                    "PMID": "n/a",
+                    "DOI": "n/a",
+                    "URL": url_article,
+                    "Abstract": abstract_text
+                })
+            
+            for idx, entry in enumerate(self.all_results, start=1):
+                print(f"{idx}. Titel: {entry['Title']}")
+                print(f"   Autoren: {entry['Authors/Description']}")
+                print(f"   Jahr: {entry['Year']}")
+                print(f"   URL: {entry['URL']}")
+                print(f"   Abstract: {entry['Abstract']}\n")
+
+        except Exception as e:
+            st.error(f"Fehler bei der Google Scholar-Suche: {e}")
 
 #############################################
 # Excel-Hilfsfunktion
@@ -281,6 +315,12 @@ def page_api_selection():
             msgs.append("OpenAlex: OK")
         else:
             msgs.append("OpenAlex: FAIL")
+    if "Google Scholar" in chosen_apis:
+        google_scholar_test = GoogleScholarSearch().search_google_scholar("test")
+        if google_scholar_test:
+            msgs.append("Google Scholar: OK")
+        else:
+            msgs.append("Google Scholar: FAIL")
 
     if msgs:
         for m in msgs:
@@ -364,6 +404,9 @@ def main():
 
     page_fn = sidebar_module_navigation()
     page_fn()
+
+if __name__ == '__main__':
+    main()
 
 if __name__ == '__main__':
     main()
