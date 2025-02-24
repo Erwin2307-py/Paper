@@ -76,6 +76,9 @@ def check_europe_pmc_connection(timeout=10):
 ##############################################################
 # ------------------- Excel Hilfsfunktion --------------------
 ##############################################################
+import pandas as pd
+from io import BytesIO
+
 def convert_results_to_excel(data):
     df = pd.DataFrame(data)
     output = BytesIO()
@@ -86,63 +89,4 @@ def convert_results_to_excel(data):
         except:
             pass
     return output
-
-##############################################################
-# ------------- Zusätzliche Einstellung im Hauptfenster ------
-##############################################################
-
-def main():
-    st.title("API Checks & Optional Main-Area Selection")
-
-    # 1) Wir zeigen im Hauptfenster ein Expander-Widget
-    st.markdown("### API selection can also happen here (in addition to existing code/logic).")
-    
-    if "selected_apis" not in st.session_state:
-        st.session_state["selected_apis"] = ["Europe PMC"]  # Default
-    
-    all_apis = ["Europe PMC", "PubMed", "CORE Aggregate", "OpenAlex", "Google Scholar", "Semantic Scholar"]
-    
-    # Expander-Bereich
-    with st.expander("Open additional API selection in main area"):
-        chosen_apis = st.multiselect(
-            "Select your APIs (Main Area)",
-            all_apis,
-            default=st.session_state["selected_apis"]
-        )
-        st.session_state["selected_apis"] = chosen_apis
-        
-        # Hier ein kleiner Verbindungstest
-        st.subheader("Connection Status (Main Area Check)")
-        msgs = []
-        if "PubMed" in chosen_apis:
-            if check_pubmed_connection():
-                msgs.append("PubMed: OK")
-            else:
-                msgs.append("PubMed: FAIL")
-        if "Europe PMC" in chosen_apis:
-            if check_europe_pmc_connection():
-                msgs.append("Europe PMC: OK")
-            else:
-                msgs.append("Europe PMC: FAIL")
-        if "CORE Aggregate" in chosen_apis:
-            core_key = st.secrets.get("CORE_API_KEY", "")
-            if core_key and check_core_aggregate_connection(core_key):
-                msgs.append("CORE: OK")
-            else:
-                msgs.append("CORE: FAIL (No valid key?)")
-        
-        if msgs:
-            for m in msgs:
-                st.write("- ", m)
-        else:
-            st.write("No APIs selected or no checks performed.")
-    
-    st.write("---")
-    st.write("Your final selected APIs (from main area) ->", st.session_state["selected_apis"])
-    st.info("You can integrate or combine this additional code with your existing logic (e.g., the sidebar approach). The above snippet does not alter your existing checks / search logic.")
-
-
-if __name__ == "__main__":
-    main()
-
 
