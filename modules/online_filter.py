@@ -101,15 +101,37 @@ def module_online_filter():
         }
 
     flt = st.session_state["filter_options"]
-    flt["use_local"] = st.checkbox("Lokaler Filter (genotype, phenotype, ...)", value=flt["use_local"])
-    flt["use_chatgpt"] = st.checkbox("ChatGPT-Filter", value=flt["use_chatgpt"])
-    flt["use_gene_excel"] = st.checkbox("Gene (Excel)", value=flt["use_gene_excel"])
-    extra_inp = st.text_input("Extra-Filterbegriff", value=flt["extra_term"])
-    flt["extra_term"] = extra_inp
+    flt["extra_term"] = st.text_input("Extra-Filterbegriff", value=flt["extra_term"])
 
     st.session_state["filter_options"] = flt
     st.write("Aktuelle Filter-Einstellungen:", flt)
 
+    # Search for papers based on the extra term
+    papers = []
+    if st.button("Search Papers"):
+        query = flt["extra_term"]
+        for api in ["PubMed", "Europe PMC", "CORE"]:
+            papers.extend(search_papers(api, query))
+        st.write("Found Papers:")
+        papers_df = pd.DataFrame(papers)
+        st.session_state["papers_df"] = papers_df
+        st.table(papers_df)
+
+    # Select online filter methods
+    flt["use_local"] = st.checkbox("Lokaler Filter (genotype, phenotype, ...)", value=flt["use_local"])
+    flt["use_chatgpt"] = st.checkbox("ChatGPT-Filter", value=flt["use_chatgpt"])
+
+    if flt["use_chatgpt"]:
+        abstracts = st.text_area("Enter abstracts (one per line)").split("\n")
+        keywords = ["genotype", "phenotype", "SNP", "Genotyp", "Phänotyp", "Einzelnukleotid-Polymorphismus"]
+        if st.button("Filter Abstracts"):
+            filtered_abstracts = filter_abstracts_with_chatgpt(abstracts, keywords)
+            st.write("Filtered Abstracts:")
+            for abstract in filtered_abstracts:
+                st.write(abstract)
+
+    # Use the Excel sheet if desired
+    flt["use_gene_excel"] = st.checkbox("Gene (Excel)", value=flt["use_gene_excel"])
     if flt["use_gene_excel"]:
         try:
             excel_file_path = "https://github.com/Erwin2307-py/Paper/raw/main/modules/genes.xlsx"
@@ -124,24 +146,7 @@ def module_online_filter():
         except Exception as e:
             st.write("Error reading Excel file:", e)
 
-    if flt["use_chatgpt"]:
-        abstracts = st.text_area("Enter abstracts (one per line)").split("\n")
-        keywords = ["genotype", "phenotype", "SNP", "Genotyp", "Phänotyp", "Einzelnukleotid-Polymorphismus"]
-        if st.button("Filter Abstracts"):
-            filtered_abstracts = filter_abstracts_with_chatgpt(abstracts, keywords)
-            st.write("Filtered Abstracts:")
-            for abstract in filtered_abstracts:
-                st.write(abstract)
-
-    papers = []
-    if st.button("Search Papers"):
-        query = flt["extra_term"]
-        for api in ["PubMed", "Europe PMC", "CORE"]:
-            papers.extend(search_papers(api, query))
-        st.write("Found Papers:")
-        papers_df = pd.DataFrame(papers)
-        st.session_state["papers_df"] = papers_df
-        st.table(papers_df)
+    st.session_state["filter_options"] = flt
 
     extra_keyword = st.text_input("Überbegriff für zusätzliche Filterung", "")
     if st.button("Zusätzliche Filterung anwenden"):
