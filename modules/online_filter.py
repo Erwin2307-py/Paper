@@ -130,22 +130,27 @@ def module_online_filter():
             for abstract in filtered_abstracts:
                 st.write(abstract)
 
+    papers = []
     if st.button("Search Papers"):
         query = flt["extra_term"]
-        papers = []
         for api in ["PubMed", "Europe PMC", "CORE"]:
             papers.extend(search_papers(api, query))
         st.write("Found Papers:")
         papers_df = pd.DataFrame(papers)
+        st.session_state["papers_df"] = papers_df
         st.table(papers_df)
 
     extra_keyword = st.text_input("Überbegriff für zusätzliche Filterung", "")
     if st.button("Zusätzliche Filterung anwenden"):
-        if extra_keyword:
-            filtered_papers = papers_df[papers_df.apply(lambda row: extra_keyword.lower() in row.to_string().lower(), axis=1)]
-            st.write("Gefilterte Papers:")
-            st.table(filtered_papers)
+        if "papers_df" in st.session_state:
+            papers_df = st.session_state["papers_df"]
+            if not papers_df.empty and extra_keyword:
+                filtered_papers = papers_df[papers_df.apply(lambda row: extra_keyword.lower() in row.to_string().lower(), axis=1)]
+                st.write("Gefilterte Papers:")
+                st.table(filtered_papers)
+            else:
+                st.write("Bitte geben Sie einen Überbegriff ein oder suchen Sie zuerst nach Papers.")
         else:
-            st.write("Bitte geben Sie einen Überbegriff ein.")
+            st.write("Bitte suchen Sie zuerst nach Papers.")
 
 module_online_filter()
