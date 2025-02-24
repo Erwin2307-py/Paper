@@ -51,7 +51,7 @@ def search_papers(api_name, query):
     elif api_name == "Europe PMC":
         url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
         params = {"query": query, "format": "json", "pageSize": 100}
-        response = requests.post(url, data=params)
+        response = requests.get(url, params=params)
         st.write(f"Europe PMC request URL: {url}")
         st.write(f"Request parameters: {params}")
         try:
@@ -100,22 +100,14 @@ def module_online_filter():
             "extra_term": ""
         }
 
-    flt = st.session_state["filter_options"]
-    flt["extra_term"] = st.text_input("Extra-Filterbegriff", value=flt["extra_term"])
+    # Codewords input
+    codewords = st.text_input("Codewörter für die Paper-Suche (kommasepariert)", "genotype,phenotype,SNP")
+    if codewords:
+        st.session_state["filter_options"]["extra_term"] = " OR ".join([word.strip().replace("+", " ") for word in codewords.split(",") if word.strip()])
 
+    flt = st.session_state["filter_options"]
     st.session_state["filter_options"] = flt
     st.write("Aktuelle Filter-Einstellungen:", flt)
-
-    # Search for papers based on the extra term
-    papers = []
-    if st.button("Search Papers"):
-        query = flt["extra_term"]
-        for api in ["PubMed", "Europe PMC", "CORE"]:
-            papers.extend(search_papers(api, query))
-        st.write("Found Papers:")
-        papers_df = pd.DataFrame(papers)
-        st.session_state["papers_df"] = papers_df
-        st.table(papers_df)
 
     # Select online filter methods
     flt["use_local"] = st.checkbox("Lokaler Filter (genotype, phenotype, ...)", value=flt["use_local"])
@@ -147,6 +139,17 @@ def module_online_filter():
             st.write("Error reading Excel file:", e)
 
     st.session_state["filter_options"] = flt
+
+    # Search for papers based on the extra term
+    papers = []
+    if st.button("Search Papers"):
+        query = flt["extra_term"]
+        for api in ["PubMed", "Europe PMC", "CORE"]:
+            papers.extend(search_papers(api, query))
+        st.write("Found Papers:")
+        papers_df = pd.DataFrame(papers)
+        st.session_state["papers_df"] = papers_df
+        st.table(papers_df)
 
     extra_keyword = st.text_input("Überbegriff für zusätzliche Filterung", "")
     if st.button("Zusätzliche Filterung anwenden"):
