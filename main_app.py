@@ -179,6 +179,40 @@ def search_europe_pmc(query):
         return []
 
 #############################################
+# OpenAlex API Communication
+#############################################
+BASE_URL = "https://api.openalex.org"
+
+def fetch_openalex_data(entity_type, entity_id=None, params=None):
+    """
+    Ruft Daten von der OpenAlex API ab.
+
+    :param entity_type: Typ der Entität (z.B. "works", "authors", "institutions")
+    :param entity_id: ID der spezifischen Entität (optional)
+    :param params: Zusätzliche Parameter für die Anfrage (optional)
+    :return: JSON-Antwort der API
+    """
+    url = f"{BASE_URL}/{entity_type}"
+    if entity_id:
+        url += f"/{entity_id}"
+    
+    if params is None:
+        params = {}
+    params["mailto"] = "your_email@example.com"  # Ersetze durch deine E-Mail-Adresse
+    
+    response = requests.get(url, params=params)
+    
+    if response.status_code == 200:
+        return response.json()
+    else:
+        st.error(f"Fehler: {response.status_code} - {response.text}")
+        return None
+
+def search_openalex(query):
+    search_params = {"search": query}
+    return fetch_openalex_data("works", params=search_params)
+
+#############################################
 # Excel-Hilfsfunktion
 #############################################
 import pandas as pd
@@ -207,7 +241,6 @@ def page_api_selection():
     st.title("API Selection & Connection Status")
     st.write("Auf dieser Seite kannst du die zu verwendenden APIs wählen und den Verbindungsstatus prüfen.")
 
-    # Wir ermöglichen hier direkt die Auswahl der APIs:
     all_apis = [
         "Europe PMC",
         "PubMed",
@@ -224,7 +257,6 @@ def page_api_selection():
 
     st.write("Currently selected APIs:", chosen_apis)
 
-    # Verbindungstest
     st.subheader("Connection Tests")
     msgs = []
     if "PubMed" in chosen_apis:
@@ -243,6 +275,12 @@ def page_api_selection():
             msgs.append("CORE: OK")
         else:
             msgs.append("CORE: FAIL (No valid key or no connection)")
+    if "OpenAlex" in chosen_apis:
+        openalex_test = fetch_openalex_data("works", "W2741809807")
+        if openalex_test:
+            msgs.append("OpenAlex: OK")
+        else:
+            msgs.append("OpenAlex: FAIL")
 
     if msgs:
         for m in msgs:
@@ -289,7 +327,6 @@ def page_extended_topics():
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
 
-    # Wir legen ein Dictionary an, das die Seiten-Funktionen referenziert
     pages = {
         "Home": page_home,
         "1) API Selection": page_api_selection,
@@ -300,7 +337,6 @@ def sidebar_module_navigation():
         "6) Extended Topics": page_extended_topics
     }
 
-    # Erzeugen Buttons für jede Seite
     for label in pages.keys():
         if st.sidebar.button(label):
             st.session_state["current_page"] = label
@@ -308,7 +344,6 @@ def sidebar_module_navigation():
     if "current_page" not in st.session_state:
         st.session_state["current_page"] = "Home"
 
-    # Gib die gerade gewählte Seitenfunktion zurück
     return pages[st.session_state["current_page"]]
 
 #############################################
@@ -327,9 +362,7 @@ def main():
         unsafe_allow_html=True
     )
 
-    # Navigation
     page_fn = sidebar_module_navigation()
-    # Rendering der ausgewählten Seite
     page_fn()
 
 if __name__ == '__main__':
