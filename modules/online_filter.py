@@ -139,4 +139,13 @@ def module_online_filter():
         papers_df = pd.DataFrame(papers)
         st.table(papers_df)
 
+    extra_keyword = st.text_input("Überbegriff für zusätzliche Filterung", "")
+    if st.button("Zusätzliche Filterung anwenden"):
+        if extra_keyword:
+            filtered_papers = papers_df[papers_df.apply(lambda row: extra_keyword.lower() in row.to_string().lower(), axis=1)]
+            st.write("Gefilterte Papers:")
+            st.table(filtered_papers)
+        else:
+            st.write("Bitte geben Sie einen Überbegriff ein.")
+
 module_online_filter()
