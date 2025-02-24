@@ -247,6 +247,44 @@ class GoogleScholarSearch:
             st.error(f"Fehler bei der Google Scholar-Suche: {e}")
 
 #############################################
+# Semantic Scholar API Communication
+#############################################
+class SemanticScholarSearch:
+    def __init__(self):
+        self.all_results = []
+
+    def search_semantic_scholar(self, base_query):
+        try:
+            url = "https://api.semanticscholar.org/graph/v1/paper/search"
+            headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
+            params = {"query": base_query, "limit": 5, "fields": "title,authors,year,abstract,doi,paperId"}
+            response = requests.get(url, headers=headers, params=params, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            for paper in data.get("data", []):
+                title = paper.get("title", "n/a")
+                authors = ", ".join([author.get("name", "") for author in paper.get("authors", [])])
+                year = paper.get("year", "n/a")
+                doi = paper.get("doi", "n/a")
+                paper_id = paper.get("paperId", "")
+                abstract_text = paper.get("abstract", "")
+                url_article = f"https://www.semanticscholar.org/paper/{paper_id}" if paper_id else "n/a"
+
+                self.all_results.append({
+                    "Source": "Semantic Scholar",
+                    "Title": title,
+                    "Authors/Description": authors,
+                    "Journal/Organism": "n/a",
+                    "Year": year,
+                    "PMID": "n/a",
+                    "DOI": doi,
+                    "URL": url_article,
+                    "Abstract": abstract_text
+                })
+        except Exception as e:
+            st.error(f"Semantic Scholar: {e}")
+
+#############################################
 # Excel-Hilfsfunktion
 #############################################
 import pandas as pd
@@ -321,6 +359,12 @@ def page_api_selection():
             msgs.append("Google Scholar: OK")
         except Exception as e:
             msgs.append(f"Google Scholar: FAIL ({str(e)})")
+    if "Semantic Scholar" in chosen_apis:
+        try:
+            SemanticScholarSearch().search_semantic_scholar("test")
+            msgs.append("Semantic Scholar: OK")
+        except Exception as e:
+            msgs.append(f"Semantic Scholar: FAIL ({str(e)})")
 
     if msgs:
         for m in msgs:
