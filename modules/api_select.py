@@ -30,18 +30,20 @@ st.markdown(
 )
 
 #############################################
-# CORE Aggregate API Class and Connection Check
+# CORE Aggregate API Class
 #############################################
 class CoreAPI:
     def __init__(self, api_key):
         self.base_url = "https://api.core.ac.uk/v3/"
         self.headers = {"Authorization": f"Bearer {api_key}"}
 
-    def search_publications(self, query, filters=None, sort=None, limit=10):
+    def search_publications(self, query, filters=None, sort=None, limit=100):
         endpoint = "search/works"
         params = {"q": query, "limit": limit}
         if filters:
-            filter_expressions = [f"{key}:{value}" for key, value in filters.items()]
+            filter_expressions = []
+            for key, value in filters.items():
+                filter_expressions.append(f"{key}:{value}")
             params["filter"] = ",".join(filter_expressions)
         if sort:
             params["sort"] = sort
@@ -57,13 +59,46 @@ class CoreAPI:
 def check_core_aggregate_connection(api_key, timeout=15):
     try:
         core = CoreAPI(api_key)
-        result = core.search_publications("test", limit=1)
+        # Test mit 100
+        result = core.search_publications("test", limit=100)
         return "results" in result
     except Exception:
         return False
 
+def search_core_aggregate(query):
+    """
+    Holt 100 Paper aus CORE Aggregate (sofern API-Key vorhanden).
+    Gibt Liste aus Dicts zurück, z. B. [{"Title":..., "PMID":"n/a", "Year":..., ...}, ...]
+    """
+    CORE_API_KEY = st.secrets.get("CORE_API_KEY", "")
+    if not CORE_API_KEY:
+        return []
+    try:
+        core = CoreAPI(CORE_API_KEY)
+        raw = core.search_publications(query, limit=100)
+        out = []
+        results = raw.get("results", [])
+        for item in results:
+            # Title
+            title = item.get("title", "n/a")
+            # Year
+            year = str(item.get("yearPublished", "n/a"))
+            # Scheinbares "Journal"? => publisher
+            journal = item.get("publisher", "n/a")
+            # CORE hat keine PMID => "n/a"
+            out.append({
+                "PMID": "n/a",
+                "Title": title,
+                "Year": year,
+                "Journal": journal
+            })
+        return out
+    except Exception as e:
+        st.error(f"CORE search error: {e}")
+        return []
+
 #############################################
-# PubMed Connection Check and Search Functions
+# PubMed Connection Check + Search
 #############################################
 def check_pubmed_connection(timeout=10):
     test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
@@ -77,54 +112,70 @@ def check_pubmed_connection(timeout=10):
         return False
 
 def search_pubmed(query):
-    """Conduct a PubMed search and return a list of dictionaries with 'PMID' and 'Title'."""
+    """
+    Holt 100 Paper aus PubMed.
+    Gibt Liste aus Dicts zurück: [{"PMID":..., "Title":..., "Year":..., "Journal":...}, ...]
+    """
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-    params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 20}
+    params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 100}
+    out = []
     try:
         r = requests.get(esearch_url, params=params, timeout=10)
         r.raise_for_status()
         data = r.json()
         idlist = data.get("esearchresult", {}).get("idlist", [])
         if not idlist:
-            return []
-        # Fetch details via eSummary
+            return out
+        
         esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
         sum_params = {"db": "pubmed", "id": ",".join(idlist), "retmode": "json"}
         r2 = requests.get(esummary_url, params=sum_params, timeout=10)
         r2.raise_for_status()
-        summary_data = r2.json()
-        results = []
+        summary_data = r2.json().get("result", {})
+        
         for pmid in idlist:
-            summ = summary_data.get("result", {}).get(pmid, {})
-            title = summ.get("title", "n/a")
-            results.append({"PMID": pmid, "Title": title})
-        return results
+            info = summary_data.get(pmid, {})
+            title = info.get("title", "n/a")
+            pubdate = info.get("pubdate", "")
+            year = pubdate[:4] if pubdate else "n/a"
+            journal = info.get("fulljournalname", "n/a")
+            out.append({
+                "PMID": pmid,
+                "Title": title,
+                "Year": year,
+                "Journal": journal
+            })
+        return out
     except Exception as e:
         st.error(f"Error searching PubMed: {e}")
         return []
 
 def fetch_pubmed_abstract(pmid):
-    """Fetch the abstract for a given PubMed ID using eFetch."""
+    """Holt das Abstract via efetch."""
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
     params = {"db": "pubmed", "id": pmid, "retmode": "xml"}
     try:
         r = requests.get(url, params=params, timeout=10)
         r.raise_for_status()
         root = ET.fromstring(r.content)
-        abs_text = ""
+        abs_text = []
         for elem in root.findall(".//AbstractText"):
             if elem.text:
-                abs_text += elem.text + "\n"
-        return abs_text.strip() if abs_text.strip() != "" else "(No abstract available)"
+                abs_text.append(elem.text.strip())
+        if abs_text:
+            return "\n".join(abs_text)
+        else:
+            return "(No abstract available)"
     except Exception as e:
-        return f"(Error fetching abstract: {e})"
+        return f"(Error: {e})"
 
 #############################################
-# Europe PMC Connection Check
+# Europe PMC Connection Check + Search
 #############################################
 def check_europe_pmc_connection(timeout=10):
     test_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
-    params = {"query": "test", "format": "json"}
+    # pageSize=100
+    params = {"query": "test", "format": "json", "pageSize": 100}
     try:
         r = requests.get(test_url, params=params, timeout=timeout)
         r.raise_for_status()
@@ -133,11 +184,67 @@ def check_europe_pmc_connection(timeout=10):
     except Exception:
         return False
 
+def search_europe_pmc(query):
+    """
+    Holt 100 Paper aus Europe PMC.
+    Gibt Liste aus Dicts zurück: [{"PMID":..., "Title":..., "Year":..., "Journal":...}, ...]
+    """
+    url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+    params = {
+        "query": query,
+        "format": "json",
+        "pageSize": 100,
+        "resultType": "core"
+    }
+    out = []
+    try:
+        r = requests.get(url, params=params, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        if "resultList" not in data or "result" not in data["resultList"]:
+            return out
+        results = data["resultList"]["result"]
+        for item in results:
+            pmid = item.get("pmid", "n/a")  # Falls existiert
+            title = item.get("title", "n/a")
+            year = item.get("pubYear", "n/a")
+            journal = item.get("journalTitle", "n/a")
+            
+            out.append({
+                "PMID": pmid if pmid else "n/a",
+                "Title": title,
+                "Year": str(year),
+                "Journal": journal
+            })
+        return out
+    except Exception as e:
+        st.error(f"Europe PMC search error: {e}")
+        return []
+
 #############################################
-# Top Green Bar with API Selection (Fixed at the top)
+# Excel-Hilfsfunktion
+#############################################
+import pandas as pd
+from io import BytesIO
+
+def convert_to_excel(data):
+    """
+    data: Liste von Dicts, z.B. [{"PMID":..., "Title":..., "Year":..., "Journal":..., "Abstract":...}, ...]
+    """
+    df = pd.DataFrame(data)
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False, sheet_name="PubMed")
+        try:
+            writer.save()
+        except:
+            pass
+    return output.getvalue()
+
+#############################################
+# Top Green Bar with API Selection
 #############################################
 def top_api_selection():
-    # Create a full-width green bar (3 cm high) fixed at the top.
     st.markdown(
         """
         <div style="
@@ -157,12 +264,10 @@ def top_api_selection():
         """,
         unsafe_allow_html=True
     )
-    # API selection widget inside the green bar:
     options = [
         "Europe PMC",
         "PubMed",
         "CORE Aggregate",
-        "Perplexity",
         "OpenAlex",
         "Google Scholar",
         "Semantic Scholar"
@@ -172,7 +277,6 @@ def top_api_selection():
     selected = st.multiselect("Select APIs:", options, default=st.session_state["selected_apis"], key="top_api_select", label_visibility="collapsed")
     st.session_state["selected_apis"] = selected
 
-    # Display the selected APIs in white text inside the bar:
     st.markdown(
         f"""
         <div style="color: white; font-size: 16px; margin-top: 10px;">
@@ -182,51 +286,24 @@ def top_api_selection():
         unsafe_allow_html=True
     )
 
-    # Check connection statuses and display them as inline labels.
+    # Connection checks
     status_msgs = []
     if "PubMed" in selected:
         if check_pubmed_connection():
-            status_msgs.append("<span style='background-color: darkgreen; color: white; padding: 5px; margin-right: 5px;'>PubMed: OK</span>")
+            status_msgs.append("<span style='background-color: darkgreen; color: white; padding: 5px; margin-right: 5px;'>PubMed: OK (100 results)</span>")
         else:
             status_msgs.append("<span style='background-color: red; color: white; padding: 5px; margin-right: 5px;'>PubMed: Fail</span>")
     if "Europe PMC" in selected:
         if check_europe_pmc_connection():
-            status_msgs.append("<span style='background-color: darkgreen; color: white; padding: 5px; margin-right: 5px;'>Europe PMC: OK</span>")
+            status_msgs.append("<span style='background-color: darkgreen; color: white; padding: 5px; margin-right: 5px;'>Europe PMC: OK (100 results)</span>")
         else:
             status_msgs.append("<span style='background-color: red; color: white; padding: 5px; margin-right: 5px;'>Europe PMC: Fail</span>")
     if "CORE Aggregate" in selected:
-        CORE_API_KEY = st.secrets.get("CORE_API_KEY", "your_core_api_key_here")
-        if CORE_API_KEY and check_core_aggregate_connection(CORE_API_KEY):
-            status_msgs.append("<span style='background-color: darkgreen; color: white; padding: 5px; margin-right: 5px;'>CORE Aggregate: OK</span>")
+        if check_core_aggregate_connection(st.secrets.get("CORE_API_KEY", "")):
+            status_msgs.append("<span style='background-color: darkgreen; color: white; padding: 5px; margin-right: 5px;'>CORE: OK (100 results)</span>")
         else:
-            status_msgs.append("<span style='background-color: red; color: white; padding: 5px; margin-right: 5px;'>CORE Aggregate: Fail</span>")
-    if "Perplexity" in selected:
-        perplexity_key = st.secrets.get("PERPLEXITY_API_KEY", "your_perplexity_api_key_here")
-        if perplexity_key:
-            # Here we simply check if we get a valid response from a test Perplexity query.
-            test_url = "https://api.perplexity.ai/chat/completions"
-            payload = {
-                "model": "sonar",
-                "messages": [{"role": "user", "content": "test"}],
-                "max_tokens": 5,
-                "temperature": 0
-            }
-            headers = {
-                "Authorization": f"Bearer {perplexity_key}",
-                "Content-Type": "application/json"
-            }
-            try:
-                r = requests.post(test_url, json=payload, headers=headers, timeout=10)
-                r.raise_for_status()
-                data = r.json()
-                if "choices" in data:
-                    status_msgs.append("<span style='background-color: darkgreen; color: white; padding: 5px; margin-right: 5px;'>Perplexity: OK</span>")
-                else:
-                    status_msgs.append("<span style='background-color: red; color: white; padding: 5px; margin-right: 5px;'>Perplexity: Fail</span>")
-            except Exception:
-                status_msgs.append("<span style='background-color: red; color: white; padding: 5px; margin-right: 5px;'>Perplexity: Fail</span>")
-        else:
-            status_msgs.append("<span style='background-color: red; color: white; padding: 5px; margin-right: 5px;'>Perplexity: Fail</span>")
+            status_msgs.append("<span style='background-color: red; color: white; padding: 5px; margin-right: 5px;'>CORE: Fail</span>")
+
     status_html = " ".join(status_msgs)
     st.markdown(
         f"""
@@ -239,7 +316,7 @@ def top_api_selection():
     st.markdown("</div>", unsafe_allow_html=True)
 
 #############################################
-# Sidebar Module Navigation with Vertical Buttons
+# Sidebar Module Navigation
 #############################################
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
@@ -276,50 +353,147 @@ def main():
         unsafe_allow_html=True
     )
     
-    # Render the fixed top green bar with API selection.
     top_api_selection()
     
-    # Add top padding so the main content doesn't hide behind the fixed green bar.
     st.markdown("<div style='padding-top: 3.2cm;'></div>", unsafe_allow_html=True)
     
-    st.title("API Connection Checker & PubMed Search")
-    st.write("This app checks the connections for selected APIs and provides a PubMed search module.")
-    st.write("If the API connections are working, you'll see dark green messages in the top bar.")
+    st.title("API Connection Checker (100 per selected API) & Combined Results")
+    st.write("Each selected API contributes 100 results. For example, PubMed + Europe PMC => 200 total. PubMed + Europe PMC + CORE => 300, usw.")
     
     sidebar_module_navigation()
     
-    # PubMed Search Section
-    st.header("Search PubMed")
-    search_query = st.text_input("Enter a search query for PubMed:")
+    st.header("Search & Combine Results")
+    
+    if "combined_results" not in st.session_state:
+        st.session_state["combined_results"] = []
+    if "selected_papers" not in st.session_state:
+        st.session_state["selected_papers"] = []
+    
+    query = st.text_input("Enter a search query:", "")
+    
     if st.button("Search"):
-        if not search_query.strip():
+        # Bei jedem Klick werden die Ergebnisse neu geholt und kombiniert
+        combined = []
+        selected_apis = st.session_state["selected_apis"]
+        
+        if not query.strip():
             st.warning("Please enter a search query.")
         else:
-            results = search_pubmed(search_query)
-            st.write(f"Found {len(results)} paper(s).")
-            # Save results in session state so they persist.
-            st.session_state["pubmed_results"] = results
+            # 1) PubMed
+            if "PubMed" in selected_apis:
+                pubmed_res = search_pubmed(query)
+                combined.extend(pubmed_res)
+            
+            # 2) Europe PMC
+            if "Europe PMC" in selected_apis:
+                epmc_res = search_europe_pmc(query)
+                combined.extend(epmc_res)
+            
+            # 3) CORE Aggregate
+            if "CORE Aggregate" in selected_apis:
+                core_res = search_core_aggregate(query)
+                combined.extend(core_res)
+            
+            # An dieser Stelle könnten weitere APIs eingefügt werden (OpenAlex etc.),
+            # sofern eine Suchfunktion existiert.
+            
+            st.session_state["combined_results"] = combined
+            st.write(f"Total results from selected APIs: {len(combined)}")
     
-    # Display search results if available.
-    if "pubmed_results" in st.session_state and st.session_state["pubmed_results"]:
-        results = st.session_state["pubmed_results"]
-        st.table(results)
+    # Anzeige der kombinierten Ergebnisse
+    if st.session_state["combined_results"]:
+        st.subheader("All Combined Results (half-size table, e.g. 4px)")
+
+        # Schrift um die Hälfte kleiner
+        st.markdown("""
+        <style>
+        table, thead, tbody, tr, td, th {
+            font-size: 4px !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+        st.table(st.session_state["combined_results"])
         
-        # Allow user to select one paper to view its abstract.
-        paper_options = [f"{r['Title']} (PMID: {r['PMID']})" for r in results]
-        selected_paper = st.selectbox("Select a paper to view its abstract:", paper_options, key="paper_select")
-        # Extract PMID from selection.
-        try:
-            selected_pmid = selected_paper.split("PMID: ")[1].rstrip(")")
-        except IndexError:
-            selected_pmid = ""
-        if selected_pmid:
-            abstract = fetch_pubmed_abstract(selected_pmid)
-            st.subheader("Abstract")
-            st.write(abstract)
+        # Mehrfach-Auswahl
+        paper_options = [
+            f"{r['Title']} (PMID: {r['PMID']})"
+            for r in st.session_state["combined_results"]
+        ]
+        
+        selected_now = st.multiselect(
+            "Select paper(s) to view abstracts:",
+            options=paper_options,
+            default=st.session_state["selected_papers"],
+            key="paper_multiselect"
+        )
+        st.session_state["selected_papers"] = selected_now
+        
+        # Anzeige + Download
+        selected_details = []
+        for item in st.session_state["selected_papers"]:
+            try:
+                pmid = item.split("PMID: ")[1].rstrip(")")
+            except IndexError:
+                pmid = ""
+            # Nur Abstract für PubMed-PMIDs
+            # Falls "n/a", haben wir kein fetch
+            if pmid and pmid != "n/a":
+                abstract_text = fetch_pubmed_abstract(pmid)
+            else:
+                abstract_text = "(No abstract / not from PubMed)"
+            
+            # Metadaten aus combined_results
+            meta = next((x for x in st.session_state["combined_results"] if str(x["PMID"]) == pmid), {})
+            if not meta:
+                meta = {"Title":"n/a","Year":"n/a","Journal":"n/a"}
+            
+            st.subheader(f"PMID: {pmid}")
+            st.write(f"**Title:** {meta.get('Title','n/a')}")
+            st.write(f"**Year:** {meta.get('Year','n/a')}")
+            st.write(f"**Journal:** {meta.get('Journal','n/a')}")
+            st.write("**Abstract:**")
+            st.write(abstract_text)
+            
+            selected_details.append({
+                "PMID": pmid,
+                "Title": meta.get("Title","n/a"),
+                "Year": meta.get("Year","n/a"),
+                "Journal": meta.get("Journal","n/a"),
+                "Abstract": abstract_text
+            })
+        
+        if selected_details:
+            excel_bytes = convert_to_excel(selected_details)
+            st.download_button(
+                label="Download selected papers as Excel",
+                data=excel_bytes,
+                file_name="Selected_Papers.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
     
-    st.write("Use the sidebar for further module navigation.")
-    st.write("Selected APIs are checked above in the top green bar.")
+    # Module check
+    module = st.session_state.get("selected_module", "api_selection")
+    if module == "api_selection":
+        st.info("API Selection is available in the top green bar.")
+    elif module == "online_filter":
+        from modules.online_filter import module_online_filter
+        module_online_filter()
+    elif module == "codewords_pubmed":
+        from modules.codewords_pubmed import module_codewords_pubmed
+        module_codewords_pubmed()
+    elif module == "paper_selection":
+        from modules.paper_select_remove import module_select_remove
+        module_select_remove()
+    elif module == "analysis":
+        from modules.analysis import module_analysis
+        module_analysis()
+    elif module == "extended_topics":
+        from modules.extended_topics import module_extended_topics
+        module_extended_topics()
+    
+    st.write("Combined up to 100 results per selected API, e.g., 2 APIs => 200 total, 3 => 300, etc.")
+
 
 if __name__ == '__main__':
     main()
