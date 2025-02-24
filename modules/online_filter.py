@@ -39,6 +39,7 @@ def search_papers(api_name, query):
                 details_response = requests.post(details_url, data=details_params)
                 result = details_response.json().get("result", {}).get(id, {})
                 results.append({
+                    "API": "PubMed",
                     "PubMed ID": id,
                     "Title": result.get("title", "N/A"),
                     "Year": result.get("pubdate", "N/A"),
@@ -56,6 +57,7 @@ def search_papers(api_name, query):
             if response.content:
                 for item in response.json().get("resultList", {}).get("result", []):
                     results.append({
+                        "API": "Europe PMC",
                         "PubMed ID": item.get("id", "N/A"),
                         "Title": item.get("title", "N/A"),
                         "Year": item.get("pubYear", "N/A"),
@@ -75,6 +77,7 @@ def search_papers(api_name, query):
         try:
             for item in response.json().get("results", []):
                 results.append({
+                    "API": "CORE",
                     "PubMed ID": item.get("id", "N/A"),
                     "Title": item.get("title", "N/A"),
                     "Year": item.get("year", "N/A"),
