@@ -68,8 +68,8 @@ def module_online_filter():
 
     if flt["use_gene_excel"]:
         try:
-            excel_file_path = "https://github.com/Erwin2307-py/Paper/blob/main/modules/genes.xlsx"
-            xls = pd.ExcelFile(excel_file_path)
+            excel_file_path = "https://github.com/Erwin2307-py/Paper/raw/main/modules/genes.xlsx"
+            xls = pd.ExcelFile(excel_file_path, engine='openpyxl')
             sheet_names = xls.sheet_names
             selected_sheet = st.selectbox("Select Sheet", sheet_names)
             if selected_sheet:
