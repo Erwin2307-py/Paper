@@ -204,6 +204,60 @@ def page_home():
     st.title("Welcome to the Main Menu")
     st.write("Choose a module in the sidebar to proceed.")
 
+def page_api_selection():
+    st.title("API Selection & Connection Status")
+    st.write("Auf dieser Seite kannst du die zu verwendenden APIs wählen und den Verbindungsstatus prüfen.")
+
+    # Wir ermöglichen hier direkt die Auswahl der APIs:
+    all_apis = [
+        "Europe PMC",
+        "PubMed",
+        "CORE Aggregate",
+        "OpenAlex",
+        "Google Scholar",
+        "Semantic Scholar"
+    ]
+    if "selected_apis" not in st.session_state:
+        st.session_state["selected_apis"] = ["Europe PMC"]
+
+    chosen_apis = st.multiselect(
+        "Select APIs to use:",
+        all_apis,
+        default=st.session_state["selected_apis"]
+    )
+    st.session_state["selected_apis"] = chosen_apis
+
+    st.write("Currently selected APIs:", chosen_apis)
+
+    # Verbindungstest
+    st.subheader("Connection Tests")
+    msgs = []
+    if "PubMed" in chosen_apis:
+        if check_pubmed_connection():
+            msgs.append("PubMed: OK")
+        else:
+            msgs.append("PubMed: FAIL")
+    if "Europe PMC" in chosen_apis:
+        if check_europe_pmc_connection():
+            msgs.append("Europe PMC: OK")
+        else:
+            msgs.append("Europe PMC: FAIL")
+    if "CORE Aggregate" in chosen_apis:
+        core_key = st.secrets.get("CORE_API_KEY", "")
+        if core_key and check_core_aggregate_connection(core_key):
+            msgs.append("CORE: OK")
+        else:
+            msgs.append("CORE: FAIL (No valid key or no connection)")
+
+    if msgs:
+        for m in msgs:
+            st.write("- ", m)
+    else:
+        st.write("No APIs selected or no checks performed.")
+
+    if st.button("Back to Main Menu"):
+        st.session_state["current_page"] = "Home"
+
 def page_online_filter():
     st.title("Online Filter Settings")
     st.write("Configure your online filter here. (Dummy placeholder...)")
@@ -235,80 +289,37 @@ def page_extended_topics():
         st.session_state["current_page"] = "Home"
 
 #############################################
-# "Api_select" in neuem Fenster öffnen
-#############################################
-
-def open_api_select_in_new_window():
-    """
-    Zeigt ein JavaScript-Snippet an, das in einem neuen Browser-Tab/Fenster 
-    eine andere Streamlit-App (z. B. 'api_select') öffnet.
-    
-    -> Du musst natürlich eine URL haben, wo dein 'api_select' läuft. 
-       z. B. http://localhost:8502/ oder ähnliches.
-    """
-    new_window_url = "http://localhost:8502"  # BEISPIEL: du bräuchtest dein API Select.
-    st.markdown(
-        f"""
-        <script>
-        window.open("{new_window_url}", "_blank");
-        </script>
-        """, unsafe_allow_html=True
-    )
-
-#############################################
 # Sidebar Module Navigation
 #############################################
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
 
-    # Wir machen hier alles so wie vorher, aber 
-    # bei "1) API Selection" öffnen wir per JavaScript ein neues Fenster.
-    
-    if st.sidebar.button("Home"):
-        st.session_state["current_page"] = "Home"
-    elif st.sidebar.button("1) API Selection"):
-        # HIER: stattdessen neues Fenster
-        open_api_select_in_new_window()
-        # Optional: st.session_state["current_page"] = "Home"
-        # oder man bleibt auf der alten Seite
-    elif st.sidebar.button("2) Online Filter"):
-        st.session_state["current_page"] = "2) Online Filter"
-    elif st.sidebar.button("3) Codewords & PubMed"):
-        st.session_state["current_page"] = "3) Codewords & PubMed"
-    elif st.sidebar.button("4) Paper Selection"):
-        st.session_state["current_page"] = "4) Paper Selection"
-    elif st.sidebar.button("5) Analysis & Evaluation"):
-        st.session_state["current_page"] = "5) Analysis & Evaluation"
-    elif st.sidebar.button("6) Extended Topics"):
-        st.session_state["current_page"] = "6) Extended Topics"
+    # Wir legen ein Dictionary an, das die Seiten-Funktionen referenziert
+    pages = {
+        "Home": page_home,
+        "1) API Selection": page_api_selection,
+        "2) Online Filter": page_online_filter,
+        "3) Codewords & PubMed": page_codewords_pubmed,
+        "4) Paper Selection": page_paper_selection,
+        "5) Analysis & Evaluation": page_analysis,
+        "6) Extended Topics": page_extended_topics
+    }
+
+    # Erzeugen Buttons für jede Seite
+    for label in pages.keys():
+        if st.sidebar.button(label):
+            st.session_state["current_page"] = label
 
     if "current_page" not in st.session_state:
         st.session_state["current_page"] = "Home"
 
-def render_page():
-    # Pseudocode: je nach st.session_state["current_page"] 
-    # unsere page-Funktionen aufrufen
-    if st.session_state["current_page"] == "Home":
-        page_home()
-    elif st.session_state["current_page"] == "2) Online Filter":
-        page_online_filter()
-    elif st.session_state["current_page"] == "3) Codewords & PubMed":
-        page_codewords_pubmed()
-    elif st.session_state["current_page"] == "4) Paper Selection":
-        page_paper_selection()
-    elif st.session_state["current_page"] == "5) Analysis & Evaluation":
-        page_analysis()
-    elif st.session_state["current_page"] == "6) Extended Topics":
-        page_extended_topics()
-    else:
-        # Standard fallback: Home
-        page_home()
+    # Gib die gerade gewählte Seitenfunktion zurück
+    return pages[st.session_state["current_page"]]
 
 #############################################
 # Main Streamlit App
 #############################################
 def main():
-    # CSS
     st.markdown(
         """
         <style>
@@ -321,11 +332,11 @@ def main():
         unsafe_allow_html=True
     )
 
-    # Sidebar
-    sidebar_module_navigation()
-
-    # Haupt-Rendering
-    render_page()
+    # Navigation
+    page_fn = sidebar_module_navigation()
+    # Rendering der ausgewählten Seite
+    page_fn()
 
 if __name__ == '__main__':
     main()
+
