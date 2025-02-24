@@ -43,8 +43,9 @@ def search_papers(api_name, query):
                     "Year": result.get("pubdate", "N/A"),
                     "Publisher": result.get("source", "N/A")
                 })
-        except (requests.exceptions.JSONDecodeError, ValueError):
-            st.write("Error decoding JSON from PubMed API")
+        except (requests.exceptions.JSONDecodeError, ValueError) as e:
+            st.write(f"Error decoding JSON from PubMed API: {e}")
+            st.write(f"Response content: {response.content}")
 
     elif api_name == "Europe PMC":
         url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
@@ -58,8 +59,9 @@ def search_papers(api_name, query):
                     "Year": item.get("pubYear", "N/A"),
                     "Publisher": item.get("source", "N/A")
                 })
-        except (requests.exceptions.JSONDecodeError, ValueError):
-            st.write("Error decoding JSON from Europe PMC API")
+        except (requests.exceptions.JSONDecodeError, ValueError) as e:
+            st.write(f"Error decoding JSON from Europe PMC API: {e}")
+            st.write(f"Response content: {response.content}")
 
     elif api_name == "CORE":
         url = "https://api.core.ac.uk/v3/search/works"
@@ -74,8 +76,9 @@ def search_papers(api_name, query):
                     "Year": item.get("year", "N/A"),
                     "Publisher": item.get("publisher", "N/A")
                 })
-        except (requests.exceptions.JSONDecodeError, ValueError):
-            st.write("Error decoding JSON from CORE API")
+        except (requests.exceptions.JSONDecodeError, ValueError) as e:
+            st.write(f"Error decoding JSON from CORE API: {e}")
+            st.write(f"Response content: {response.content}")
 
     return results
 
