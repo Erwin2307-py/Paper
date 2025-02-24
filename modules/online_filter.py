@@ -30,12 +30,13 @@ def search_papers(api_name, query):
     if api_name == "PubMed":
         url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
         params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 100}
-        response = requests.get(url, params=params)
+        response = requests.post(url, data=params)
         try:
             ids = response.json().get("esearchresult", {}).get("idlist", [])
             for id in ids:
-                details_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id={id}&retmode=json"
-                details_response = requests.get(details_url)
+                details_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+                details_params = {"db": "pubmed", "id": id, "retmode": "json"}
+                details_response = requests.post(details_url, data=details_params)
                 result = details_response.json().get("result", {}).get(id, {})
                 results.append({
                     "PubMed ID": id,
@@ -50,7 +51,7 @@ def search_papers(api_name, query):
     elif api_name == "Europe PMC":
         url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
         params = {"query": query, "format": "json", "pageSize": 100}
-        response = requests.get(url, params=params)
+        response = requests.post(url, data=params)
         try:
             for item in response.json().get("resultList", {}).get("result", []):
                 results.append({
@@ -67,7 +68,7 @@ def search_papers(api_name, query):
         url = "https://api.core.ac.uk/v3/search/works"
         headers = {"Authorization": "Bearer YOUR_CORE_API_KEY"}
         params = {"q": query, "limit": 100}
-        response = requests.get(url, headers=headers, params=params)
+        response = requests.post(url, headers=headers, data=params)
         try:
             for item in response.json().get("results", []):
                 results.append({
@@ -132,11 +133,7 @@ def module_online_filter():
         for api in ["PubMed", "Europe PMC", "CORE"]:
             papers.extend(search_papers(api, query))
         st.write("Found Papers:")
-        for paper in papers:
-            st.write(f"PubMed ID: {paper['PubMed ID']}")
-            st.write(f"Title: {paper['Title']}")
-            st.write(f"Year: {paper['Year']}")
-            st.write(f"Publisher: {paper['Publisher']}")
-            st.write("---")
+        papers_df = pd.DataFrame(papers)
+        st.table(papers_df)
 
 module_online_filter()
