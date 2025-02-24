@@ -6,7 +6,7 @@ def filter_abstracts_with_chatgpt(abstracts, keywords):
     api_endpoint = "https://api.openai.com/v1/engines/davinci-codex/completions"
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer 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"
+        "Authorization": f"Bearer YOUR_OPENAI_API_KEY"
     }
     prompt = f"Filter the following abstracts based on the keywords: {', '.join(keywords)}. Prioritize those containing these keywords."
 
