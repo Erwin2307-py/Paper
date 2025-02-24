@@ -1,5 +1,6 @@
 import streamlit as st
 import requests
+import pandas as pd
 
 def filter_abstracts_with_chatgpt(abstracts, keywords):
     api_endpoint = "https://api.openai.com/v1/engines/davinci-codex/completions"
@@ -64,6 +65,20 @@ def module_online_filter():
 
     st.session_state["filter_options"] = flt
     st.write("Aktuelle Filter-Einstellungen:", flt)
+
+    if flt["use_gene_excel"]:
+        try:
+            excel_file_path = "path/to/your/excel/file.xlsx"  # Replace with the actual path to your Excel file
+            xls = pd.ExcelFile(excel_file_path)
+            sheet_names = xls.sheet_names
+            selected_sheet = st.selectbox("Select Sheet", sheet_names)
+            if selected_sheet:
+                df = pd.read_excel(xls, sheet_name=selected_sheet)
+                names = df['Names'].tolist()
+                st.write("Names from Excel:", names)
+                flt["extra_term"] = " OR ".join(names)  # Combine names for search query
+        except Exception as e:
+            st.write("Error reading Excel file:", e)
 
     if flt["use_chatgpt"]:
         abstracts = st.text_area("Enter abstracts (one per line)").split("\n")
