@@ -316,11 +316,11 @@ def page_api_selection():
         else:
             msgs.append("OpenAlex: FAIL")
     if "Google Scholar" in chosen_apis:
-        google_scholar_test = GoogleScholarSearch().search_google_scholar("test")
-        if google_scholar_test:
+        try:
+            GoogleScholarSearch().search_google_scholar("test")
             msgs.append("Google Scholar: OK")
-        else:
-            msgs.append("Google Scholar: FAIL")
+        except Exception as e:
+            msgs.append(f"Google Scholar: FAIL ({str(e)})")
 
     if msgs:
         for m in msgs:
