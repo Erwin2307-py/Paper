@@ -97,6 +97,7 @@ def module_online_filter():
             if selected_sheet:
                 df = pd.read_excel(xls, sheet_name=selected_sheet, usecols="C", skiprows=2)
                 names = df.iloc[:, 0].tolist()
+                names = [str(name) for name in names if not pd.isnull(name)]  # Ensure all names are strings
                 flt["extra_term"] = " OR ".join(names)  # Combine names for search query
         except Exception as e:
             st.write("Error reading Excel file:", e)
