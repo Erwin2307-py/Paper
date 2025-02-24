@@ -24,6 +24,26 @@ def filter_abstracts_with_chatgpt(abstracts, keywords):
                 results.append(result.strip())
     return results
 
+def search_papers(api_name, query):
+    if api_name == "PubMed":
+        url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+        params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 100}
+        response = requests.get(url, params=params)
+        return response.json().get("esearchresult", {}).get("idlist", [])
+    elif api_name == "Europe PMC":
+        url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+        params = {"query": query, "format": "json", "pageSize": 100}
+        response = requests.get(url, params=params)
+        return response.json().get("resultList", {}).get("result", [])
+    elif api_name == "CORE":
+        url = "https://api.core.ac.uk/v3/search/works"
+        headers = {"Authorization": "Bearer YOUR_CORE_API_KEY"}
+        params = {"q": query, "limit": 100}
+        response = requests.get(url, headers=headers, params=params)
+        return response.json().get("results", [])
+    # Add more APIs as needed
+    return []
+
 def module_online_filter():
     st.header("Modul 2: Online-Filter")
 
@@ -53,3 +73,12 @@ def module_online_filter():
             st.write("Filtered Abstracts:")
             for abstract in filtered_abstracts:
                 st.write(abstract)
+
+    if st.button("Search Papers"):
+        query = flt["extra_term"]
+        papers = []
+        for api in ["PubMed", "Europe PMC", "CORE"]:
+            papers.extend(search_papers(api, query))
+        st.write("Found Papers:")
+        for paper in papers:
+            st.write(paper)
