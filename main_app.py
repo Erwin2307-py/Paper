@@ -377,8 +377,8 @@ def sidebar_module_navigation():
         "6) Extended Topics": page_extended_topics
     }
 
-    for label in pages.keys():
-        if st.sidebar.button(label):
+    for label, page in pages.items():
+        if st.sidebar.button(label, key=label):
             st.session_state["current_page"] = label
 
     if "current_page" not in st.session_state:
@@ -404,9 +404,6 @@ def main():
 
     page_fn = sidebar_module_navigation()
     page_fn()
-
-if __name__ == '__main__':
-    main()
 
 if __name__ == '__main__':
     main()
