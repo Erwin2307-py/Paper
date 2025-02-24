@@ -284,6 +284,17 @@ class SemanticScholarSearch:
         except Exception as e:
             st.error(f"Semantic Scholar: {e}")
 
+def check_semantic_scholar_connection(timeout=10):
+    try:
+        url = "https://api.semanticscholar.org/graph/v1/paper/search"
+        params = {"query": "test", "limit": 1, "fields": "title"}
+        headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, headers=headers, params=params, timeout=timeout)
+        response.raise_for_status()
+        return response.status_code == 200
+    except Exception:
+        return False
+
 #############################################
 # Excel-Hilfsfunktion
 #############################################
@@ -360,11 +371,10 @@ def page_api_selection():
         except Exception as e:
             msgs.append(f"Google Scholar: FAIL ({str(e)})")
     if "Semantic Scholar" in chosen_apis:
-        try:
-            SemanticScholarSearch().search_semantic_scholar("test")
+        if check_semantic_scholar_connection():
             msgs.append("Semantic Scholar: OK")
-        except Exception as e:
-            msgs.append(f"Semantic Scholar: FAIL ({str(e)})")
+        else:
+            msgs.append("Semantic Scholar: FAIL")
 
     if msgs:
         for m in msgs:
