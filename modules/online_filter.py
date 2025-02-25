@@ -39,7 +39,6 @@ def search_papers(api_name, query):
                 details_response = requests.post(details_url, data=details_params)
                 result = details_response.json().get("result", {}).get(id, {})
                 results.append({
-                    "API": "PubMed",
                     "PubMed ID": id,
                     "Title": result.get("title", "N/A"),
                     "Year": result.get("pubdate", "N/A"),
@@ -57,7 +56,6 @@ def search_papers(api_name, query):
             if response.content:
                 for item in response.json().get("resultList", {}).get("result", []):
                     results.append({
-                        "API": "Europe PMC",
                         "PubMed ID": item.get("id", "N/A"),
                         "Title": item.get("title", "N/A"),
                         "Year": item.get("pubYear", "N/A"),
@@ -77,7 +75,6 @@ def search_papers(api_name, query):
         try:
             for item in response.json().get("results", []):
                 results.append({
-                    "API": "CORE",
                     "PubMed ID": item.get("id", "N/A"),
                     "Title": item.get("title", "N/A"),
                     "Year": item.get("year", "N/A"),
@@ -145,8 +142,7 @@ def module_online_filter():
     if st.button("Search Papers"):
         query = flt["extra_term"]
         for api in ["PubMed", "Europe PMC", "CORE"]:
-            for _ in range(100):  # Start 100 search queries for each selected API
-                papers.extend(search_papers(api, query))
+            papers.extend(search_papers(api, query))
         st.write("Found Papers:")
         papers_df = pd.DataFrame(papers)
         st.session_state["papers_df"] = papers_df
