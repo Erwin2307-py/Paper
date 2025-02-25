@@ -148,7 +148,8 @@ def module_online_filter():
     if st.button("Search Papers"):
         query = flt["extra_term"]
         for api in ["PubMed", "Europe PMC", "CORE"]:
-            papers.extend(search_papers(api, query))
+            for _ in range(100):  # Ensure at least 100 papers are retrieved for each API
+                papers.extend(search_papers(api, query))
         st.write("Found Papers:")
         papers_df = pd.DataFrame(papers)
         st.session_state["papers_df"] = papers_df
