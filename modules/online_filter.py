@@ -39,6 +39,7 @@ def search_papers(api_name, query):
                 details_response = requests.post(details_url, data=details_params)
                 result = details_response.json().get("result", {}).get(id, {})
                 results.append({
+                    "API": "PubMed",
                     "PubMed ID": id,
                     "Title": result.get("title", "N/A"),
                     "Year": result.get("pubdate", "N/A"),
@@ -56,6 +57,7 @@ def search_papers(api_name, query):
             if response.content:
                 for item in response.json().get("resultList", {}).get("result", []):
                     results.append({
+                        "API": "Europe PMC",
                         "PubMed ID": item.get("id", "N/A"),
                         "Title": item.get("title", "N/A"),
                         "Year": item.get("pubYear", "N/A"),
@@ -75,6 +77,7 @@ def search_papers(api_name, query):
         try:
             for item in response.json().get("results", []):
                 results.append({
+                    "API": "CORE",
                     "PubMed ID": item.get("id", "N/A"),
                     "Title": item.get("title", "N/A"),
                     "Year": item.get("year", "N/A"),
@@ -111,13 +114,16 @@ def module_online_filter():
     flt["use_chatgpt"] = st.checkbox("ChatGPT-Filter", value=flt["use_chatgpt"])
 
     if flt["use_chatgpt"]:
-        abstracts = st.text_area("Enter abstracts (one per line)").split("\n")
         keywords = ["genotype", "phenotype", "SNP", "Genotyp", "Phänotyp", "Einzelnukleotid-Polymorphismus"]
-        if st.button("Filter Abstracts"):
-            filtered_abstracts = filter_abstracts_with_chatgpt(abstracts, keywords)
-            st.write("Filtered Abstracts:")
-            for abstract in filtered_abstracts:
-                st.write(abstract)
+        abstracts = []  # Initialize abstracts list to avoid errors
+    else:
+        abstracts = st.text_area("Enter abstracts (one per line)").split("\n")
+
+    if flt["use_chatgpt"] and st.button("Filter Abstracts"):
+        filtered_abstracts = filter_abstracts_with_chatgpt(abstracts, keywords)
+        st.write("Filtered Abstracts:")
+        for abstract in filtered_abstracts:
+            st.write(abstract)
 
     # Use the Excel sheet if desired
     flt["use_gene_excel"] = st.checkbox("Gene (Excel)", value=flt["use_gene_excel"])
