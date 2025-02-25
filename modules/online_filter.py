@@ -100,6 +100,12 @@ def module_online_filter():
             "extra_term": ""
         }
 
+    # Display selected APIs
+    if "selected_apis" in st.session_state:
+        st.write("Selected APIs:", st.session_state["selected_apis"])
+    else:
+        st.write("No APIs selected. Please select APIs in the API Selection module.")
+
     # Codewords input
     codewords = st.text_input("Codewörter für die Paper-Suche (kommasepariert)", "genotype,phenotype,SNP")
     if codewords:
@@ -147,7 +153,7 @@ def module_online_filter():
     papers = []
     if st.button("Search Papers"):
         query = flt["extra_term"]
-        for api in ["PubMed", "Europe PMC", "CORE"]:
+        for api in st.session_state.get("selected_apis", []):
             for _ in range(100):  # Ensure at least 100 papers are retrieved for each API
                 papers.extend(search_papers(api, query))
         st.write("Found Papers:")
