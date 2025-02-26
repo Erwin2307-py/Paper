@@ -5,7 +5,6 @@ import pandas as pd
 from io import BytesIO
 from scholarly import scholarly
 from modules.online_filter import module_online_filter
-from modules.PaperQA2 import module_paperqa2  # Import angepasst: Großschreibung beachten
 
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
@@ -169,7 +168,6 @@ def search_europe_pmc(query):
             title = item.get("title", "n/a")
             year = str(item.get("pubYear", "n/a"))
             journal = item.get("journalTitle", "n/a")
-
             out.append({
                 "PMID": pmid if pmid else "n/a",
                 "Title": title,
@@ -217,7 +215,6 @@ class GoogleScholarSearch:
     def search_google_scholar(self, base_query):
         try:
             search_results = scholarly.search_pubs(base_query)
-            
             for _ in range(5):
                 result = next(search_results)
                 title = result['bib'].get('title', "n/a")
@@ -225,7 +222,6 @@ class GoogleScholarSearch:
                 year = result['bib'].get('pub_year', "n/a")
                 url_article = result.get('url_scholarbib', "n/a")
                 abstract_text = result['bib'].get('abstract', "")
-
                 self.all_results.append({
                     "Source": "Google Scholar",
                     "Title": title,
@@ -237,14 +233,12 @@ class GoogleScholarSearch:
                     "URL": url_article,
                     "Abstract": abstract_text
                 })
-            
             for idx, entry in enumerate(self.all_results, start=1):
                 print(f"{idx}. Titel: {entry['Title']}")
                 print(f"   Autoren: {entry['Authors/Description']}")
                 print(f"   Jahr: {entry['Year']}")
                 print(f"   URL: {entry['URL']}")
                 print(f"   Abstract: {entry['Abstract']}\n")
-
         except Exception as e:
             st.error(f"Fehler bei der Google Scholar-Suche: {e}")
 
@@ -271,7 +265,6 @@ class SemanticScholarSearch:
                 paper_id = paper.get("paperId", "")
                 abstract_text = paper.get("abstract", "")
                 url_article = f"https://www.semanticscholar.org/paper/{paper_id}" if paper_id else "n/a"
-
                 self.all_results.append({
                     "Source": "Semantic Scholar",
                     "Title": title,
@@ -386,10 +379,7 @@ def page_api_selection():
 def page_online_filter():
     st.title("Online Filter Settings")
     st.write("Configure your online filter here.")
-
-    # Call the module_online_filter function from modules/online_filter.py
     module_online_filter()
-
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
@@ -417,16 +407,33 @@ def page_extended_topics():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-# Neues Modul: PaperQA2 – hier wird das Modul aus dem Ordner "modules" aufgerufen
+# Neues Modul: PaperQA2 mit lokaler Paper-Auswahl, Analyse und Frage-Antwort-Funktion
 def page_paperqa2():
     st.title("PaperQA2")
-    uploaded_file = st.file_uploader("Upload a paper", type=["pdf", "docx", "txt"])
+    st.write("Lade dein Paper hoch, lasse es analysieren und stelle anschließend Fragen dazu.")
+
+    # Dateiauswahl: Erlaubt das Hochladen von PDF- oder Textdateien
+    uploaded_file = st.file_uploader("Wähle eine lokale Paper-Datei aus", type=["pdf", "txt"])
+    
     if uploaded_file is not None:
-        # Handle file upload and pass it to PaperQA2 module
-        content = uploaded_file.read()
-        # Assuming module_paperqa2 has a function `analyze_paper` that takes the file content
-        result = module_paperqa2.analyze_paper(content)
-        st.write(result)
+        st.write("Hochgeladene Datei:", uploaded_file.name)
+        # Hier kannst du den Dateiinhalt extrahieren, z.B. mittels PDF-Parsing
+        # Im Beispiel wird nur der Dateiname angezeigt.
+        if st.button("Paper analysieren"):
+            # Dummy-Analyse – ersetze dies durch deine eigentliche PaperQA2-Analyse
+            analysis_result = "Dies ist eine Dummy-Analyse des Papers."
+            st.session_state["paper_analysis"] = analysis_result
+            st.success("Paper wurde analysiert.")
+
+    # Falls bereits eine Analyse vorliegt, kann der Benutzer Fragen stellen.
+    if "paper_analysis" in st.session_state:
+        st.subheader("Frage zum Paper stellen")
+        user_question = st.text_input("Gib deine Frage ein:")
+        if st.button("Frage absenden"):
+            # Dummy-Antwort – ersetze dies durch deine eigentliche Logik zur Fragebeantwortung
+            answer = f"Dummy-Antwort auf deine Frage: {user_question}"
+            st.write(answer)
+
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
@@ -435,7 +442,6 @@ def page_paperqa2():
 #############################################
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
-
     pages = {
         "Home": page_home,
         "1) API Selection": page_api_selection,
@@ -444,16 +450,13 @@ def sidebar_module_navigation():
         "4) Paper Selection": page_paper_selection,
         "5) Analysis & Evaluation": page_analysis,
         "6) Extended Topics": page_extended_topics,
-        "7) PaperQA2": page_paperqa2  # Neues Modul hinzugefügt
+        "7) PaperQA2": page_paperqa2
     }
-
     for label, page in pages.items():
         if st.sidebar.button(label, key=label):
             st.session_state["current_page"] = label
-
     if "current_page" not in st.session_state:
         st.session_state["current_page"] = "Home"
-
     return pages[st.session_state["current_page"]]
 
 #############################################
@@ -471,7 +474,6 @@ def main():
         """,
         unsafe_allow_html=True
     )
-
     page_fn = sidebar_module_navigation()
     page_fn()
 
