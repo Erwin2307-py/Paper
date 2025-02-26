@@ -1,5 +1,4 @@
-
-   import streamlit as st
+import streamlit as st
 import requests
 import xml.etree.ElementTree as ET
 import pandas as pd
@@ -471,4 +470,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
