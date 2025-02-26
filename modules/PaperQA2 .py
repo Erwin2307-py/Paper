@@ -5,6 +5,7 @@ import pandas as pd
 from io import BytesIO
 from scholarly import scholarly
 from modules.online_filter import module_online_filter
+from modules.PaperQA2 import module_paperqa2  # Import angepasst: Großschreibung beachten
 
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
@@ -416,10 +417,11 @@ def page_extended_topics():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-# Neues Modul: PaperQA2
+# Neues Modul: PaperQA2 – hier wird das Modul aus dem Ordner "modules" aufgerufen
 def page_paperqa2():
     st.title("PaperQA2")
-    st.write("Configure your PaperQA2 settings here. (Dummy placeholder...)")
+    # Aufruf des PaperQA2-Moduls aus dem Ordner modules
+    module_paperqa2()
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
