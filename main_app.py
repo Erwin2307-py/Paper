@@ -5,6 +5,8 @@ import pandas as pd
 from io import BytesIO
 from scholarly import scholarly
 from modules.online_filter import module_online_filter
+# Den Import aus modules.PaperQA2 entfernen, da wir die Funktion direkt hier definieren
+# from modules.PaperQA2 import module_paperqa2
 
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
@@ -168,7 +170,6 @@ def search_europe_pmc(query):
             title = item.get("title", "n/a")
             year = str(item.get("pubYear", "n/a"))
             journal = item.get("journalTitle", "n/a")
-
             out.append({
                 "PMID": pmid if pmid else "n/a",
                 "Title": title,
@@ -216,7 +217,6 @@ class GoogleScholarSearch:
     def search_google_scholar(self, base_query):
         try:
             search_results = scholarly.search_pubs(base_query)
-            
             for _ in range(5):
                 result = next(search_results)
                 title = result['bib'].get('title', "n/a")
@@ -224,7 +224,6 @@ class GoogleScholarSearch:
                 year = result['bib'].get('pub_year', "n/a")
                 url_article = result.get('url_scholarbib', "n/a")
                 abstract_text = result['bib'].get('abstract', "")
-
                 self.all_results.append({
                     "Source": "Google Scholar",
                     "Title": title,
@@ -236,14 +235,12 @@ class GoogleScholarSearch:
                     "URL": url_article,
                     "Abstract": abstract_text
                 })
-            
             for idx, entry in enumerate(self.all_results, start=1):
                 print(f"{idx}. Titel: {entry['Title']}")
                 print(f"   Autoren: {entry['Authors/Description']}")
                 print(f"   Jahr: {entry['Year']}")
                 print(f"   URL: {entry['URL']}")
                 print(f"   Abstract: {entry['Abstract']}\n")
-
         except Exception as e:
             st.error(f"Fehler bei der Google Scholar-Suche: {e}")
 
@@ -270,7 +267,6 @@ class SemanticScholarSearch:
                 paper_id = paper.get("paperId", "")
                 abstract_text = paper.get("abstract", "")
                 url_article = f"https://www.semanticscholar.org/paper/{paper_id}" if paper_id else "n/a"
-
                 self.all_results.append({
                     "Source": "Semantic Scholar",
                     "Title": title,
@@ -311,6 +307,18 @@ def convert_results_to_excel(data):
     return output.getvalue()
 
 #############################################
+# Definition des PaperQA2-Moduls
+#############################################
+def module_paperqa2():
+    st.subheader("PaperQA2 Module")
+    st.write("Dies ist das PaperQA2 Modul. Hier kannst du weitere Einstellungen und Funktionen für PaperQA2 implementieren.")
+    # Beispielhafte Funktionalität: Eingabe einer Frage und Anzeige einer Dummy-Antwort
+    question = st.text_input("Bitte gib deine Frage ein:")
+    if st.button("Frage absenden"):
+        # Hier könntest du deine eigene Q&A Logik implementieren.
+        st.write("Antwort: Dies ist eine Dummy-Antwort auf die Frage:", question)
+
+#############################################
 # Pages
 #############################################
 def page_home():
@@ -320,7 +328,6 @@ def page_home():
 def page_api_selection():
     st.title("API Selection & Connection Status")
     st.write("Auf dieser Seite kannst du die zu verwendenden APIs wählen und den Verbindungsstatus prüfen.")
-
     all_apis = [
         "Europe PMC",
         "PubMed",
@@ -331,12 +338,9 @@ def page_api_selection():
     ]
     if "selected_apis" not in st.session_state:
         st.session_state["selected_apis"] = ["Europe PMC"]
-
     chosen_apis = [api for api in all_apis if st.checkbox(api, value=api in st.session_state["selected_apis"])]
     st.session_state["selected_apis"] = chosen_apis
-
     st.write("Currently selected APIs:", chosen_apis)
-
     st.subheader("Connection Tests")
     msgs = []
     if "PubMed" in chosen_apis:
@@ -372,23 +376,18 @@ def page_api_selection():
             msgs.append("Semantic Scholar: OK")
         else:
             msgs.append("Semantic Scholar: FAIL")
-
     if msgs:
         for m in msgs:
             st.write("- ", m)
     else:
         st.write("No APIs selected or no checks performed.")
-
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
 def page_online_filter():
     st.title("Online Filter Settings")
     st.write("Configure your online filter here.")
-
-    # Call the module_online_filter function from modules/online_filter.py
     module_online_filter()
-
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
@@ -416,10 +415,9 @@ def page_extended_topics():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-# Neues Modul: PaperQA2
 def page_paperqa2():
     st.title("PaperQA2")
-    st.write("Configure your PaperQA2 settings here. (Dummy placeholder...)")
+    module_paperqa2()  # Aufruf des PaperQA2-Moduls
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
@@ -428,7 +426,6 @@ def page_paperqa2():
 #############################################
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
-
     pages = {
         "Home": page_home,
         "1) API Selection": page_api_selection,
@@ -437,16 +434,13 @@ def sidebar_module_navigation():
         "4) Paper Selection": page_paper_selection,
         "5) Analysis & Evaluation": page_analysis,
         "6) Extended Topics": page_extended_topics,
-        "7) PaperQA2": page_paperqa2  # Neues Modul hinzugefügt
+        "7) PaperQA2": page_paperqa2
     }
-
     for label, page in pages.items():
         if st.sidebar.button(label, key=label):
             st.session_state["current_page"] = label
-
     if "current_page" not in st.session_state:
         st.session_state["current_page"] = "Home"
-
     return pages[st.session_state["current_page"]]
 
 #############################################
@@ -464,9 +458,9 @@ def main():
         """,
         unsafe_allow_html=True
     )
-
     page_fn = sidebar_module_navigation()
     page_fn()
 
 if __name__ == '__main__':
     main()
+
