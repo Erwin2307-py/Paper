@@ -299,9 +299,6 @@ def check_semantic_scholar_connection(timeout=10):
 #############################################
 # Excel-Hilfsfunktion
 #############################################
-import pandas as pd
-from io import BytesIO
-
 def convert_results_to_excel(data):
     df = pd.DataFrame(data)
     output = BytesIO()
@@ -316,7 +313,6 @@ def convert_results_to_excel(data):
 #############################################
 # Pages
 #############################################
-
 def page_home():
     st.title("Welcome to the Main Menu")
     st.write("Choose a module in the sidebar to proceed.")
@@ -420,6 +416,13 @@ def page_extended_topics():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
+# Neues Modul: PaperQA2
+def page_paperqa2():
+    st.title("PaperQA2")
+    st.write("Configure your PaperQA2 settings here. (Dummy placeholder...)")
+    if st.button("Back to Main Menu"):
+        st.session_state["current_page"] = "Home"
+
 #############################################
 # Sidebar Module Navigation
 #############################################
@@ -433,7 +436,8 @@ def sidebar_module_navigation():
         "3) Codewords & PubMed": page_codewords_pubmed,
         "4) Paper Selection": page_paper_selection,
         "5) Analysis & Evaluation": page_analysis,
-        "6) Extended Topics": page_extended_topics
+        "6) Extended Topics": page_extended_topics,
+        "7) PaperQA2": page_paperqa2  # Neues Modul hinzugefügt
     }
 
     for label, page in pages.items():
