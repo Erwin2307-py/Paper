@@ -367,11 +367,8 @@ def page_api_selection():
         else:
             msgs.append("Semantic Scholar: FAIL")
 
-    if msgs:
-        for m in msgs:
-            st.write("- ", m)
-    else:
-        st.write("No APIs selected or no checks performed.")
+    for m in msgs:
+        st.write("- ", m)
 
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
@@ -409,30 +406,40 @@ def page_extended_topics():
 
 # Neues Modul: PaperQA2 mit lokaler Paper-Auswahl, Analyse und Frage-Antwort-Funktion
 def page_paperqa2():
-    st.title("PaperQA2")
-    st.write("Lade dein Paper hoch, lasse es analysieren und stelle anschließend Fragen dazu.")
+    st.title("PaperQA2 - Lokale Paper-Auswahl, Analyse & Fragen")
+    st.write("Wähle ein lokales Paper aus, lasse es analysieren und stelle anschließend Fragen dazu.")
 
-    # Dateiauswahl: Erlaubt das Hochladen von PDF- oder Textdateien
-    uploaded_file = st.file_uploader("Wähle eine lokale Paper-Datei aus", type=["pdf", "txt"])
-    
-    if uploaded_file is not None:
-        st.write("Hochgeladene Datei:", uploaded_file.name)
-        # Hier kannst du den Dateiinhalt extrahieren, z.B. mittels PDF-Parsing
-        # Im Beispiel wird nur der Dateiname angezeigt.
+    # Zuerst: Button, um den File-Uploader einzublenden
+    if "paper_file" not in st.session_state:
+        if st.button("Paper auswählen"):
+            st.session_state["show_uploader"] = True
+
+    # Falls der Uploader angezeigt werden soll
+    if st.session_state.get("show_uploader", False):
+        uploaded_file = st.file_uploader("Wähle eine lokale Paper-Datei aus", type=["pdf", "txt"])
+        if uploaded_file is not None:
+            st.session_state["paper_file"] = uploaded_file
+            st.write("Hochgeladene Datei:", uploaded_file.name)
+            # Uploader wieder ausblenden
+            st.session_state["show_uploader"] = False
+
+    # Falls bereits ein Paper ausgewählt wurde
+    if "paper_file" in st.session_state:
+        st.write("Ausgewähltes Paper:", st.session_state["paper_file"].name)
         if st.button("Paper analysieren"):
-            # Dummy-Analyse – ersetze dies durch deine eigentliche PaperQA2-Analyse
+            # Hier wird die Dummy-Analyse ausgeführt – ersetze dies durch deine Analyse-Funktion
             analysis_result = "Dies ist eine Dummy-Analyse des Papers."
             st.session_state["paper_analysis"] = analysis_result
             st.success("Paper wurde analysiert.")
 
-    # Falls bereits eine Analyse vorliegt, kann der Benutzer Fragen stellen.
-    if "paper_analysis" in st.session_state:
-        st.subheader("Frage zum Paper stellen")
-        user_question = st.text_input("Gib deine Frage ein:")
-        if st.button("Frage absenden"):
-            # Dummy-Antwort – ersetze dies durch deine eigentliche Logik zur Fragebeantwortung
-            answer = f"Dummy-Antwort auf deine Frage: {user_question}"
-            st.write(answer)
+        # Falls bereits eine Analyse vorliegt, kann der Benutzer Fragen stellen.
+        if "paper_analysis" in st.session_state:
+            st.subheader("Frage zum Paper stellen")
+            user_question = st.text_input("Gib deine Frage ein:")
+            if st.button("Frage absenden"):
+                # Dummy-Antwort – ersetze dies durch deine Frage-Antwort-Logik
+                answer = f"Dummy-Antwort auf deine Frage: {user_question}"
+                st.write(answer)
 
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
