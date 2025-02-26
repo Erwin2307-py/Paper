@@ -1,11 +1,11 @@
-import streamlit as st
+
+   import streamlit as st
 import requests
 import xml.etree.ElementTree as ET
 import pandas as pd
 from io import BytesIO
 from scholarly import scholarly
 from modules.online_filter import module_online_filter
-from modules.paperqa2 import module_paperqa2  # Neu: Import des PaperQA2-Moduls
 
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
@@ -417,11 +417,10 @@ def page_extended_topics():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-# Neues Modul: PaperQA2 – hier wird das Modul aus dem Ordner "modules" aufgerufen
+# Neues Modul: PaperQA2
 def page_paperqa2():
     st.title("PaperQA2")
-    # Aufruf des PaperQA2-Moduls aus dem Ordner modules
-    module_paperqa2()
+    st.write("Configure your PaperQA2 settings here. (Dummy placeholder...)")
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
