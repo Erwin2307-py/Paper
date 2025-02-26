@@ -1,14 +1,124 @@
+import sys
+import os
+import subprocess
+import logging
+import re
+import json
+import threading
+import queue
+import webbrowser
+from datetime import datetime
+import time
+
 import streamlit as st
 import requests
 import xml.etree.ElementTree as ET
 import pandas as pd
 from io import BytesIO
 from scholarly import scholarly
-from modules.online_filter import module_online_filter
-# Den Import aus modules.PaperQA2 entfernen, da wir die Funktion direkt hier definieren
-# from modules.PaperQA2 import module_paperqa2
+from bs4 import BeautifulSoup
+import fitz  # PyMuPDF
+from transformers import pipeline
+from dotenv import load_dotenv
+import openai
 
+# Lade Umgebungsvariablen
+load_dotenv()
+
+# API-Schlüssel und Modelle aus den Umgebungsvariablen
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4")
+PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
+PHI3_API_KEY = os.getenv("PHI3_API_KEY")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+
+if OPENAI_API_KEY:
+    openai.api_key = OPENAI_API_KEY
+    openai.api_base = "https://api.openai.com/v1"
+else:
+    logging.warning("OpenAI API-Schlüssel nicht gesetzt.")
+
+# Setup Logging
+logging.basicConfig(
+    filename='paper_search.log',
+    filemode='w',
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+# Installations-Check (wie im Originalskript)
+required_packages = {
+    "openpyxl": "openpyxl",
+    "pandas": "pandas",
+    "requests": "requests",
+    "beautifulsoup4": "bs4",
+    "transformers": "transformers",
+    "torch": "torch",
+    "PyMuPDF": "fitz",
+    "serpapi": "serpapi",
+    "scholarly": "scholarly",
+    "openai": "openai",
+    "dotenv": "dotenv"
+}
+
+def install_packages(packages, pip_executable):
+    try:
+        subprocess.check_call([pip_executable, "install"] + packages)
+    except subprocess.CalledProcessError as e:
+        print(f"Fehler bei der Installation von Paketen: {e}")
+        sys.exit(1)
+
+def is_virtual_env():
+    return (
+        hasattr(sys, 'real_prefix') or
+        (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix)
+    )
+
+def check_and_install_packages():
+    missing_packages = []
+    for package, import_name in required_packages.items():
+        if import_name == "tkinter":
+            continue
+        try:
+            __import__(import_name)
+        except ImportError:
+            missing_packages.append(package)
+    if not missing_packages:
+        return
+    print("Fehlende Pakete erkannt:", missing_packages)
+    if not is_virtual_env():
+        print("Erstelle virtuelle Umgebung...")
+        subprocess.check_call([sys.executable, "-m", "venv", "venv"])
+        if os.name == 'nt':
+            pip_executable = os.path.join('venv', 'Scripts', 'pip.exe')
+            python_executable = os.path.join('venv', 'Scripts', 'python.exe')
+        else:
+            pip_executable = os.path.join('venv', 'bin', 'pip')
+            python_executable = os.path.join('venv', 'bin', 'python')
+        print("Installiere fehlende Pakete...")
+        install_packages(missing_packages, pip_executable)
+        print("Starte das Skript innerhalb der virtuellen Umgebung neu...")
+        subprocess.check_call([python_executable] + sys.argv)
+        sys.exit()
+    else:
+        print("Installiere fehlende Pakete in der virtuellen Umgebung...")
+        pip_executable = os.path.join(sys.prefix, 'bin', 'pip') if os.name != 'nt' else os.path.join(sys.prefix, 'Scripts', 'pip.exe')
+        install_packages(missing_packages, pip_executable)
+        print("Pakete wurden installiert. Bitte starten Sie das Skript neu.")
+        sys.exit(0)
+
+check_and_install_packages()
+
+# Streamlit-Seiteneinstellungen
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
+
+#############################################
+# Hilfsfunktionen
+#############################################
+def sanitize_filename(name):
+    sanitized = re.sub(r'[\\/*?:\[\]]', '_', name)
+    sanitized = sanitized.replace(' ', '_')
+    return sanitized[:50]
 
 #############################################
 # CORE Aggregate API Class and Connection Check
@@ -93,13 +203,11 @@ def search_pubmed(query):
         idlist = data.get("esearchresult", {}).get("idlist", [])
         if not idlist:
             return out
-        
         esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
         sum_params = {"db": "pubmed", "id": ",".join(idlist), "retmode": "json"}
         r2 = requests.get(esummary_url, params=sum_params, timeout=10)
         r2.raise_for_status()
         summary_data = r2.json().get("result", {})
-
         for pmid in idlist:
             info = summary_data.get(pmid, {})
             title = info.get("title", "n/a")
@@ -190,13 +298,10 @@ def fetch_openalex_data(entity_type, entity_id=None, params=None):
     url = f"{BASE_URL}/{entity_type}"
     if entity_id:
         url += f"/{entity_id}"
-    
     if params is None:
         params = {}
-    params["mailto"] = "your_email@example.com"  # Ersetze durch deine E-Mail-Adresse
-    
+    params["mailto"] = "your_email@example.com"  # Bitte durch deine E-Mail ersetzen
     response = requests.get(url, params=params)
-    
     if response.status_code == 200:
         return response.json()
     else:
@@ -310,9 +415,8 @@ def convert_results_to_excel(data):
 # Definition des PaperQA2-Moduls
 #############################################
 def module_paperqa2():
-    st.subheader("PaperQA2 Module")
+    st.subheader("PaperQA2 Modul")
     st.write("Dies ist das PaperQA2 Modul. Hier kannst du weitere Einstellungen und Funktionen für PaperQA2 implementieren.")
-    # Beispielhafte Funktionalität: Eingabe einer Frage und Anzeige einer Dummy-Antwort
     question = st.text_input("Bitte gib deine Frage ein:")
     if st.button("Frage absenden"):
         # Hier könntest du deine eigene Q&A Logik implementieren.
@@ -328,14 +432,7 @@ def page_home():
 def page_api_selection():
     st.title("API Selection & Connection Status")
     st.write("Auf dieser Seite kannst du die zu verwendenden APIs wählen und den Verbindungsstatus prüfen.")
-    all_apis = [
-        "Europe PMC",
-        "PubMed",
-        "CORE Aggregate",
-        "OpenAlex",
-        "Google Scholar",
-        "Semantic Scholar"
-    ]
+    all_apis = ["Europe PMC", "PubMed", "CORE Aggregate", "OpenAlex", "Google Scholar", "Semantic Scholar"]
     if "selected_apis" not in st.session_state:
         st.session_state["selected_apis"] = ["Europe PMC"]
     chosen_apis = [api for api in all_apis if st.checkbox(api, value=api in st.session_state["selected_apis"])]
@@ -376,11 +473,8 @@ def page_api_selection():
             msgs.append("Semantic Scholar: OK")
         else:
             msgs.append("Semantic Scholar: FAIL")
-    if msgs:
-        for m in msgs:
-            st.write("- ", m)
-    else:
-        st.write("No APIs selected or no checks performed.")
+    for m in msgs:
+        st.write("- ", m)
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
@@ -463,4 +557,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
