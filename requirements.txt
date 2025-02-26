@@ -11,3 +11,4 @@ xlsxwriter
 pandas
 openpyxl
 requests
+transformers
