@@ -420,8 +420,13 @@ def page_extended_topics():
 # Neues Modul: PaperQA2 – hier wird das Modul aus dem Ordner "modules" aufgerufen
 def page_paperqa2():
     st.title("PaperQA2")
-    # Aufruf des PaperQA2-Moduls aus dem Ordner modules
-    module_paperqa2()
+    uploaded_file = st.file_uploader("Upload a paper", type=["pdf", "docx", "txt"])
+    if uploaded_file is not None:
+        # Handle file upload and pass it to PaperQA2 module
+        content = uploaded_file.read()
+        # Assuming module_paperqa2 has a function `analyze_paper` that takes the file content
+        result = module_paperqa2.analyze_paper(content)
+        st.write(result)
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
@@ -472,4 +477,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
