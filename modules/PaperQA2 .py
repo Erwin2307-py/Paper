@@ -1,488 +1,555 @@
+import os
+import sys
+import re
+import json
+import logging
+import threading
+import time
+from datetime import datetime
+from io import BytesIO
+
 import streamlit as st
 import requests
-import xml.etree.ElementTree as ET
 import pandas as pd
-from io import BytesIO
+from bs4 import BeautifulSoup
+import fitz  # PyMuPDF
+from transformers import pipeline
 from scholarly import scholarly
-from modules.online_filter import module_online_filter
+from dotenv import load_dotenv
+import openai
+
+# Lade Umgebungsvariablen
+load_dotenv()
+
+# API-Schlüssel und Modellnamen
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4")
+PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
+PHI3_API_KEY = os.getenv("PHI3_API_KEY")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+
+if OPENAI_API_KEY:
+    openai.api_key = OPENAI_API_KEY
+    openai.api_base = "https://api.openai.com/v1"
+else:
+    logging.warning("OpenAI API-Schlüssel nicht gesetzt.")
+
+# Setze Logging
+logging.basicConfig(
+    filename='paper_search.log',
+    filemode='w',
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
-#############################################
-# CORE Aggregate API Class and Connection Check
-#############################################
-class CoreAPI:
-    def __init__(self, api_key):
-        self.base_url = "https://api.core.ac.uk/v3/"
-        self.headers = {"Authorization": f"Bearer {api_key}"}
+# Hilfsfunktionen
+def sanitize_filename(name):
+    sanitized = re.sub(r'[\\/*?:\[\]]', '_', name)
+    sanitized = sanitized.replace(' ', '_')
+    return sanitized[:50]
 
-    def search_publications(self, query, filters=None, sort=None, limit=100):
-        endpoint = "search/works"
-        params = {"q": query, "limit": limit}
-        if filters:
-            filter_expressions = []
-            for key, value in (filters or {}).items():
-                filter_expressions.append(f"{key}:{value}")
-            params["filter"] = ",".join(filter_expressions)
-        if sort:
-            params["sort"] = sort
-        r = requests.get(
-            self.base_url + endpoint,
-            headers=self.headers,
-            params=params,
-            timeout=15
-        )
-        r.raise_for_status()
-        return r.json()
-
-def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", timeout=15):
+def extract_text_from_pdf(pdf_bytes):
     try:
-        core = CoreAPI(api_key)
-        result = core.search_publications("test", limit=1)
-        return "results" in result
-    except Exception:
-        return False
-
-def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
-    if not api_key:
-        return []
-    try:
-        core = CoreAPI(api_key)
-        raw = core.search_publications(query, limit=100)
-        out = []
-        results = raw.get("results", [])
-        for item in results:
-            title = item.get("title", "n/a")
-            year = str(item.get("yearPublished", "n/a"))
-            journal = item.get("publisher", "n/a")
-            out.append({
-                "PMID": "n/a",
-                "Title": title,
-                "Year": year,
-                "Journal": journal
-            })
-        return out
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        text = ""
+        for page in doc:
+            text += page.get_text()
+        doc.close()
+        return text
     except Exception as e:
-        st.error(f"CORE search error: {e}")
-        return []
+        logging.error(f"Fehler beim Extrahieren aus PDF: {e}")
+        return "Textextraktion fehlgeschlagen"
 
-#############################################
-# PubMed Connection Check + Search
-#############################################
-def check_pubmed_connection(timeout=10):
-    test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-    params = {"db": "pubmed", "term": "test", "retmode": "json"}
-    try:
-        r = requests.get(test_url, params=params, timeout=timeout)
-        r.raise_for_status()
-        data = r.json()
-        return "esearchresult" in data
-    except Exception:
-        return False
-
-def search_pubmed(query):
+# API-Suchfunktionen (ähnlich wie im Tkinter-Skript)
+def search_pubmed(query, retmax=100):
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-    params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 100}
-    out = []
+    params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": retmax}
     try:
         r = requests.get(esearch_url, params=params, timeout=10)
         r.raise_for_status()
         data = r.json()
         idlist = data.get("esearchresult", {}).get("idlist", [])
         if not idlist:
-            return out
-        
+            return []
         esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
         sum_params = {"db": "pubmed", "id": ",".join(idlist), "retmode": "json"}
         r2 = requests.get(esummary_url, params=sum_params, timeout=10)
         r2.raise_for_status()
         summary_data = r2.json().get("result", {})
-
+        papers = []
         for pmid in idlist:
             info = summary_data.get(pmid, {})
             title = info.get("title", "n/a")
             pubdate = info.get("pubdate", "")
             year = pubdate[:4] if pubdate else "n/a"
             journal = info.get("fulljournalname", "n/a")
-            out.append({
-                "PMID": pmid,
-                "Title": title,
-                "Year": year,
-                "Journal": journal
+            papers.append({
+                "source": "PubMed",
+                "id": pmid,
+                "title": title,
+                "journal": journal,
+                "link": f"https://www.ncbi.nlm.nih.gov/pmc/articles/{pmid}/pdf/",
+                "abstract": "(Abstract via PubMed nicht geladen)",
+                "impact_factor": 1.0,
+                "pdf_text": "Keine PDF verfügbar",
+                "esummary": json.dumps({"PMCID": pmid})
             })
-        return out
+        return papers
     except Exception as e:
         st.error(f"Error searching PubMed: {e}")
         return []
 
-def fetch_pubmed_abstract(pmid):
-    url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
-    params = {"db": "pubmed", "id": pmid, "retmode": "xml"}
+def search_arxiv(query, max_results=10):
+    base_url = "http://export.arxiv.org/api/query"
+    params = {"search_query": query, "start": 0, "max_results": max_results}
     try:
-        r = requests.get(url, params=params, timeout=10)
-        r.raise_for_status()
-        root = ET.fromstring(r.content)
-        abs_text = []
-        for elem in root.findall(".//AbstractText"):
-            if elem.text:
-                abs_text.append(elem.text.strip())
-        if abs_text:
-            return "\n".join(abs_text)
-        else:
-            return "(No abstract available)"
-    except Exception as e:
-        return f"(Error: {e})"
-
-#############################################
-# Europe PMC Connection Check + Search
-#############################################
-def check_europe_pmc_connection(timeout=10):
-    test_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
-    params = {"query": "test", "format": "json", "pageSize": 100}
-    try:
-        r = requests.get(test_url, params=params, timeout=timeout)
-        r.raise_for_status()
-        data = r.json()
-        return "resultList" in data and "result" in data["resultList"]
-    except Exception:
-        return False
-
-def search_europe_pmc(query):
-    url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
-    params = {
-        "query": query,
-        "format": "json",
-        "pageSize": 100,
-        "resultType": "core"
-    }
-    out = []
-    try:
-        r = requests.get(url, params=params, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        if "resultList" not in data or "result" not in data["resultList"]:
-            return out
-        results = data["resultList"]["result"]
-        for item in results:
-            pmid = item.get("pmid", "n/a")
-            title = item.get("title", "n/a")
-            year = str(item.get("pubYear", "n/a"))
-            journal = item.get("journalTitle", "n/a")
-            out.append({
-                "PMID": pmid if pmid else "n/a",
-                "Title": title,
-                "Year": year,
-                "Journal": journal
+        response = requests.get(base_url, params=params, timeout=30)
+        response.raise_for_status()
+        papers = []
+        soup = BeautifulSoup(response.content, 'xml')
+        entries = soup.find_all('entry')
+        for entry in entries:
+            paper_id = entry.id.text.strip()
+            papers.append({
+                "source": "arXiv",
+                "id": paper_id,
+                "title": entry.title.text.strip(),
+                "journal": "arXiv",
+                "link": paper_id,
+                "abstract": entry.summary.text.strip(),
+                "impact_factor": 1.0,
+                "pdf_text": "Keine PDF verfügbar",
+                "esummary": entry.text.strip()
             })
-        return out
+        return papers
     except Exception as e:
-        st.error(f"Europe PMC search error: {e}")
+        st.error(f"arXiv search error: {e}")
         return []
 
-#############################################
-# OpenAlex API Communication
-#############################################
-BASE_URL = "https://api.openalex.org"
+def search_crossref(query, max_results=10):
+    base_url = "https://api.crossref.org/works"
+    params = {"query": query, "rows": max_results}
+    try:
+        response = requests.get(base_url, params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        papers = []
+        for item in data.get('message', {}).get('items', []):
+            doi = item.get('DOI', 'N/A')
+            title = item.get('title', ['No Title'])[0]
+            container_titles = item.get('container-title', ['Unknown'])
+            journal = container_titles[0] if container_titles else 'Unknown'
+            abstract = item.get('abstract', 'Abstract nicht verfügbar')
+            papers.append({
+                "source": "CrossRef",
+                "id": doi,
+                "title": title,
+                "journal": journal,
+                "link": item.get('URL', ''),
+                "abstract": abstract,
+                "impact_factor": 1.0,
+                "pdf_text": "Keine PDF verfügbar",
+                "esummary": json.dumps(item, indent=2)
+            })
+        return papers
+    except Exception as e:
+        st.error(f"CrossRef search error: {e}")
+        return []
 
-def fetch_openalex_data(entity_type, entity_id=None, params=None):
-    url = f"{BASE_URL}/{entity_type}"
-    if entity_id:
-        url += f"/{entity_id}"
-    
-    if params is None:
-        params = {}
-    params["mailto"] = "your_email@example.com"  # Ersetze durch deine E-Mail-Adresse
-    
-    response = requests.get(url, params=params)
-    
-    if response.status_code == 200:
-        return response.json()
-    else:
-        st.error(f"Fehler: {response.status_code} - {response.text}")
-        return None
+def search_semantic_scholar(query, max_results=10):
+    base_url = "https://api.semanticscholar.org/graph/v1/paper/search"
+    headers = {"Accept": "application/json"}
+    params = {"query": query, "limit": max_results, "fields": "title,authors,journal,abstract,doi,paperId"}
+    try:
+        response = requests.get(base_url, headers=headers, params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        papers = []
+        for doc in data.get('data', []):
+            journal_data = doc.get('journal', 'Unknown')
+            if isinstance(journal_data, dict):
+                journal = journal_data.get('name', 'Unknown')
+            else:
+                journal = journal_data
+            paper_id = doc.get('externalIds', {}).get('PMID', doc.get('paperId', 'N/A'))
+            papers.append({
+                "source": "Semantic Scholar",
+                "id": paper_id,
+                "title": doc.get('title', 'No Title'),
+                "journal": journal,
+                "link": doc.get('url', ''),
+                "abstract": doc.get('abstract', 'Abstract nicht verfügbar'),
+                "impact_factor": 1.0,
+                "pdf_text": "Keine PDF verfügbar",
+                "esummary": json.dumps(doc, indent=2)
+            })
+        return papers
+    except Exception as e:
+        st.error(f"Semantic Scholar search error: {e}")
+        return []
 
-def search_openalex(query):
-    search_params = {"search": query}
-    return fetch_openalex_data("works", params=search_params)
+def search_google_scholar(query, max_results=10):
+    papers = []
+    try:
+        results = scholarly.search_pubs(query)
+        count = 0
+        for result in results:
+            if count >= max_results:
+                break
+            bib = result.get('bib', {})
+            title = bib.get('title', 'No Title')
+            journal = bib.get('venue', 'Unknown')
+            link = result.get('pub_url', '')
+            abstract = bib.get('abstract', 'Abstract nicht verfügbar')
+            papers.append({
+                "source": "Google Scholar",
+                "id": "N/A",
+                "title": title,
+                "journal": journal,
+                "link": link,
+                "abstract": abstract,
+                "impact_factor": 1.0,
+                "pdf_text": "Keine PDF verfügbar",
+                "esummary": str(result)
+            })
+            count += 1
+    except Exception as e:
+        st.error(f"Google Scholar search error: {e}")
+    return papers
 
-#############################################
-# Google Scholar API Communication
-#############################################
-class GoogleScholarSearch:
-    def __init__(self):
-        self.all_results = []
+# Beispiel für weitere API-Suchen (CORE Aggregate, Europe PMC, OpenAlex) könnten hier ergänzt werden
 
-    def search_google_scholar(self, base_query):
+# PMCDownloader Klasse für den Download von PMC-Papieren
+class PMCDownloader:
+    def __init__(self, email, api_key=None):
+        self.email = email
+        self.api_key = api_key
+        self.base_search_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+        self.base_fetch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+        self.headers = {"User-Agent": f"PMCDownloader/1.0 (mailto:{self.email})"}
+        self.api_key_param = f"&api_key={self.api_key}" if self.api_key else ""
+
+    def search_free_pmc_articles(self, query, max_results=10):
+        full_query = f"{query} AND free full text[sb]"
+        params = {"db": "pmc", "term": full_query, "retmax": max_results, "retmode": "json"}
         try:
-            search_results = scholarly.search_pubs(base_query)
-            for _ in range(5):
-                result = next(search_results)
-                title = result['bib'].get('title', "n/a")
-                authors = result['bib'].get('author', "n/a")
-                year = result['bib'].get('pub_year', "n/a")
-                url_article = result.get('url_scholarbib', "n/a")
-                abstract_text = result['bib'].get('abstract', "")
-                self.all_results.append({
-                    "Source": "Google Scholar",
-                    "Title": title,
-                    "Authors/Description": authors,
-                    "Journal/Organism": "n/a",
-                    "Year": year,
-                    "PMID": "n/a",
-                    "DOI": "n/a",
-                    "URL": url_article,
-                    "Abstract": abstract_text
-                })
-            for idx, entry in enumerate(self.all_results, start=1):
-                print(f"{idx}. Titel: {entry['Title']}")
-                print(f"   Autoren: {entry['Authors/Description']}")
-                print(f"   Jahr: {entry['Year']}")
-                print(f"   URL: {entry['URL']}")
-                print(f"   Abstract: {entry['Abstract']}\n")
-        except Exception as e:
-            st.error(f"Fehler bei der Google Scholar-Suche: {e}")
-
-#############################################
-# Semantic Scholar API Communication
-#############################################
-class SemanticScholarSearch:
-    def __init__(self):
-        self.all_results = []
-
-    def search_semantic_scholar(self, base_query):
-        try:
-            url = "https://api.semanticscholar.org/graph/v1/paper/search"
-            headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
-            params = {"query": base_query, "limit": 5, "fields": "title,authors,year,abstract,doi,paperId"}
-            response = requests.get(url, headers=headers, params=params, timeout=10)
+            response = requests.get(self.base_search_url, params=params, headers=self.headers, timeout=30)
             response.raise_for_status()
             data = response.json()
-            for paper in data.get("data", []):
-                title = paper.get("title", "n/a")
-                authors = ", ".join([author.get("name", "") for author in paper.get("authors", [])])
-                year = paper.get("year", "n/a")
-                doi = paper.get("doi", "n/a")
-                paper_id = paper.get("paperId", "")
-                abstract_text = paper.get("abstract", "")
-                url_article = f"https://www.semanticscholar.org/paper/{paper_id}" if paper_id else "n/a"
-                self.all_results.append({
-                    "Source": "Semantic Scholar",
-                    "Title": title,
-                    "Authors/Description": authors,
-                    "Journal/Organism": "n/a",
-                    "Year": year,
-                    "PMID": "n/a",
-                    "DOI": doi,
-                    "URL": url_article,
-                    "Abstract": abstract_text
-                })
+            return data.get("esearchresult", {}).get("idlist", [])
         except Exception as e:
-            st.error(f"Semantic Scholar: {e}")
+            logging.error(f"PMCDownloader Search-Fehler: {e}")
+            return []
 
-def check_semantic_scholar_connection(timeout=10):
-    try:
-        url = "https://api.semanticscholar.org/graph/v1/paper/search"
-        params = {"query": "test", "limit": 1, "fields": "title"}
-        headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
-        response = requests.get(url, headers=headers, params=params, timeout=timeout)
-        response.raise_for_status()
-        return response.status_code == 200
-    except Exception:
-        return False
-
-#############################################
-# Excel-Hilfsfunktion
-#############################################
-def convert_results_to_excel(data):
-    df = pd.DataFrame(data)
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name="Results")
+    def get_paper_info(self, pmcid):
+        fetch_params = {"db": "pmc", "id": pmcid, "retmode": "xml", "rettype": "abstract"}
         try:
-            writer.save()
-        except:
-            pass
+            response = requests.get(self.base_fetch_url, params=fetch_params, headers=self.headers, timeout=30)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.content, 'xml')
+            article = soup.find('article')
+            if not article:
+                return None
+            title_tag = article.find('article-title')
+            title = title_tag.get_text(strip=True) if title_tag else 'No Title'
+            journal_tag = article.find('journal-title')
+            journal = journal_tag.get_text(strip=True) if journal_tag else 'Unknown'
+            abstract_tag = article.find('abstract')
+            abstract = abstract_tag.get_text(strip=True) if abstract_tag else 'Abstract nicht verfügbar'
+            link = f"https://www.ncbi.nlm.nih.gov/pmc/articles/{pmcid}/pdf/"
+            esummary = {"PMCID": pmcid}
+            return {
+                "source": "PubMed",
+                "id": pmcid,
+                "title": title,
+                "journal": journal,
+                "link": link,
+                "abstract": abstract,
+                "impact_factor": 1.0,
+                "pdf_text": "Keine PDF verfügbar",
+                "esummary": json.dumps(esummary)
+            }
+        except Exception as e:
+            logging.error(f"Fehler beim Abrufen der Papierdetails für PMCID {pmcid}: {e}")
+            return None
+
+    def download_pmc_articles(self, pmcids, save_dir):
+        os.makedirs(save_dir, exist_ok=True)
+        for pmcid in pmcids:
+            try:
+                url = f"{self.base_fetch_url}?db=pmc&id={pmcid}&retmode=binary&rettype=pdf{self.api_key_param}"
+                response = requests.get(url, headers=self.headers, timeout=60)
+                response.raise_for_status()
+                pdf_path = os.path.join(save_dir, f"{pmcid}.pdf")
+                with open(pdf_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                logging.info(f"PMC Artikel heruntergeladen: {pmcid}")
+            except Exception as e:
+                logging.error(f"Fehler beim Download von PMCID {pmcid}: {e}")
+
+# Dummy-Implementierungen für QA-Methoden (Perplexity, Phi3, GPT-4) – ggf. anpassen!
+def query_perplexity_ai(question, context):
+    if not PERPLEXITY_API_KEY:
+        return "Perplexity API-Schlüssel nicht gesetzt."
+    # Hier könnte ein echter API-Aufruf erfolgen; wir simulieren eine Antwort.
+    return f"Perplexity-Antwort auf: {question}"
+
+def query_phi3_ai(question, context):
+    if not PHI3_API_KEY:
+        return "Phi3 API-Schlüssel nicht gesetzt."
+    return f"Phi3-Antwort auf: {question}"
+
+def query_gpt4_ai(question, context):
+    if not OPENAI_API_KEY:
+        return "OpenAI API-Schlüssel nicht gesetzt."
+    try:
+        prompt = f"Hier sind mehrere Paper:\n\n{context}\nBitte beantworte:\nFrage: {question}\nAntwort:"
+        response = openai.ChatCompletion.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "Du bist ein hilfreicher Assistent."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=500,
+            temperature=0.7
+        )
+        return response.choices[0].message['content'].strip()
+    except Exception as e:
+        logging.error(f"Fehler bei GPT-4: {e}")
+        return f"Fehler bei GPT-4: {e}"
+
+#############################################
+# Excel Export Funktion
+#############################################
+def save_to_excel_with_abstracts_and_esummary(papers, qa_methods_selected):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    wb = Workbook()
+    main_sheet = wb.active
+    main_sheet.title = "Main Results"
+    headers = ["Index", "Source", "Title", "ID", "Journal", "Impact Factor", "Link", "Abstract", "PDF Text"] \
+              + [f"Antwort ({method})" for method in qa_methods_selected] \
+              + ["Download", "Download PDF", "PDF Download Status"]
+    main_sheet.append(headers)
+    for idx, paper in enumerate(papers, start=1):
+        source = paper.get('source', 'Unknown')
+        paper_id = paper.get('id', 'N/A')
+        title = paper.get('title', 'No Title')
+        journal = paper.get('journal', 'Unknown')
+        impact_factor = paper.get('impact_factor', 1.0)
+        link = paper.get('link', '')
+        abstract = paper.get('abstract', 'Abstract nicht verfügbar')
+        pdf_text = paper.get('pdf_text', 'PDF Text nicht verfügbar')
+        pdf_status = "Erfolgreich" if pdf_text not in ["PDF-Download fehlgeschlagen", "Keine direkte PDF verfügbar"] else pdf_text
+        antworten = []
+        for method in qa_methods_selected:
+            antwort_key = f'antwort_{method.lower()}'
+            antworten.append(paper.get(antwort_key, 'Keine Antwort'))
+        row = [idx, source, title, paper_id, journal, impact_factor, link, abstract, pdf_text] + antworten + ["Download", "Download PDF", pdf_status]
+        main_sheet.append(row)
+    output = BytesIO()
+    wb.save(output)
     return output.getvalue()
 
 #############################################
-# Pages
-#############################################
-def page_home():
-    st.title("Welcome to the Main Menu")
-    st.write("Choose a module in the sidebar to proceed.")
-
-def page_api_selection():
-    st.title("API Selection & Connection Status")
-    st.write("Auf dieser Seite kannst du die zu verwendenden APIs wählen und den Verbindungsstatus prüfen.")
-
-    all_apis = [
-        "Europe PMC",
-        "PubMed",
-        "CORE Aggregate",
-        "OpenAlex",
-        "Google Scholar",
-        "Semantic Scholar"
-    ]
-    if "selected_apis" not in st.session_state:
-        st.session_state["selected_apis"] = ["Europe PMC"]
-
-    chosen_apis = [api for api in all_apis if st.checkbox(api, value=api in st.session_state["selected_apis"])]
-    st.session_state["selected_apis"] = chosen_apis
-
-    st.write("Currently selected APIs:", chosen_apis)
-
-    st.subheader("Connection Tests")
-    msgs = []
-    if "PubMed" in chosen_apis:
-        if check_pubmed_connection():
-            msgs.append("PubMed: OK")
-        else:
-            msgs.append("PubMed: FAIL")
-    if "Europe PMC" in chosen_apis:
-        if check_europe_pmc_connection():
-            msgs.append("Europe PMC: OK")
-        else:
-            msgs.append("Europe PMC: FAIL")
-    if "CORE Aggregate" in chosen_apis:
-        core_key = "LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"
-        if core_key and check_core_aggregate_connection(core_key):
-            msgs.append("CORE: OK")
-        else:
-            msgs.append("CORE: FAIL (No valid key or no connection)")
-    if "OpenAlex" in chosen_apis:
-        openalex_test = fetch_openalex_data("works", "W2741809807")
-        if openalex_test:
-            msgs.append("OpenAlex: OK")
-        else:
-            msgs.append("OpenAlex: FAIL")
-    if "Google Scholar" in chosen_apis:
-        try:
-            GoogleScholarSearch().search_google_scholar("test")
-            msgs.append("Google Scholar: OK")
-        except Exception as e:
-            msgs.append(f"Google Scholar: FAIL ({str(e)})")
-    if "Semantic Scholar" in chosen_apis:
-        if check_semantic_scholar_connection():
-            msgs.append("Semantic Scholar: OK")
-        else:
-            msgs.append("Semantic Scholar: FAIL")
-
-    for m in msgs:
-        st.write("- ", m)
-
-    if st.button("Back to Main Menu"):
-        st.session_state["current_page"] = "Home"
-
-def page_online_filter():
-    st.title("Online Filter Settings")
-    st.write("Configure your online filter here.")
-    module_online_filter()
-    if st.button("Back to Main Menu"):
-        st.session_state["current_page"] = "Home"
-
-def page_codewords_pubmed():
-    st.title("Codewords & PubMed Settings")
-    st.write("Configure codewords, synonyms, etc. for your PubMed search. (Dummy placeholder...)")
-    if st.button("Back to Main Menu"):
-        st.session_state["current_page"] = "Home"
-
-def page_paper_selection():
-    st.title("Paper Selection Settings")
-    st.write("Define how you want to pick or exclude certain papers. (Dummy placeholder...)")
-    if st.button("Back to Main Menu"):
-        st.session_state["current_page"] = "Home"
-
-def page_analysis():
-    st.title("Analysis & Evaluation Settings")
-    st.write("Set up your analysis parameters, thresholds, etc. (Dummy placeholder...)")
-    if st.button("Back to Main Menu"):
-        st.session_state["current_page"] = "Home"
-
-def page_extended_topics():
-    st.title("Extended Topics")
-    st.write("Access advanced or extended topics for further research. (Dummy placeholder...)")
-    if st.button("Back to Main Menu"):
-        st.session_state["current_page"] = "Home"
-
-# Neues Modul: PaperQA2 mit lokaler Paper-Auswahl, Analyse und Frage-Antwort-Funktion
-def page_paperqa2():
-    st.title("PaperQA2 - Lokale Paper-Auswahl, Analyse & Fragen")
-    st.write("Wähle ein lokales Paper aus, lasse es analysieren und stelle anschließend Fragen dazu.")
-
-    # Zuerst: Button, um den File-Uploader einzublenden
-    if "paper_file" not in st.session_state:
-        if st.button("Paper auswählen"):
-            st.session_state["show_uploader"] = True
-
-    # Falls der Uploader angezeigt werden soll
-    if st.session_state.get("show_uploader", False):
-        uploaded_file = st.file_uploader("Wähle eine lokale Paper-Datei aus", type=["pdf", "txt"])
-        if uploaded_file is not None:
-            st.session_state["paper_file"] = uploaded_file
-            st.write("Hochgeladene Datei:", uploaded_file.name)
-            # Uploader wieder ausblenden
-            st.session_state["show_uploader"] = False
-
-    # Falls bereits ein Paper ausgewählt wurde
-    if "paper_file" in st.session_state:
-        st.write("Ausgewähltes Paper:", st.session_state["paper_file"].name)
-        if st.button("Paper analysieren"):
-            # Hier wird die Dummy-Analyse ausgeführt – ersetze dies durch deine Analyse-Funktion
-            analysis_result = "Dies ist eine Dummy-Analyse des Papers."
-            st.session_state["paper_analysis"] = analysis_result
-            st.success("Paper wurde analysiert.")
-
-        # Falls bereits eine Analyse vorliegt, kann der Benutzer Fragen stellen.
-        if "paper_analysis" in st.session_state:
-            st.subheader("Frage zum Paper stellen")
-            user_question = st.text_input("Gib deine Frage ein:")
-            if st.button("Frage absenden"):
-                # Dummy-Antwort – ersetze dies durch deine Frage-Antwort-Logik
-                answer = f"Dummy-Antwort auf deine Frage: {user_question}"
-                st.write(answer)
-
-    if st.button("Back to Main Menu"):
-        st.session_state["current_page"] = "Home"
-
-#############################################
-# Sidebar Module Navigation
-#############################################
-def sidebar_module_navigation():
-    st.sidebar.title("Module Navigation")
-    pages = {
-        "Home": page_home,
-        "1) API Selection": page_api_selection,
-        "2) Online Filter": page_online_filter,
-        "3) Codewords & PubMed": page_codewords_pubmed,
-        "4) Paper Selection": page_paper_selection,
-        "5) Analysis & Evaluation": page_analysis,
-        "6) Extended Topics": page_extended_topics,
-        "7) PaperQA2": page_paperqa2
-    }
-    for label, page in pages.items():
-        if st.sidebar.button(label, key=label):
-            st.session_state["current_page"] = label
-    if "current_page" not in st.session_state:
-        st.session_state["current_page"] = "Home"
-    return pages[st.session_state["current_page"]]
-
-#############################################
-# Main Streamlit App
+# Streamlit Haupt-App
 #############################################
 def main():
-    st.markdown(
-        """
-        <style>
-        html, body {
-            margin: 0;
-            padding: 0;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-    page_fn = sidebar_module_navigation()
-    page_fn()
+    st.title("Paper Search Tool")
+    st.markdown("Diese Anwendung sucht wissenschaftliche Paper über verschiedene APIs, führt QA durch und bietet PDF‑Download sowie Excel‑Export.")
+
+    # Sidebar Einstellungen
+    st.sidebar.header("Suchparameter")
+    search_input = st.sidebar.text_input("Suchbegriffe (durch Komma getrennt)", value="machine learning")
+    max_results = st.sidebar.number_input("Max. Ergebnisse pro API", min_value=3, max_value=100, value=10)
+
+    st.sidebar.header("APIs auswählen")
+    api_options = {
+        "PubMed": True,
+        "arXiv": False,
+        "CrossRef": False,
+        "Semantic Scholar": False,
+        "Google Scholar": False
+    }
+    selected_apis = [api for api, default in api_options.items() if st.sidebar.checkbox(api, value=default)]
+
+    st.sidebar.header("QA-Methoden")
+    qa_options = {
+        "Transformers (lokales Modell)": True,
+        "OpenAI API (ChatGPT)": False,
+        "Perplexity AI": False,
+        "Deepseek": False,
+        "Phi3": False,
+        "GPT-4": False
+    }
+    selected_qa = [method for method, default in qa_options.items() if st.sidebar.checkbox(method, value=default)]
+
+    # Auswahl des Transformer-Modells
+    transformer_model = st.sidebar.selectbox("Transformers Modell", [
+        "distilbert-base-uncased-distilled-squad",
+        "bert-base-uncased",
+        "roberta-base",
+        "albert-base-v2",
+        "bert-large-uncased",
+        "bert-base-multilingual-cased",
+        "xlm-roberta-base",
+        "camembert-base",
+        "longformer-base-4096",
+        "funnel-transformer/small"
+    ])
+
+    # File uploader für QA aus Excel (optional)
+    excel_file = st.sidebar.file_uploader("QA aus Excel starten (optional)", type=["xlsx", "xls"])
+
+    # File uploader für lokale Paper (Paperpa)
+    pdf_files = st.sidebar.file_uploader("Lokale PDFs hochladen (Paperpa)", type=["pdf"], accept_multiple_files=True)
+
+    # Hauptbereich: Buttons für Aktionen
+    if st.button("Suche starten"):
+        if not search_input:
+            st.error("Bitte Suchbegriffe eingeben!")
+        else:
+            # Erstelle Suchabfrage
+            terms = [term.strip() for term in search_input.split(",") if term.strip()]
+            query = " AND ".join(terms)
+            st.info(f"Starte Suche mit Abfrage: {query}")
+            papers = []
+
+            if "PubMed" in selected_apis:
+                papers.extend(search_pubmed(query, max_results))
+            if "arXiv" in selected_apis:
+                papers.extend(search_arxiv(query, max_results))
+            if "CrossRef" in selected_apis:
+                papers.extend(search_crossref(query, max_results))
+            if "Semantic Scholar" in selected_apis:
+                papers.extend(search_semantic_scholar(query, max_results))
+            if "Google Scholar" in selected_apis:
+                papers.extend(search_google_scholar(query, max_results))
+
+            if not papers:
+                st.warning("Keine Ergebnisse gefunden.")
+            else:
+                st.success(f"{len(papers)} Paper gefunden.")
+                df = pd.DataFrame(papers)
+                st.dataframe(df[["source", "title", "journal", "link", "abstract"]])
+                st.session_state["papers"] = papers
+                st.session_state["query"] = query
+
+    # QA: Frage eingeben und Antworten generieren
+    st.header("Frage-Antwort-System")
+    question = st.text_input("Bitte geben Sie Ihre Frage ein:")
+    if st.button("Frage stellen"):
+        if "papers" not in st.session_state:
+            st.error("Zuerst bitte eine Suche durchführen!")
+        elif not question:
+            st.error("Bitte eine Frage eingeben!")
+        else:
+            # Kontext aus allen gefundenen Papern
+            context = ""
+            for paper in st.session_state["papers"]:
+                context += f"Titel: {paper['title']}\nJournal: {paper['journal']}\nAbstract: {paper['abstract']}\n\n"
+            responses = {}
+            for method in selected_qa:
+                try:
+                    if "Transformers" in method:
+                        qa_pipeline_local = pipeline("question-answering", model=transformer_model)
+                        answer = qa_pipeline_local(question=question, context=context)
+                        responses[method] = answer['answer']
+                    elif "OpenAI" in method:
+                        prompt = f"Hier sind mehrere Paper:\n\n{context}\nBitte beantworte:\nFrage: {question}\nAntwort:"
+                        response = openai.ChatCompletion.create(
+                            model=OPENAI_MODEL,
+                            messages=[
+                                {"role": "system", "content": "Du bist ein hilfreicher Assistent."},
+                                {"role": "user", "content": prompt}
+                            ],
+                            max_tokens=500,
+                            temperature=0.7
+                        )
+                        responses[method] = response.choices[0].message['content'].strip()
+                    elif "Perplexity" in method:
+                        responses[method] = query_perplexity_ai(question, context)
+                    elif "Deepseek" in method:
+                        # Hier könnte ein Aufruf an Deepseek erfolgen
+                        responses[method] = "Deepseek Antwort (Platzhalter)"
+                    elif "Phi3" in method:
+                        responses[method] = query_phi3_ai(question, context)
+                    elif "GPT-4" in method:
+                        responses[method] = query_gpt4_ai(question, context)
+                    else:
+                        responses[method] = "Ungültige QA-Methode."
+                except Exception as e:
+                    responses[method] = f"Fehler: {e}"
+                    logging.error(f"Fehler bei QA mit {method}: {e}")
+            for method, answer in responses.items():
+                st.write(f"**Antwort ({method}):** {answer}")
+
+    # QA aus Excel verarbeiten
+    if excel_file:
+        try:
+            df = pd.read_excel(excel_file)
+            st.write("Fragen aus Excel:")
+            st.dataframe(df)
+            # Dummy-Verarbeitung: Hier könnte man die QA-Funktion für jede Frage aufrufen
+            # und die Antworten in der Excel-Datei speichern.
+            st.info("QA aus Excel wird noch implementiert...")
+        except Exception as e:
+            st.error(f"Fehler beim Verarbeiten der Excel-Datei: {e}")
+
+    # Lokale PDFs verarbeiten (Paperpa)
+    if pdf_files:
+        st.write("Verarbeitete PDFs:")
+        local_papers = []
+        for uploaded_file in pdf_files:
+            pdf_bytes = uploaded_file.read()
+            extracted_text = extract_text_from_pdf(pdf_bytes)
+            # Dummy-Extraktion des Abstracts
+            abstract = extracted_text[:500] + "..." if len(extracted_text) > 500 else extracted_text
+            paper = {
+                "source": "Lokales Paper",
+                "id": sanitize_filename(uploaded_file.name),
+                "title": uploaded_file.name,
+                "journal": "N/A",
+                "link": "Lokale Datei",
+                "abstract": abstract,
+                "impact_factor": 1.0,
+                "pdf_text": extracted_text,
+                "esummary": "N/A"
+            }
+            local_papers.append(paper)
+        st.session_state["local_papers"] = local_papers
+        df_local = pd.DataFrame(local_papers)
+        st.dataframe(df_local[["source", "title", "abstract"]])
+
+    # Excel Export der Suchergebnisse
+    if "papers" in st.session_state and st.button("Ergebnisse als Excel herunterladen"):
+        qa_methods_selected = selected_qa  # Verwende die in der Sidebar ausgewählten QA-Methoden
+        excel_bytes = save_to_excel_with_abstracts_and_esummary(st.session_state["papers"], qa_methods_selected)
+        current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        sanitized_query = sanitize_filename(st.session_state.get("query", "query"))
+        filename = f"search_results_{sanitized_query}_{current_time}.xlsx"
+        st.download_button("Excel herunterladen", excel_bytes, file_name=filename, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    # Button zum Training der lokalen Modelle (Train Models)
+    if st.button("Train Models"):
+        st.info("Starte Trainingsskript...")
+        # Hier wird angenommen, dass train_models.py im selben Verzeichnis liegt.
+        try:
+            subprocess.Popen([sys.executable, 'train_models.py'])
+            st.success("Training gestartet.")
+        except Exception as e:
+            st.error(f"Fehler beim Starten des Trainings: {e}")
+
+    # PaperQA2 Modul aufrufen
+    if st.button("PaperQA2 Modul öffnen"):
+        st.subheader("PaperQA2 Modul")
+        # Hier wird die Funktion module_paperqa2() aufgerufen, die alle PaperQA2‑Funktionen enthält.
+        module_paperqa2()
 
 if __name__ == '__main__':
     main()
