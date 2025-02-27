@@ -2,14 +2,17 @@ import streamlit as st
 import requests
 import pandas as pd
 
-# --- ChatGPT-Filter-Funktion (unverändert) ---
 def filter_abstracts_with_chatgpt(abstracts, keywords):
+    """
+    Führt pro Abstract eine Anfrage an die OpenAI-API durch,
+    um Abstracts nach bestimmten Keywords zu filtern.
+    """
     api_endpoint = "https://api.openai.com/v1/engines/davinci-codex/completions"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer YOUR_OPENAI_API_KEY"
     }
-    prompt = f"Filter the following abstracts based on the keywords: {', '.join(keywords)}. Prioritize those containing these keywords."
+    prompt = f"Filter the following abstracts based on the keywords: {', '.join(keywords)}."
 
     results = []
     for abstract in abstracts:
@@ -21,56 +24,56 @@ def filter_abstracts_with_chatgpt(abstracts, keywords):
         }
         response = requests.post(api_endpoint, headers=headers, json=data)
         if response.status_code == 200:
-            result = response.json().get("choices", [{}])[0].get("text", "")
-            # Prüfen, ob min. eines der Keywords auch im generierten Text enthalten ist
-            if any(keyword.lower() in result.lower() for keyword in keywords):
-                results.append(result.strip())
+            result_text = response.json().get("choices", [{}])[0].get("text", "")
+            # Falls mind. eins der Keywords im result_text vorkommt, übernehmen wir es
+            if any(kw.lower() in result_text.lower() for kw in keywords):
+                results.append(result_text.strip())
     return results
 
-# --- API-Suchfunktion (unverändert) ---
+
 def search_papers(api_name, query):
+    """
+    Beispielhafter Papersuche-Code. Passt du ggf. auf deine Bedürfnisse an.
+    """
     results = []
+
     if api_name == "PubMed":
         url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
         params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 100}
         response = requests.post(url, data=params)
         try:
             ids = response.json().get("esearchresult", {}).get("idlist", [])
-            for id in ids:
+            for pid in ids:
                 details_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
-                details_params = {"db": "pubmed", "id": id, "retmode": "json"}
+                details_params = {"db": "pubmed", "id": pid, "retmode": "json"}
                 details_response = requests.post(details_url, data=details_params)
-                result = details_response.json().get("result", {}).get(id, {})
+                r = details_response.json().get("result", {}).get(pid, {})
                 results.append({
                     "API": "PubMed",
-                    "PubMed ID": id,
-                    "Title": result.get("title", "N/A"),
-                    "Year": result.get("pubdate", "N/A"),
-                    "Publisher": result.get("source", "N/A")
+                    "PubMed ID": pid,
+                    "Title": r.get("title", "N/A"),
+                    "Year": r.get("pubdate", "N/A"),
+                    "Publisher": r.get("source", "N/A")
                 })
-        except (requests.exceptions.JSONDecodeError, ValueError) as e:
-            st.write(f"Error decoding JSON from PubMed API: {e}")
-            st.write(f"Response content: {response.content}")
+        except Exception as e:
+            st.write("PubMed-Fehler:", e)
 
     elif api_name == "Europe PMC":
         url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
         params = {"query": query, "format": "json", "pageSize": 100}
         response = requests.get(url, params=params)
         try:
-            if response.content:
-                for item in response.json().get("resultList", {}).get("result", []):
-                    results.append({
-                        "API": "Europe PMC",
-                        "PubMed ID": item.get("id", "N/A"),
-                        "Title": item.get("title", "N/A"),
-                        "Year": item.get("pubYear", "N/A"),
-                        "Publisher": item.get("source", "N/A")
-                    })
-            else:
-                st.write("Europe PMC API returned an empty response.")
-        except (requests.exceptions.JSONDecodeError, ValueError) as e:
-            st.write(f"Error decoding JSON from Europe PMC API: {e}")
-            st.write(f"Response content: {response.content}")
+            data = response.json().get("resultList", {}).get("result", [])
+            for item in data:
+                results.append({
+                    "API": "Europe PMC",
+                    "PubMed ID": item.get("id", "N/A"),
+                    "Title": item.get("title", "N/A"),
+                    "Year": item.get("pubYear", "N/A"),
+                    "Publisher": item.get("source", "N/A")
+                })
+        except Exception as e:
+            st.write("Europe PMC-Fehler:", e)
 
     elif api_name == "CORE":
         url = "https://api.core.ac.uk/v3/search/works"
@@ -78,122 +81,126 @@ def search_papers(api_name, query):
         params = {"q": query, "limit": 100}
         response = requests.post(url, headers=headers, data=params)
         try:
-            for item in response.json().get("results", []):
+            data = response.json().get("results", [])
+            for it in data:
                 results.append({
                     "API": "CORE",
-                    "PubMed ID": item.get("id", "N/A"),
-                    "Title": item.get("title", "N/A"),
-                    "Year": item.get("year", "N/A"),
-                    "Publisher": item.get("publisher", "N/A")
+                    "PubMed ID": it.get("id", "N/A"),
+                    "Title": it.get("title", "N/A"),
+                    "Year": it.get("year", "N/A"),
+                    "Publisher": it.get("publisher", "N/A")
                 })
-        except (requests.exceptions.JSONDecodeError, ValueError) as e:
-            st.write(f"Error decoding JSON from CORE API: {e}")
-            st.write(f"Response content: {response.content}")
+        except Exception as e:
+            st.write("CORE-Fehler:", e)
 
     return results
 
-# --- Hauptmodul ---
+
 def module_online_filter():
     st.header("Modul 2: Online-Filter")
 
-    # --- Zeige APIs aus dem Modul "API Selection" an ---
-    st.subheader("Status der ausgewählten APIs:")
-    available_apis = ["PubMed", "Europe PMC", "CORE"]
-    
-    if "selected_apis" in st.session_state and st.session_state["selected_apis"]:
-        for api in available_apis:
-            if api in st.session_state["selected_apis"]:
-                st.write(f"**{api}:** 🟢 **Aktiv**")
-            else:
-                st.write(f"{api}: ⚪ Inaktiv")
+    # Zeige Status der APIs an, z.B. PubMed, Europe PMC, CORE
+    st.subheader("Gewählte APIs aus dem 'API Selection' Modul:")
+    if "selected_apis" not in st.session_state or not st.session_state["selected_apis"]:
+        st.write("Noch keine API ausgewählt oder session_state leer.")
     else:
-        st.write("Keine APIs ausgewählt. Bitte im API Selection Modul festlegen.")
+        # Beispiel: Wir nehmen mal an, du hast 3 APIs in consideration
+        all_known_apis = ["PubMed", "Europe PMC", "CORE"]
+        for ap in all_known_apis:
+            if ap in st.session_state["selected_apis"]:
+                st.write(f"**{ap}**: 🟢 Aktiv")
+            else:
+                st.write(f"{ap}: ⚪ Inaktiv")
 
-    # --- Checkboxes für genotype, phenotype, SNP ---
+    # Checkboxes für genotype, phenotype und SNP
     st.subheader("Suchbegriffe auswählen")
-    use_genotype = st.checkbox("Genotype", value=False)
-    use_phenotype = st.checkbox("Phenotype", value=False)
-    use_snp = st.checkbox("SNP", value=False)
+    cb_geno = st.checkbox("Genotype", value=False)
+    cb_pheno = st.checkbox("Phenotype", value=False)
+    cb_snp = st.checkbox("SNP", value=False)
 
-    # Zusätzliche Codewörter
-    user_codewords = st.text_input("Zusätzliche Codewörter (kommasepariert)")
+    # Zusätzliches Eingabefeld für weitere Codewörter (ohne Default!)
+    st.subheader("Weitere Codewörter (optional)")
+    user_keywords_str = st.text_input("Kommaseparierte Schlagwörter", "")
 
-    # Baue finalen Suchstring
+    # Baue finalen Keywords-Array
     selected_terms = []
-    if use_genotype:
+    if cb_geno:
         selected_terms.append("genotype")
-    if use_phenotype:
+    if cb_pheno:
         selected_terms.append("phenotype")
-    if use_snp:
+    if cb_snp:
         selected_terms.append("SNP")
 
-    if user_codewords.strip():
-        extra_list = [w.strip() for w in user_codewords.split(",") if w.strip()]
-        selected_terms.extend(extra_list)
+    if user_keywords_str.strip():
+        extra_kw_list = [w.strip() for w in user_keywords_str.split(",") if w.strip()]
+        selected_terms.extend(extra_kw_list)
 
-    # Zeige aktuelle Keywords an
     if selected_terms:
         st.write("Aktuelle Suchbegriffe:", selected_terms)
     else:
-        st.write("Keine Suchbegriffe ausgewählt/eingegeben.")
+        st.write("Noch keine Suchbegriffe ausgewählt/eingegeben.")
 
-    # ChatGPT-Filter
-    use_chatgpt = st.checkbox("ChatGPT-Filter aktivieren", value=False)
+    # ChatGPT-Filter aktivierbar
+    st.subheader("ChatGPT-Filter")
+    use_chatgpt = st.checkbox("ChatGPT-Filter aktivieren")
 
-    # Abstracts
-    st.subheader("Abstracts für ChatGPT-Filter (optional)")
-    abstracts = st.text_area("Füge Abstracts (zeilenweise) ein.").split("\n")
+    # Texteingabe für Abstracts
+    st.subheader("Abstracts einfügen (für ChatGPT-Filter)")
+    abstract_input = st.text_area("Pro Zeile ein Abstract eingeben (z. B. aus PDFs extrahiert).")
+    abstracts_list = [line.strip() for line in abstract_input.split("\n") if line.strip()]
 
-    if use_chatgpt and st.button("Filter Abstracts mit ChatGPT"):
+    if use_chatgpt and st.button("Abstracts filtern"):
         if not selected_terms:
-            st.write("Bitte zuerst mindestens einen Suchbegriff auswählen/eingeben.")
+            st.warning("Bitte mindestens einen Suchbegriff (Checkbox oder zusätzliche Codewörter) auswählen!")
         else:
-            filtered_abstracts = filter_abstracts_with_chatgpt(abstracts, selected_terms)
+            filtered = filter_abstracts_with_chatgpt(abstracts_list, selected_terms)
             st.write("Gefilterte Abstracts:")
-            for absx in filtered_abstracts:
-                st.write(absx)
+            for f in filtered:
+                st.write("- ", f)
 
     # Suche nach Papers
-    st.subheader("Suche nach Papers")
+    st.subheader("Papersuche")
     if st.button("Papers suchen"):
-        # Prüfe, ob APIs aktiv sind
         if "selected_apis" not in st.session_state or not st.session_state["selected_apis"]:
-            st.write("Es sind keine APIs aktiv. Bitte wähle APIs im API Selection Modul aus.")
+            st.error("Keine API ausgewählt! Bitte zuerst im API-Selection-Modul festlegen.")
             return
 
         if not selected_terms:
-            st.write("Bitte mindestens einen Suchbegriff auswählen/eingeben.")
+            st.warning("Keine Suchbegriffe gewählt. Bitte Checkboxen oder Codewörter eingeben.")
             return
 
-        all_papers = []
-        for api in st.session_state["selected_apis"]:
-            # Mehrfache Abfrage 1x reicht i.d.R. -> hier nur 1 Schleife
-            found = search_papers(api, " OR ".join(selected_terms))
-            all_papers.extend(found)
+        query_str = " OR ".join(selected_terms)
+        all_found = []
 
-        st.write(f"Gefundene Papers insgesamt: {len(all_papers)}")
-        df = pd.DataFrame(all_papers)
+        for active_api in st.session_state["selected_apis"]:
+            found_papers = search_papers(active_api, query_str)
+            all_found.extend(found_papers)
+
+        st.write(f"Gefundene Papers gesamt: {len(all_found)}")
+        df = pd.DataFrame(all_found)
         st.session_state["papers_df"] = df
         st.write(df)
 
-    # Zusätzliche Filterung
-    st.subheader("Zusätzlicher Text-Filter auf Suchergebnisse")
-    extra_keyword = st.text_input("Gib einen Begriff ein, um die gefundenen Papers weiter zu filtern:")
-
-    if st.button("Zusätzliche Filterung anwenden"):
+    # Extra-Filter auf bereits gefundene Papers
+    st.subheader("Zusätzlicher Text-Filter auf gefundene Papers")
+    extra_txt = st.text_input("Filterbegriff für die Tabelle", "")
+    if st.button("Filter Tabelle"):
         if "papers_df" not in st.session_state:
-            st.write("Bitte erst Papers suchen.")
+            st.warning("Keine Papers vorhanden. Bitte erst Suche durchführen.")
         else:
-            if not extra_keyword.strip():
-                st.write("Bitte einen Suchbegriff für die zusätzliche Filterung eingeben.")
+            df_pap = st.session_state["papers_df"]
+            if df_pap.empty:
+                st.info("Die Tabelle ist leer.")
             else:
-                df = st.session_state["papers_df"]
-                if df.empty:
-                    st.write("Keine Daten vorhanden.")
+                if extra_txt.strip():
+                    df_filtered = df_pap[df_pap.apply(lambda row: extra_txt.lower() in row.to_string().lower(), axis=1)]
+                    st.write(f"Nach Filter '{extra_txt}' noch {len(df_filtered)} Papers:")
+                    st.write(df_filtered)
                 else:
-                    filtered = df[df.apply(lambda row: extra_keyword.lower() in row.to_string().lower(), axis=1)]
-                    st.write(f"{len(filtered)} Papers nach Zusatz-Filter '{extra_keyword}' gefunden:")
-                    st.write(filtered)
+                    st.info("Bitte einen Text eingeben, nach dem gefiltert werden soll.")
 
-# --- Ausführen ---
-module_online_filter()
+
+# Testaufruf (falls du das direkt ausführen willst):
+# if __name__ == "__main__":
+#     module_online_filter()
+
