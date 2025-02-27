@@ -6,6 +6,7 @@ def filter_abstracts_with_chatgpt(abstracts, keywords):
     """
     Führt pro Abstract eine Anfrage an die OpenAI-API durch,
     um Abstracts nach bestimmten Keywords zu filtern.
+    ACHTUNG: Ersetze "YOUR_OPENAI_API_KEY" durch deinen tatsächlichen API-Key!
     """
     api_endpoint = "https://api.openai.com/v1/engines/davinci-codex/completions"
     headers = {
@@ -25,28 +26,27 @@ def filter_abstracts_with_chatgpt(abstracts, keywords):
         response = requests.post(api_endpoint, headers=headers, json=data)
         if response.status_code == 200:
             result_text = response.json().get("choices", [{}])[0].get("text", "")
-            # Falls mind. eins der Keywords im result_text vorkommt, übernehmen wir es
+            # Falls mindestens eines der Keywords im result_text vorkommt, übernehmen wir es
             if any(kw.lower() in result_text.lower() for kw in keywords):
                 results.append(result_text.strip())
     return results
 
-
 def search_papers(api_name, query):
     """
-    Beispielhafter Papersuche-Code. Passt du ggf. auf deine Bedürfnisse an.
+    Beispielhafter Papersuche-Code. Passe dies ggf. an deine Bedürfnisse an.
     """
     results = []
 
     if api_name == "PubMed":
         url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
         params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 100}
-        response = requests.post(url, data=params)
+        response = requests.get(url, params=params)  # Verwende GET statt POST
         try:
             ids = response.json().get("esearchresult", {}).get("idlist", [])
             for pid in ids:
                 details_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
                 details_params = {"db": "pubmed", "id": pid, "retmode": "json"}
-                details_response = requests.post(details_url, data=details_params)
+                details_response = requests.get(details_url, params=details_params)  # GET statt POST
                 r = details_response.json().get("result", {}).get(pid, {})
                 results.append({
                     "API": "PubMed",
@@ -77,9 +77,10 @@ def search_papers(api_name, query):
 
     elif api_name == "CORE":
         url = "https://api.core.ac.uk/v3/search/works"
-        headers = {"Authorization": "Bearer YOUR_CORE_API_KEY"}
+        # Verwende den gleichen CORE-Key wie im Hauptprogramm:
+        headers = {"Authorization": "Bearer LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"}
         params = {"q": query, "limit": 100}
-        response = requests.post(url, headers=headers, data=params)
+        response = requests.get(url, headers=headers, params=params)  # GET statt POST
         try:
             data = response.json().get("results", [])
             for it in data:
@@ -95,16 +96,14 @@ def search_papers(api_name, query):
 
     return results
 
-
 def module_online_filter():
     st.header("Modul 2: Online-Filter")
 
-    # Zeige Status der APIs an, z.B. PubMed, Europe PMC, CORE
+    # Anzeige des API-Status anhand der im API-Selection Modul gewählten APIs:
     st.subheader("Gewählte APIs aus dem 'API Selection' Modul:")
     if "selected_apis" not in st.session_state or not st.session_state["selected_apis"]:
         st.write("Noch keine API ausgewählt oder session_state leer.")
     else:
-        # Beispiel: Wir nehmen mal an, du hast 3 APIs in consideration
         all_known_apis = ["PubMed", "Europe PMC", "CORE"]
         for ap in all_known_apis:
             if ap in st.session_state["selected_apis"]:
@@ -112,17 +111,17 @@ def module_online_filter():
             else:
                 st.write(f"{ap}: ⚪ Inaktiv")
 
-    # Checkboxes für genotype, phenotype und SNP
+    # Checkboxes für vordefinierte Suchbegriffe
     st.subheader("Suchbegriffe auswählen")
     cb_geno = st.checkbox("Genotype", value=False)
     cb_pheno = st.checkbox("Phenotype", value=False)
     cb_snp = st.checkbox("SNP", value=False)
 
-    # Zusätzliches Eingabefeld für weitere Codewörter (ohne Default!)
+    # Zusätzliches Eingabefeld für weitere Codewörter (ohne Default)
     st.subheader("Weitere Codewörter (optional)")
     user_keywords_str = st.text_input("Kommaseparierte Schlagwörter", "")
 
-    # Baue finalen Keywords-Array
+    # Zusammenbau des finalen Keywords-Arrays
     selected_terms = []
     if cb_geno:
         selected_terms.append("genotype")
@@ -198,9 +197,3 @@ def module_online_filter():
                     st.write(df_filtered)
                 else:
                     st.info("Bitte einen Text eingeben, nach dem gefiltert werden soll.")
-
-
-# Testaufruf (falls du das direkt ausführen willst):
-# if __name__ == "__main__":
-#     module_online_filter()
-
