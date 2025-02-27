@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import re
+import datetime
 from io import BytesIO
 import xml.etree.ElementTree as ET
 
@@ -50,7 +51,7 @@ def search_pubmed(query, limit=100):
         if not idlist:
             return results
         
-        # Hole Metadaten via eSummary
+        # Metadaten via eSummary abrufen
         esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
         sum_params = {"db": "pubmed", "id": ",".join(idlist), "retmode": "json"}
         r2 = requests.get(esummary_url, params=sum_params, timeout=10)
@@ -254,26 +255,22 @@ def search_semantic_scholar(query, limit=100):
 #############################################
 # Excel-Erstellung: Hauptsheet + Einzelsheets
 #############################################
-def create_excel_file(papers):
+def create_excel_file(papers, query):
     output = BytesIO()
     main_data = []
     details_dict = {}
     for paper in papers:
         main_data.append({
-            "PubMed ID": paper.get("PubMed ID", "N/A"),
-            "DOI": paper.get("DOI", "N/A"),
             "Title": paper.get("Title", "N/A"),
+            "PubMed ID": paper.get("PubMed ID", "N/A"),
             "Year": paper.get("Year", "N/A"),
-            "Publisher": paper.get("Publisher", "N/A"),
-            "Population": paper.get("Population", "N/A"),
-            "Cohorts": paper.get("Cohorts", "N/A"),
-            "Sample Size": paper.get("Sample Size", "N/A")
+            "Publisher": paper.get("Publisher", "N/A")
         })
-        # Detail-Sheet: Alle vorhandenen Informationen
+        # Erzeuge Detail-Sheet: Alle Schlüssel/Werte des Paper-Dicts
         detail_df = pd.DataFrame(list(paper.items()), columns=["Field", "Value"])
         title = paper.get("Title", "Paper")
+        # Bereinige den Sheet-Namen (max. 31 Zeichen, keine ungültigen Zeichen)
         sheet_name = re.sub(r'[\\/*?:"<>|]', "", title)[:31]
-        # Sicherstellen, dass der Sheetname eindeutig ist:
         if sheet_name in details_dict:
             counter = 2
             new_sheet = f"{sheet_name}_{counter}"
@@ -290,16 +287,19 @@ def create_excel_file(papers):
             df.to_excel(writer, index=False, sheet_name=sheet)
         writer.save()
     output.seek(0)
-    return output
+    # Erzeuge Dateinamen: Suchanfrage + Datum/Uhrzeit
+    now = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    file_name = f"{query}_{now}.xlsx"
+    return output, file_name
 
 #############################################
 # Hauptfunktion des Moduls
 #############################################
 def module_excel_online_search():
     st.header("Online Suche & Excel-Erstellung")
-    st.write("Für jede ausgewählte API werden bis zu 100 Paper abgerufen.")
+    st.write("Für jede aktivierte API werden jeweils 100 Paper abgerufen.")
     
-    # API-Auswahl
+    # Definierte APIs (alle Suchfunktionen liefern 100 Paper)
     apis = {
         "PubMed": search_pubmed,
         "Europe PMC": search_europe_pmc,
@@ -309,6 +309,7 @@ def module_excel_online_search():
         "Semantic Scholar": search_semantic_scholar
     }
     st.subheader("Wähle die APIs aus:")
+    # Standardmäßig ist hier PubMed aktiviert; weitere können per Checkbox gewählt werden
     selected_apis = [api for api in apis if st.checkbox(api, value=(api=="PubMed"))]
     
     codewords_input = st.text_input("Codewörter (kommagetrennt, OR-Suche):", "")
@@ -336,15 +337,31 @@ def module_excel_online_search():
             st.subheader("Gefundene Paper")
             st.dataframe(df)
             st.session_state["excel_results"] = all_results
+            st.session_state["search_query"] = query
         else:
             st.info("Keine Paper gefunden.")
     
+    # Ermögliche die Anzeige des Abstracts eines ausgewählten Papers
+    if "excel_results" in st.session_state and st.session_state["excel_results"]:
+        paper_titles = [paper.get("Title", "N/A") for paper in st.session_state["excel_results"]]
+        selected_title = st.selectbox("Wähle ein Paper, um den Abstract und weitere Details anzuzeigen:", paper_titles)
+        if selected_title:
+            selected_paper = next((paper for paper in st.session_state["excel_results"] if paper.get("Title") == selected_title), None)
+            if selected_paper:
+                with st.expander("Abstract & Details anzeigen"):
+                    st.subheader(selected_title)
+                    st.markdown("**Abstract:**")
+                    st.write(selected_paper.get("Abstract", "Kein Abstract vorhanden."))
+                    st.markdown("**Alle Informationen:**")
+                    st.write(selected_paper)
+    
     if "excel_results" in st.session_state and st.session_state["excel_results"]:
         if st.button("Excel-Datei herunterladen"):
-            excel_file = create_excel_file(st.session_state["excel_results"])
+            query = st.session_state.get("search_query", "Results")
+            excel_file, file_name = create_excel_file(st.session_state["excel_results"], query)
             st.download_button(
                 label="Download Excel",
                 data=excel_file,
-                file_name="Paper_Results.xlsx",
+                file_name=file_name,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
