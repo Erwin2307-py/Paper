@@ -3,10 +3,13 @@ import pandas as pd
 import requests
 import re
 from io import BytesIO
-from modules.online_filter import search_papers
+import xml.etree.ElementTree as ET
+
+#############################################
+# Funktionen zur Online-Suche (jeweils Limit=100)
+#############################################
 
 def check_pubmed_connection(timeout=10):
-    """Überprüft, ob die PubMed-API erreichbar ist."""
     test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": "test", "retmode": "json"}
     try:
@@ -18,15 +21,11 @@ def check_pubmed_connection(timeout=10):
         return False
 
 def fetch_pubmed_abstract(pmid):
-    """
-    Holt den Abstract für eine gegebene PubMed-ID über efetch.
-    """
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
     params = {"db": "pubmed", "id": pmid, "retmode": "xml"}
     try:
         r = requests.get(url, params=params, timeout=10)
         r.raise_for_status()
-        import xml.etree.ElementTree as ET
         root = ET.fromstring(r.content)
         abs_text = []
         for elem in root.findall(".//AbstractText"):
@@ -39,72 +38,249 @@ def fetch_pubmed_abstract(pmid):
     except Exception as e:
         return f"(Error: {e})"
 
-def get_paper_details(pmid):
-    """
-    Holt detaillierte Informationen zu einem Paper:
-      - ESummary liefert diverse Metadaten (z. B. Titel, Publikationsdatum, Herausgeber, DOI etc.)
-      - EFetch liefert den Abstract.
-    """
-    esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
-    params = {"db": "pubmed", "id": pmid, "retmode": "json"}
+def search_pubmed(query, limit=100):
+    esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+    params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": limit}
+    results = []
     try:
-        r = requests.get(esummary_url, params=params, timeout=10)
+        r = requests.get(esearch_url, params=params, timeout=10)
         r.raise_for_status()
-        summary_json = r.json()
-        details = summary_json.get("result", {}).get(pmid, {})
+        data = r.json()
+        idlist = data.get("esearchresult", {}).get("idlist", [])
+        if not idlist:
+            return results
+        
+        # Hole Metadaten via eSummary
+        esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+        sum_params = {"db": "pubmed", "id": ",".join(idlist), "retmode": "json"}
+        r2 = requests.get(esummary_url, params=sum_params, timeout=10)
+        r2.raise_for_status()
+        sum_data = r2.json().get("result", {})
+        for pmid in idlist:
+            info = sum_data.get(pmid, {})
+            title = info.get("title", "N/A")
+            pubdate = info.get("pubdate", "N/A")
+            year = pubdate[:4] if pubdate and pubdate != "N/A" else "N/A"
+            journal = info.get("fulljournalname", "N/A")
+            doi = info.get("elocationid", "N/A")
+            abstract = fetch_pubmed_abstract(pmid)
+            results.append({
+                "Source": "PubMed",
+                "PubMed ID": pmid,
+                "DOI": doi,
+                "Title": title,
+                "Year": year,
+                "Publisher": journal,
+                "Population": "N/A",
+                "Cohorts": "N/A",
+                "Sample Size": "N/A",
+                "Abstract": abstract
+            })
+        return results
     except Exception as e:
-        details = {}
-    # Abstract über EFetch abrufen
-    abstract = fetch_pubmed_abstract(pmid)
-    details["Abstract"] = abstract
-    return details
+        st.error(f"PubMed search error: {e}")
+        return results
 
+def search_europe_pmc(query, limit=100):
+    url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+    params = {
+        "query": query,
+        "format": "json",
+        "pageSize": limit,
+        "resultType": "core"
+    }
+    results = []
+    try:
+        r = requests.get(url, params=params, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        if "resultList" not in data or "result" not in data["resultList"]:
+            return results
+        for item in data["resultList"]["result"]:
+            pmid = item.get("pmid", "N/A")
+            title = item.get("title", "N/A")
+            year = str(item.get("pubYear", "N/A"))
+            journal = item.get("journalTitle", "N/A")
+            doi = item.get("doi", "N/A")
+            abstract = item.get("abstractText", "(No abstract available)")
+            results.append({
+                "Source": "Europe PMC",
+                "PubMed ID": pmid,
+                "DOI": doi,
+                "Title": title,
+                "Year": year,
+                "Publisher": journal,
+                "Population": "N/A",
+                "Cohorts": "N/A",
+                "Sample Size": "N/A",
+                "Abstract": abstract
+            })
+        return results
+    except Exception as e:
+        st.error(f"Europe PMC search error: {e}")
+        return results
+
+def search_core_aggregate(query, limit=100):
+    API_KEY = "LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"
+    url = "https://api.core.ac.uk/v3/search/works"
+    headers = {"Authorization": f"Bearer {API_KEY}"}
+    params = {"q": query, "limit": limit}
+    results = []
+    try:
+        r = requests.get(url, headers=headers, params=params, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+        for item in data.get("results", []):
+            title = item.get("title", "N/A")
+            year = str(item.get("yearPublished", "N/A"))
+            publisher = item.get("publisher", "N/A")
+            doi = item.get("doi", "N/A")
+            abstract = item.get("abstract", "(No abstract available)")
+            results.append({
+                "Source": "CORE Aggregate",
+                "PubMed ID": "N/A",
+                "DOI": doi,
+                "Title": title,
+                "Year": year,
+                "Publisher": publisher,
+                "Population": "N/A",
+                "Cohorts": "N/A",
+                "Sample Size": "N/A",
+                "Abstract": abstract
+            })
+        return results
+    except Exception as e:
+        st.error(f"CORE Aggregate search error: {e}")
+        return results
+
+def search_openalex(query, limit=100):
+    url = "https://api.openalex.org/works"
+    params = {"search": query, "per-page": limit}
+    results = []
+    try:
+        r = requests.get(url, params=params, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+        for work in data.get("results", []):
+            title = work.get("title", "N/A")
+            year = str(work.get("publication_year", "N/A"))
+            doi = work.get("doi", "N/A")
+            journal = work.get("host_venue", {}).get("display_name", "N/A")
+            abstract = work.get("abstract", "(No abstract available)")
+            results.append({
+                "Source": "OpenAlex",
+                "PubMed ID": "N/A",
+                "DOI": doi,
+                "Title": title,
+                "Year": year,
+                "Publisher": journal,
+                "Population": "N/A",
+                "Cohorts": "N/A",
+                "Sample Size": "N/A",
+                "Abstract": abstract
+            })
+        return results
+    except Exception as e:
+        st.error(f"OpenAlex search error: {e}")
+        return results
+
+def search_google_scholar(query, limit=100):
+    from scholarly import scholarly
+    results = []
+    try:
+        search_results = scholarly.search_pubs(query)
+        count = 0
+        while count < limit:
+            try:
+                result = next(search_results)
+                title = result['bib'].get('title', "N/A")
+                authors = result['bib'].get('author', "N/A")
+                year = result['bib'].get('pub_year', "N/A")
+                doi = "N/A"
+                url_article = result.get('url_scholarbib', "N/A")
+                abstract = result['bib'].get('abstract', "(No abstract available)")
+                results.append({
+                    "Source": "Google Scholar",
+                    "PubMed ID": "N/A",
+                    "DOI": doi,
+                    "Title": title,
+                    "Year": year,
+                    "Publisher": "N/A",
+                    "Population": "N/A",
+                    "Cohorts": "N/A",
+                    "Sample Size": "N/A",
+                    "Abstract": abstract
+                })
+                count += 1
+            except StopIteration:
+                break
+        return results
+    except Exception as e:
+        st.error(f"Google Scholar search error: {e}")
+        return results
+
+def search_semantic_scholar(query, limit=100):
+    url = "https://api.semanticscholar.org/graph/v1/paper/search"
+    headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
+    params = {"query": query, "limit": limit, "fields": "title,authors,year,abstract,doi,paperId"}
+    results = []
+    try:
+        r = requests.get(url, headers=headers, params=params, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+        for paper in data.get("data", []):
+            title = paper.get("title", "N/A")
+            authors = ", ".join([a.get("name", "") for a in paper.get("authors", [])])
+            year = str(paper.get("year", "N/A"))
+            doi = paper.get("doi", "N/A")
+            abstract = paper.get("abstract", "(No abstract available)")
+            results.append({
+                "Source": "Semantic Scholar",
+                "PubMed ID": "N/A",
+                "DOI": doi,
+                "Title": title,
+                "Year": year,
+                "Publisher": "N/A",
+                "Population": "N/A",
+                "Cohorts": "N/A",
+                "Sample Size": "N/A",
+                "Abstract": abstract
+            })
+        return results
+    except Exception as e:
+        st.error(f"Semantic Scholar search error: {e}")
+        return results
+
+#############################################
+# Excel-Erstellung: Hauptsheet + Einzelsheets
+#############################################
 def create_excel_file(papers):
-    """
-    Erstellt ein Excel-Dokument mit:
-      - einem Hauptsheet ("Main"), das pro Paper die Felder enthält:
-        PubMed ID, DOI, Title, Year, Publisher, Population, Cohorts, Sample Size
-      - für jedes Paper ein zusätzliches Sheet (benannt nach dem (bereinigten) Paper-Titel),
-        das alle über ESummary und EFetch erhaltenen Informationen als Feld/Value-Tabelle enthält.
-    """
     output = BytesIO()
     main_data = []
     details_dict = {}
-    
-    # Für jedes Paper werden die Detailinformationen abgerufen
     for paper in papers:
-        pmid = paper.get("PubMed ID", "")
-        details = get_paper_details(pmid)
-        # Hauptinformationen (falls die Felder in den Details nicht vorhanden sind, wird der ursprüngliche Wert genutzt)
-        title = details.get("title", paper.get("Title", "N/A"))
-        doi = details.get("doi", details.get("elocationid", "N/A"))
-        pubdate = details.get("pubdate", "N/A")
-        year = pubdate[:4] if pubdate and pubdate != "N/A" else paper.get("Year", "N/A")
-        publisher = details.get("fulljournalname", paper.get("Publisher", "N/A"))
-        # Zusätzliche Felder (Population, Cohorts, Sample Size) – sofern nicht vorhanden, "N/A"
-        population = details.get("population", "N/A")
-        cohorts = details.get("cohorts", "N/A")
-        sample_size = details.get("sample_size", "N/A")
-        
         main_data.append({
-            "PubMed ID": pmid,
-            "DOI": doi,
-            "Title": title,
-            "Year": year,
-            "Publisher": publisher,
-            "Population": population,
-            "Cohorts": cohorts,
-            "Sample Size": sample_size
+            "PubMed ID": paper.get("PubMed ID", "N/A"),
+            "DOI": paper.get("DOI", "N/A"),
+            "Title": paper.get("Title", "N/A"),
+            "Year": paper.get("Year", "N/A"),
+            "Publisher": paper.get("Publisher", "N/A"),
+            "Population": paper.get("Population", "N/A"),
+            "Cohorts": paper.get("Cohorts", "N/A"),
+            "Sample Size": paper.get("Sample Size", "N/A")
         })
-        
-        # Detail-Sheet: Alle Informationen aus details in einer Tabelle (Feld/Value)
-        detail_items = list(details.items())
-        detail_df = pd.DataFrame(detail_items, columns=["Field", "Value"])
-        
-        # Erzeuge einen gültigen Sheet-Namen aus dem Titel (max. 31 Zeichen, keine ungültigen Zeichen)
-        sheet_name = re.sub(r'[:\\/*?\[\]]', '', title)
-        if len(sheet_name) > 31:
-            sheet_name = sheet_name[:31]
+        # Detail-Sheet: Alle vorhandenen Informationen
+        detail_df = pd.DataFrame(list(paper.items()), columns=["Field", "Value"])
+        title = paper.get("Title", "Paper")
+        sheet_name = re.sub(r'[\\/*?:"<>|]', "", title)[:31]
+        # Sicherstellen, dass der Sheetname eindeutig ist:
+        if sheet_name in details_dict:
+            counter = 2
+            new_sheet = f"{sheet_name}_{counter}"
+            while new_sheet in details_dict:
+                counter += 1
+                new_sheet = f"{sheet_name}_{counter}"
+            sheet_name = new_sheet
         details_dict[sheet_name] = detail_df
 
     main_df = pd.DataFrame(main_data)
@@ -116,54 +292,59 @@ def create_excel_file(papers):
     output.seek(0)
     return output
 
-def module_codewords_pubmed():
-    st.header("Codewords & PubMed")
+#############################################
+# Hauptfunktion des Moduls
+#############################################
+def module_excel_online_search():
+    st.header("Online Suche & Excel-Erstellung")
+    st.write("Für jede ausgewählte API werden bis zu 100 Paper abgerufen.")
     
-    # API-Status anzeigen
-    st.subheader("API Status")
-    pubmed_status = "OK" if check_pubmed_connection() else "FAIL"
-    st.write("PubMed API:", pubmed_status)
+    # API-Auswahl
+    apis = {
+        "PubMed": search_pubmed,
+        "Europe PMC": search_europe_pmc,
+        "CORE Aggregate": search_core_aggregate,
+        "OpenAlex": search_openalex,
+        "Google Scholar": search_google_scholar,
+        "Semantic Scholar": search_semantic_scholar
+    }
+    st.subheader("Wähle die APIs aus:")
+    selected_apis = [api for api in apis if st.checkbox(api, value=(api=="PubMed"))]
     
-    # Anzeige aktuell gesetzter Online Filter (falls im Session-State gesetzt)
-    st.subheader("Aktuell gesetzte Online Filter")
-    if "online_filter_terms" in st.session_state:
-        st.write("Online Filter Codewörter:", st.session_state["online_filter_terms"])
-    else:
-        st.write("Keine Online Filter Codewörter gesetzt.")
+    codewords_input = st.text_input("Codewörter (kommagetrennt, OR-Suche):", "")
+    auto_wildcard = st.checkbox("Wildcard (*) automatisch anhängen, falls nicht vorhanden", value=False)
     
-    # Eingabe der Codewörter für die Suche
-    st.subheader("Codewörter für die Suche eingeben")
-    codewords_input = st.text_input("Codewörter (kommagetrennt, Wildcard (*) möglich):", "")
-    auto_wildcard = st.checkbox("Automatisch Wildcard (*) anhängen, falls nicht vorhanden", value=False)
-    
-    if st.button("Suche durchführen"):
+    if st.button("Suche starten"):
         if not codewords_input.strip():
-            st.warning("Bitte geben Sie mindestens ein Codewort ein!")
+            st.warning("Bitte gib mindestens ein Codewort ein!")
+            return
+        codewords = [cw.strip() for cw in codewords_input.split(",") if cw.strip()]
+        if auto_wildcard:
+            codewords = [cw if "*" in cw else cw + "*" for cw in codewords]
+        query = " OR ".join(codewords)
+        st.write("Suchanfrage:", query)
+        
+        all_results = []
+        for api in selected_apis:
+            st.write(f"Suche in {api} …")
+            search_func = apis[api]
+            results = search_func(query, limit=100)
+            st.write(f"{len(results)} Paper gefunden in {api}.")
+            all_results.extend(results)
+        if all_results:
+            df = pd.DataFrame(all_results)
+            st.subheader("Gefundene Paper")
+            st.dataframe(df)
+            st.session_state["excel_results"] = all_results
         else:
-            codewords_list = [cw.strip() for cw in codewords_input.split(",") if cw.strip()]
-            if auto_wildcard:
-                codewords_list = [cw if "*" in cw else cw + "*" for cw in codewords_list]
-            query = " OR ".join(codewords_list)
-            st.write("Suchanfrage:", query)
-            # Suche über PubMed – maximal 100 Paper (search_papers in online_filter nutzt retmax=100)
-            papers = search_papers("PubMed", query)
-            if papers:
-                st.write("Gefundene Papers:")
-                df = pd.DataFrame(papers)
-                st.write(df)
-                st.session_state["papers_df"] = df
-            else:
-                st.write("Keine Papers gefunden.")
+            st.info("Keine Paper gefunden.")
     
-    # Excel-Download anbieten, sofern Paper vorhanden sind
-    if "papers_df" in st.session_state and not st.session_state["papers_df"].empty:
-        if st.button("Excel herunterladen"):
-            # Konvertiere die im Session-State gespeicherten Paper in eine Liste von Dictionaries
-            papers_list = st.session_state["papers_df"].to_dict("records")
-            excel_file = create_excel_file(papers_list)
+    if "excel_results" in st.session_state and st.session_state["excel_results"]:
+        if st.button("Excel-Datei herunterladen"):
+            excel_file = create_excel_file(st.session_state["excel_results"])
             st.download_button(
                 label="Download Excel",
                 data=excel_file,
-                file_name="pubmed_papers.xlsx",
+                file_name="Paper_Results.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
