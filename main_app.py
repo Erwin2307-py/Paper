@@ -5,8 +5,6 @@ import pandas as pd
 from io import BytesIO
 from scholarly import scholarly
 from modules.online_filter import module_online_filter
-# Den Import aus modules.PaperQA2 entfernen, da wir die Funktion direkt hier definieren
-# from modules.PaperQA2 import module_paperqa2
 
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
@@ -23,7 +21,7 @@ class CoreAPI:
         params = {"q": query, "limit": limit}
         if filters:
             filter_expressions = []
-            for key, value in (filters or {}).items():
+            for key, value in filters.items():
                 filter_expressions.append(f"{key}:{value}")
             params["filter"] = ",".join(filter_expressions)
         if sort:
@@ -315,7 +313,6 @@ def module_paperqa2():
     # Beispielhafte Funktionalität: Eingabe einer Frage und Anzeige einer Dummy-Antwort
     question = st.text_input("Bitte gib deine Frage ein:")
     if st.button("Frage absenden"):
-        # Hier könntest du deine eigene Q&A Logik implementieren.
         st.write("Antwort: Dies ist eine Dummy-Antwort auf die Frage:", question)
 
 #############################################
@@ -417,7 +414,7 @@ def page_extended_topics():
 
 def page_paperqa2():
     st.title("PaperQA2")
-    module_paperqa2()  # Aufruf des PaperQA2-Moduls
+    module_paperqa2()
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
