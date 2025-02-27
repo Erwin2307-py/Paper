@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
 import requests
-from io import BytesIO
 import re
+from io import BytesIO
 from modules.online_filter import search_papers
 
 def check_pubmed_connection(timeout=10):
@@ -18,7 +18,9 @@ def check_pubmed_connection(timeout=10):
         return False
 
 def fetch_pubmed_abstract(pmid):
-    """Holt den Abstract für eine gegebene PubMed-ID über efetch."""
+    """
+    Holt den Abstract für eine gegebene PubMed-ID über efetch.
+    """
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
     params = {"db": "pubmed", "id": pmid, "retmode": "xml"}
     try:
@@ -40,8 +42,8 @@ def fetch_pubmed_abstract(pmid):
 def get_paper_details(pmid):
     """
     Holt detaillierte Informationen zu einem Paper:
-    - ESummary liefert diverse Metadaten (z. B. Titel, Publikationsdatum, Herausgeber, DOI etc.)
-    - EFetch liefert den Abstract.
+      - ESummary liefert diverse Metadaten (z. B. Titel, Publikationsdatum, Herausgeber, DOI etc.)
+      - EFetch liefert den Abstract.
     """
     esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
     params = {"db": "pubmed", "id": pmid, "retmode": "json"}
@@ -60,34 +62,46 @@ def get_paper_details(pmid):
 def create_excel_file(papers):
     """
     Erstellt ein Excel-Dokument mit:
-      - einem Hauptsheet ("Main"), das pro Paper die Felder
-        PubMed ID, DOI, Titel, Jahr und Herausgeber enthält,
-      - sowie für jedes Paper ein zusätzliches Sheet (benannt nach dem bereinigten Titel),
-        das alle von ESummary und EFetch erhaltenen Informationen (inklusive Abstract) enthält.
+      - einem Hauptsheet ("Main"), das pro Paper die Felder enthält:
+        PubMed ID, DOI, Title, Year, Publisher, Population, Cohorts, Sample Size
+      - für jedes Paper ein zusätzliches Sheet (benannt nach dem (bereinigten) Paper-Titel),
+        das alle über ESummary und EFetch erhaltenen Informationen als Feld/Value-Tabelle enthält.
     """
     output = BytesIO()
     main_data = []
     details_dict = {}
+    
+    # Für jedes Paper werden die Detailinformationen abgerufen
     for paper in papers:
         pmid = paper.get("PubMed ID", "")
         details = get_paper_details(pmid)
-        # Hauptinformationen: Titel, DOI (falls vorhanden), Publikationsdatum, Herausgeber etc.
+        # Hauptinformationen (falls die Felder in den Details nicht vorhanden sind, wird der ursprüngliche Wert genutzt)
         title = details.get("title", paper.get("Title", "N/A"))
         doi = details.get("doi", details.get("elocationid", "N/A"))
         pubdate = details.get("pubdate", "N/A")
         year = pubdate[:4] if pubdate and pubdate != "N/A" else paper.get("Year", "N/A")
-        journal = details.get("fulljournalname", paper.get("Publisher", "N/A"))
+        publisher = details.get("fulljournalname", paper.get("Publisher", "N/A"))
+        # Zusätzliche Felder (Population, Cohorts, Sample Size) – sofern nicht vorhanden, "N/A"
+        population = details.get("population", "N/A")
+        cohorts = details.get("cohorts", "N/A")
+        sample_size = details.get("sample_size", "N/A")
+        
         main_data.append({
             "PubMed ID": pmid,
             "DOI": doi,
             "Title": title,
             "Year": year,
-            "Publisher": journal
+            "Publisher": publisher,
+            "Population": population,
+            "Cohorts": cohorts,
+            "Sample Size": sample_size
         })
-        # Detail-Sheet: Alle Schlüsselinformationen aus details
+        
+        # Detail-Sheet: Alle Informationen aus details in einer Tabelle (Feld/Value)
         detail_items = list(details.items())
         detail_df = pd.DataFrame(detail_items, columns=["Field", "Value"])
-        # Sheetname: aus dem Titel bereinigt (keine ungültigen Zeichen, max. 31 Zeichen)
+        
+        # Erzeuge einen gültigen Sheet-Namen aus dem Titel (max. 31 Zeichen, keine ungültigen Zeichen)
         sheet_name = re.sub(r'[:\\/*?\[\]]', '', title)
         if len(sheet_name) > 31:
             sheet_name = sheet_name[:31]
@@ -131,6 +145,7 @@ def module_codewords_pubmed():
                 codewords_list = [cw if "*" in cw else cw + "*" for cw in codewords_list]
             query = " OR ".join(codewords_list)
             st.write("Suchanfrage:", query)
+            # Suche über PubMed – maximal 100 Paper (search_papers in online_filter nutzt retmax=100)
             papers = search_papers("PubMed", query)
             if papers:
                 st.write("Gefundene Papers:")
@@ -140,9 +155,10 @@ def module_codewords_pubmed():
             else:
                 st.write("Keine Papers gefunden.")
     
-    # Excel-Download anbieten, wenn Papers vorhanden sind
+    # Excel-Download anbieten, sofern Paper vorhanden sind
     if "papers_df" in st.session_state and not st.session_state["papers_df"].empty:
         if st.button("Excel herunterladen"):
+            # Konvertiere die im Session-State gespeicherten Paper in eine Liste von Dictionaries
             papers_list = st.session_state["papers_df"].to_dict("records")
             excel_file = create_excel_file(papers_list)
             st.download_button(
@@ -151,5 +167,3 @@ def module_codewords_pubmed():
                 file_name="pubmed_papers.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-
-
