@@ -3,7 +3,11 @@ import requests
 import pandas as pd
 
 # Standard-Keywords für genetische Forschung
-DEFAULT_KEYWORDS = ["genotype", "phenotype", "SNP", "Genotyp", "Phänotyp", "Einzelnukleotid-Polymorphismus"]
+GENETIC_KEYWORDS = {
+    "Genotyp": "genotype",
+    "Phänotyp": "phenotype",
+    "SNP": "SNP"
+}
 
 # OpenAI API Funktion zum Filtern der Abstracts
 def filter_abstracts_with_chatgpt(abstracts, keywords):
@@ -91,32 +95,33 @@ def search_papers(api_name, query):
 
     return results
 
-# Streamlit Modul mit Checkbox für automatische Filterung
+# Streamlit Modul mit Checkboxen für Genotyp, Phänotyp & SNP
 def module_online_filter():
     st.header("🔬 Modul 2: Online-Filter für Paper")
 
-    # Checkbox für automatische Suche nach Genotyp, Phänotyp und SNPs
-    use_auto_keywords = st.checkbox("🔍 Automatische Suche nach Genotyp, Phänotyp und SNPs", value=True)
-    
-    # Benutzereingabe für weitere Codewörter
-    codewords = st.text_input("Zusätzliche Codewörter (kommasepariert)", "")
+    # Auswahl-Checkboxen für Genotyp, Phänotyp und SNP
+    st.subheader("📌 Wähle deine Suchparameter:")
+    selected_keywords = []
+    for key, value in GENETIC_KEYWORDS.items():
+        if st.checkbox(f"{key}", value=False):
+            selected_keywords.append(value)
 
-    # Falls Checkbox aktiv ist, verwende Standard-Keywords
-    keywords = DEFAULT_KEYWORDS if use_auto_keywords else []
+    # Benutzereingabe für zusätzliche Codewörter
+    codewords = st.text_input("Weitere Codewörter (kommasepariert)", "")
     if codewords:
-        keywords.extend([word.strip() for word in codewords.split(",")])
+        selected_keywords.extend([word.strip() for word in codewords.split(",")])
 
     # Zeige aktuelle Suchbegriffe an
-    st.write("🔎 Aktuelle Suchbegriffe:", keywords)
+    st.write("🔎 **Suchbegriffe:**", selected_keywords)
 
-    # ChatGPT-Filter-Option
+    # ChatGPT-Filter aktivieren
     use_chatgpt = st.checkbox("🤖 ChatGPT für Filterung nutzen", value=False)
-    
+
     # Abstracts eingeben
     abstracts = st.text_area("🔍 Füge Abstracts hinzu (jeweils eine Zeile)").split("\n")
 
     if use_chatgpt and st.button("📝 Filter Abstracts mit ChatGPT"):
-        filtered_abstracts = filter_abstracts_with_chatgpt(abstracts, keywords)
+        filtered_abstracts = filter_abstracts_with_chatgpt(abstracts, selected_keywords)
         st.write("✅ Gefilterte Abstracts:")
         for abstract in filtered_abstracts:
             st.write(abstract)
@@ -125,7 +130,7 @@ def module_online_filter():
     if st.button("📄 Papers suchen"):
         papers = []
         for api in ["PubMed", "Europe PMC", "CORE"]:
-            papers.extend(search_papers(api, " OR ".join(keywords)))
+            papers.extend(search_papers(api, " OR ".join(selected_keywords)))
         
         st.write(f"📑 **Gefundene Papers:** {len(papers)}")
         papers_df = pd.DataFrame(papers)
@@ -145,4 +150,3 @@ def module_online_filter():
 
 # Modul ausführen
 module_online_filter()
-
