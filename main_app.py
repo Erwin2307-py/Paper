@@ -1,3 +1,4 @@
+
 import streamlit as st
 import requests
 import xml.etree.ElementTree as ET
@@ -390,7 +391,9 @@ def page_online_filter():
 
 def page_codewords_pubmed():
     st.title("Codewords & PubMed Settings")
-    st.write("Configure codewords, synonyms, etc. for your PubMed search. (Dummy placeholder...)")
+    # Hier importieren und aufrufen wir das separate Modul
+    from modules.codewords_pubmed import module_codewords_pubmed
+    module_codewords_pubmed()
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
@@ -460,3 +463,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
