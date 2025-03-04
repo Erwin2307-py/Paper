@@ -3,6 +3,7 @@ import requests
 import openai
 import pandas as pd
 import os
+import time
 
 ##############################################################################
 # 1) Verbindungstest-Funktionen für diverse APIs
@@ -117,6 +118,41 @@ def search_semantic_scholar(query, limit=5):
         return data.get("data", [])
     except requests.RequestException as e:
         st.error(f"Fehler bei der Semantic Scholar Anfrage: {e}")
+        return []
+
+##############################################################################
+# 1b) Echte Google Scholar Suche (statt Dummy-Funktion)
+##############################################################################
+
+def search_google_scholar(query: str, max_results=100):
+    """
+    Führt eine Suche in Google Scholar durch und gibt eine Liste von Paper-Daten zurück.
+    Verwendet die inoffizielle Bibliothek 'scholarly'.
+    """
+    try:
+        from scholarly import scholarly
+        search_results = scholarly.search_pubs(query)
+        results = []
+        count = 0
+        for pub in search_results:
+            if count >= max_results:
+                break
+            bib = pub.get("bib", {})
+            title = bib.get("title", "n/a")
+            year = bib.get("pub_year", "n/a")
+            results.append({
+                "Source": "Google Scholar",
+                "Title": title,
+                "PubMed ID": "n/a",
+                "DOI": "n/a",
+                "Year": year,
+                "Abstract": "Abstract nicht verfügbar",
+                "Population": "n/a"
+            })
+            count += 1
+        return results
+    except Exception as e:
+        st.error(f"Fehler bei der Google Scholar Suche: {e}")
         return []
 
 ##############################################################################
