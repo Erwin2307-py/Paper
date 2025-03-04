@@ -10,15 +10,17 @@ import datetime
 # falls du "module_online_filter" extern hast. Andernfalls auskommentieren.
 from modules.online_filter import module_online_filter
 
+###############################################################################
+# NEU HINZUGEFÜGT: Import deines Selenium-Q&A-Moduls
+###############################################################################
+import my_selenium_qa_module  # <- Hier liegt dein unverändertes Selenium-Skript
+
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
 ################################################################################
-# 1) Gemeinsame Funktionen & Klassen
+# 1) Gemeinsame Funktionen & Klassen (UNVERÄNDERT)
 ################################################################################
 
-# ==============================================================================
-# CORE Aggregate API Class and Connection Check
-# ==============================================================================
 class CoreAPI:
     def __init__(self, api_key):
         self.base_url = "https://api.core.ac.uk/v3/"
@@ -53,7 +55,6 @@ def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", 
         return False
 
 
-# Alte "Lightweight"-Funktion, falls sie noch im alten Stil gebraucht wird.
 def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
     if not api_key:
         return []
@@ -78,9 +79,6 @@ def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
         return []
 
 
-# ==============================================================================
-# PubMed Connection Check + (Basis) Search
-# ==============================================================================
 def check_pubmed_connection(timeout=10):
     test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": "test", "retmode": "json"}
@@ -150,9 +148,6 @@ def fetch_pubmed_abstract(pmid):
         return f"(Error: {e})"
 
 
-# ==============================================================================
-# Europe PMC Connection Check + (Basis) Search
-# ==============================================================================
 def check_europe_pmc_connection(timeout=10):
     test_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {"query": "test", "format": "json", "pageSize": 100}
@@ -199,9 +194,6 @@ def search_europe_pmc_simple(query):
         return []
 
 
-# ==============================================================================
-# OpenAlex API Communication
-# ==============================================================================
 BASE_URL = "https://api.openalex.org"
 
 def fetch_openalex_data(entity_type, entity_id=None, params=None):
@@ -224,9 +216,6 @@ def search_openalex_simple(query):
     return fetch_openalex_data("works", params=search_params)
 
 
-# ==============================================================================
-# Google Scholar (Basis) Test
-# ==============================================================================
 from scholarly import scholarly
 
 class GoogleScholarSearch:
@@ -259,9 +248,6 @@ class GoogleScholarSearch:
             st.error(f"Fehler bei der Google Scholar-Suche: {e}")
 
 
-# ==============================================================================
-# Semantic Scholar API Communication
-# ==============================================================================
 def check_semantic_scholar_connection(timeout=10):
     try:
         url = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -310,13 +296,10 @@ class SemanticScholarSearch:
 
 
 ################################################################################
-# 2) Neues Modul: "module_excel_online_search"
+# 2) Neues Modul: "module_excel_online_search" (UNVERÄNDERT)
 ################################################################################
 
-# ----------------------------- Hilfsfunktionen --------------------------------
-
 def get_pubmed_details(pmid):
-    """Holt Details über esummary + Abstract per efetch für eine PubMed-ID."""
     details = {}
     esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
     params = {"db": "pubmed", "id": pmid, "retmode": "json"}
@@ -328,13 +311,11 @@ def get_pubmed_details(pmid):
     except Exception as e:
         details["esummary_error"] = str(e)
 
-    # Abstract via efetch
     details["Abstract"] = fetch_pubmed_abstract(pmid)
     return details
 
 
 def search_pubmed(query, limit=100):
-    """Sucht in PubMed per esearch, holt Metadaten (esummary) + Abstract (efetch)."""
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": limit}
     results = []
@@ -346,7 +327,6 @@ def search_pubmed(query, limit=100):
         if not idlist:
             return results
 
-        # Metadaten via esummary
         esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
         sum_params = {"db": "pubmed", "id": ",".join(idlist), "retmode": "json"}
         r2 = requests.get(esummary_url, params=sum_params, timeout=10)
@@ -381,7 +361,6 @@ def search_pubmed(query, limit=100):
 
 
 def search_europe_pmc(query, limit=100):
-    """Sucht in Europe PMC per REST-API."""
     url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {"query": query, "format": "json", "pageSize": limit, "resultType": "core"}
     results = []
@@ -419,7 +398,6 @@ def search_europe_pmc(query, limit=100):
 
 
 def search_core_aggregate_detailed(query, limit=100):
-    """Benutzt CORE-API (API-Key) und liefert Abstract mit zurück, falls vorhanden."""
     API_KEY = "LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"
     url = "https://api.core.ac.uk/v3/search/works"
     headers = {"Authorization": f"Bearer {API_KEY}"}
@@ -454,7 +432,6 @@ def search_core_aggregate_detailed(query, limit=100):
 
 
 def search_openalex(query, limit=100):
-    """Sucht in OpenAlex (mit Abstract, sofern vorhanden)."""
     url = "https://api.openalex.org/works"
     params = {"search": query, "per-page": limit}
     results = []
@@ -488,7 +465,6 @@ def search_openalex(query, limit=100):
 
 
 def search_google_scholar(query, limit=100):
-    """Inoffizielles Google-Scholar-Paket 'scholarly'. Beschränkt auf `limit` Treffer."""
     from scholarly import scholarly
     results = []
     try:
@@ -524,7 +500,6 @@ def search_google_scholar(query, limit=100):
 
 
 def search_semantic_scholar(query, limit=100):
-    """Sucht in Semantic Scholar (max. `limit` Treffer)."""
     url = "https://api.semanticscholar.org/graph/v1/paper/search"
     headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
     params = {"query": query, "limit": limit, "fields": "title,authors,year,abstract,doi,paperId"}
@@ -559,13 +534,6 @@ def search_semantic_scholar(query, limit=100):
 
 
 def create_excel_file(papers, query):
-    """
-    Erstellt eine Excel-Datei (BytesIO) mit:
-    - Main-Sheet (Title, PubMed ID, Year, Publisher)
-    - Detail-Sheets (alle verfügbaren Felder pro Paper).
-    Falls es sich um PubMed-Paper handelt, wird get_pubmed_details()
-    genutzt, um mehr Details zu liefern.
-    """
     output = BytesIO()
     main_data = []
     details_dict = {}
@@ -578,23 +546,16 @@ def create_excel_file(papers, query):
             "Publisher": paper.get("Publisher", "N/A")
         })
 
-        # Falls PubMed: Hole zusätzliche Details
         detail_info = paper.copy()
         if paper.get("Source") == "PubMed" and paper.get("PubMed ID") != "N/A":
             pmid = paper["PubMed ID"]
             pubmed_extra = get_pubmed_details(pmid)
-            # Zusammenführen: Bevorzugt Details aus pubmed_extra
             for k, v in pubmed_extra.items():
                 detail_info[k] = v
 
-        # Dictionary => DataFrame (Key/Value)
         detail_df = pd.DataFrame(list(detail_info.items()), columns=["Field", "Value"])
-
-        # Titel als Basis für den Sheet-Namen
         title = paper.get("Title", "Paper")
-        # Ungültige Zeichen entfernen, auf 31 Zeichen kürzen
         sheet_name = re.sub(r'[\\/*?:"<>|]', "", title)[:31]
-        # Falls es doppelte Sheet-Namen gäbe -> eindeutige Erweiterung
         orig_sheet_name = sheet_name
         counter = 2
         while sheet_name in details_dict:
@@ -606,13 +567,9 @@ def create_excel_file(papers, query):
     main_df = pd.DataFrame(main_data)
 
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        # Main-Sheet
         main_df.to_excel(writer, index=False, sheet_name="Main")
-
-        # Pro Paper ein Sheet
         for sheet, df in details_dict.items():
             df.to_excel(writer, index=False, sheet_name=sheet)
-
         writer.save()
 
     output.seek(0)
@@ -622,18 +579,13 @@ def create_excel_file(papers, query):
 
 
 def module_excel_online_search():
-    """
-    Zeigt im Streamlit-Interface Checkboxen für APIs, Codewörter-Feld,
-    führt die Suche durch, zeigt Ergebnisse + Details und ermöglicht Excel-Export.
-    """
     st.header("Online Suche & Excel-Erstellung")
     st.write("Für jede aktivierte API werden jeweils bis zu 100 Paper abgefragt.")
     
-    # Definierte APIs – jede Funktion liefert bis zu 100 Paper
     apis = {
         "PubMed": search_pubmed,
         "Europe PMC": search_europe_pmc,
-        "CORE Aggregate": search_core_aggregate_detailed,  # Detail-Version
+        "CORE Aggregate": search_core_aggregate_detailed,
         "OpenAlex": search_openalex,
         "Google Scholar": search_google_scholar,
         "Semantic Scholar": search_semantic_scholar
@@ -653,7 +605,6 @@ def module_excel_online_search():
             st.warning("Bitte gib mindestens ein Codewort ein!")
             return
 
-        # Codewörter aufbereiten
         codewords = [cw.strip() for cw in codewords_input.split(",") if cw.strip()]
         if auto_wildcard:
             codewords = [cw if "*" in cw else cw + "*" for cw in codewords]
@@ -678,7 +629,6 @@ def module_excel_online_search():
         else:
             st.info("Keine Paper gefunden.")
     
-    # Paper-Details anzeigen
     if "excel_results" in st.session_state and st.session_state["excel_results"]:
         paper_titles = [paper.get("Title", "N/A") for paper in st.session_state["excel_results"]]
         if paper_titles:
@@ -699,7 +649,6 @@ def module_excel_online_search():
                         st.markdown("**Alle Informationen:**")
                         st.write(selected_paper)
     
-    # Excel-Download
     if "excel_results" in st.session_state and st.session_state["excel_results"]:
         if st.button("Excel-Datei herunterladen"):
             query = st.session_state.get("search_query", "Results")
@@ -713,13 +662,12 @@ def module_excel_online_search():
 
 
 ################################################################################
-# 3) Restliche Module + Seiten (Pages)
+# 3) Restliche Module + Seiten (Pages) (UNVERÄNDERT)
 ################################################################################
 
 def module_paperqa2():
     st.subheader("PaperQA2 Module")
     st.write("Dies ist das PaperQA2 Modul. Hier kannst du weitere Einstellungen und Funktionen für PaperQA2 implementieren.")
-    # Beispielhafte Funktionalität: Eingabe einer Frage und Anzeige einer Dummy-Antwort
     question = st.text_input("Bitte gib deine Frage ein:")
     if st.button("Frage absenden"):
         st.write("Antwort: Dies ist eine Dummy-Antwort auf die Frage:", question)
@@ -806,7 +754,6 @@ def page_api_selection():
 def page_online_filter():
     st.title("Online Filter Settings")
     st.write("Configure your online filter here.")
-    # Aufruf deines (externen) Moduls, falls du es brauchst:
     module_online_filter()
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
@@ -814,8 +761,6 @@ def page_online_filter():
 
 def page_codewords_pubmed():
     st.title("Codewords & PubMed Settings")
-    # Hier importieren und aufrufen wir das separate Modul
-    # (muss in modules/codewords_pubmed.py existieren)
     from modules.codewords_pubmed import module_codewords_pubmed
     module_codewords_pubmed()
     if st.button("Back to Main Menu"):
@@ -850,7 +795,6 @@ def page_paperqa2():
         st.session_state["current_page"] = "Home"
 
 
-# Neu: Seite, die das Excel-Online-Search-Modul aufruft
 def page_excel_online_search():
     st.title("Excel Online Search")
     module_excel_online_search()
@@ -858,8 +802,21 @@ def page_excel_online_search():
         st.session_state["current_page"] = "Home"
 
 
+###############################################################################
+# NEU: Seite, die dein Selenium-Q&A-Modul als "eigenes Modul" anzeigt
+###############################################################################
+def page_selenium_qa():
+    st.title("Selenium Q&A Demo (Modul)")
+    st.write("Das unveränderte Selenium-Skript wird hier aufgerufen.")
+    # Aufruf der main()-Funktion des unveränderten Selenium-Q&A-Moduls
+    my_selenium_qa_module.main()
+
+    if st.button("Back to Main Menu"):
+        st.session_state["current_page"] = "Home"
+
+
 ################################################################################
-# 4) Sidebar Module Navigation & Main
+# 4) Sidebar Module Navigation & Main (NUR ERWEITERT, NICHT VERÄNDERT)
 ################################################################################
 
 def sidebar_module_navigation():
@@ -873,8 +830,9 @@ def sidebar_module_navigation():
         "5) Analysis & Evaluation": page_analysis,
         "6) Extended Topics": page_extended_topics,
         "7) PaperQA2": page_paperqa2,
-        # Hier fügen wir unsere neue Seite an:
-        "8) Excel Online Search": page_excel_online_search
+        "8) Excel Online Search": page_excel_online_search,
+        # HINZUGEFÜGT: Selenium-Q&A-Modul
+        "9) Selenium Q&A": page_selenium_qa
     }
     for label, page in pages.items():
         if st.sidebar.button(label, key=label):
@@ -902,4 +860,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
