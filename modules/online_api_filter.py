@@ -215,23 +215,20 @@ def module_online_api_filter():
       A) API-Auswahl + Verbindungstest
       B) Gene-Filter (ab C3) via ChatGPT
       C) Settings-Speicherung (Profile) mit Name
+      D) Gene nur auf Wunsch anzeigen (Checkbox)
     """
     st.title("API-Auswahl & Gene-Filter mit Profile-Speicherung")
 
     # ------------------------------------
-    # Profile: Eingabefeld + "Load Profile"
+    # Profilverwaltung
     # ------------------------------------
     st.subheader("Profilverwaltung")
     
-    # Eingabe für Profilname
     profile_name_input = st.text_input("Profilname eingeben (für Speichern/Laden):", "")
-
-    # Falls wir schon Profile haben, ermöglichen wir ein Dropdown:
     existing_profiles = []
     if "profiles" in st.session_state:
         existing_profiles = list(st.session_state["profiles"].keys())
     selected_profile_to_load = st.selectbox("Oder wähle ein bestehendes Profil zum Laden:", ["(kein)"] + existing_profiles)
-
     load_profile_btn = st.button("Profil laden")
 
     # ------------------------------------
@@ -240,7 +237,6 @@ def module_online_api_filter():
     st.subheader("A) API-Auswahl (Checkboxen) + Verbindungstest")
 
     col1, col2 = st.columns(2)
-    # Wir legen default-Werte an, damit man nach "Profil laden" wieder updaten kann
     if "current_settings" not in st.session_state:
         st.session_state["current_settings"] = {
             "use_pubmed": True,
@@ -254,7 +250,7 @@ def module_online_api_filter():
             "text_input": ""
         }
 
-    # Falls wir gerade ein Profil laden:
+    # Profil Laden
     if load_profile_btn:
         if selected_profile_to_load != "(kein)":
             loaded = load_settings(selected_profile_to_load)
@@ -266,8 +262,6 @@ def module_online_api_filter():
         else:
             st.info("Kein Profil zum Laden ausgewählt.")
 
-    # Jetzt lesen wir die "current_settings" in lokale Variablen,
-    # damit wir sie als Checkboxen/Textfelder anzeigen
     current = st.session_state["current_settings"]
     with col1:
         use_pubmed = st.checkbox("PubMed", value=current["use_pubmed"])
@@ -280,7 +274,6 @@ def module_online_api_filter():
         use_core = st.checkbox("CORE", value=current["use_core"])
         use_chatgpt = st.checkbox("ChatGPT", value=current["use_chatgpt"])
 
-    # Button: Verbindung prüfen
     if st.button("Verbindung prüfen"):
         def green_dot():
             return "<span style='color: limegreen; font-size: 20px;'>&#9679;</span>"
@@ -345,6 +338,7 @@ def module_online_api_filter():
 
     st.write(
         "Wähle ein Sheet aus `modules/genes.xlsx` (ab Spalte C, Zeile 3). "
+        "Wenn gewünscht, kannst du via Checkbox die Gene anzeigen. "
         "Danach einen Text eingeben. ChatGPT prüft, ob die Gene erwähnt sind."
     )
 
@@ -364,10 +358,9 @@ def module_online_api_filter():
         st.error("Keine Sheets in genes.xlsx gefunden.")
         return
 
-    # Falls im Profil etwas steht, hier übernehmen wir's:
+    # Falls im Profil ein Sheet steht, übernehmen wir es
     current_sheet = current["sheet_choice"]
     if current_sheet not in sheet_names:
-        # Falls das Profil-Sheet nicht mehr existiert, Standard = 0
         current_sheet = sheet_names[0]
 
     sheet_choice = st.selectbox("Wähle ein Sheet in genes.xlsx:", sheet_names, 
@@ -376,7 +369,11 @@ def module_online_api_filter():
     genes = []
     if sheet_choice:
         genes = load_genes_from_excel(sheet_choice)
-        st.write(f"**Gelistete Gene** in Sheet '{sheet_choice}' (ab C3):")
+
+    # Nur auf Wunsch Gene anzeigen (Checkbox)
+    show_genes = st.checkbox("Gene-Liste anzeigen?", value=False)
+    if show_genes and genes:
+        st.markdown(f"**Gelistete Gene** in Sheet '{sheet_choice}' (ab C3):")
         st.write(genes)
 
     st.write("---")
@@ -405,12 +402,10 @@ def module_online_api_filter():
     st.write("---")
     st.info(
         "Fertig. Du kannst oben die APIs auswählen und testen, sowie Profile speichern/laden. "
-        "Die Gene werden ab C3 eingelesen."
+        "Die Gene werden ab C3 eingelesen und nur angezeigt, wenn du es anforderst."
     )
 
-    # -----------------------------
-    # Am Ende aktualisieren wir die aktuellen Einstellungen in session_state
-    # -----------------------------
+    # Einstellungen updaten
     st.session_state["current_settings"] = {
         "use_pubmed": use_pubmed,
         "use_epmc": use_epmc,
