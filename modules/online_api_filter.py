@@ -91,6 +91,35 @@ def check_chatgpt_connection():
         return False
 
 ##############################################################################
+# 1a) Echte Semantic Scholar Suche (statt Dummy-Funktion)
+##############################################################################
+
+def search_semantic_scholar(query, limit=5):
+    """
+    Führt eine Suche in der Semantic Scholar API durch und gibt die Ergebnisse zurück.
+    Parameter:
+      query: Suchbegriff als String
+      limit: Anzahl der zurückzugebenden Ergebnisse
+    Rückgabe:
+      Liste von Publikationen (als Dictionaries) oder leere Liste im Fehlerfall.
+    """
+    base_url = "https://api.semanticscholar.org/graph/v1/paper/search"
+    params = {
+        "query": query,
+        "limit": limit,
+        "fields": "title,authors,year,abstract"
+    }
+    
+    try:
+        response = requests.get(base_url, params=params)
+        response.raise_for_status()  # Überprüft, ob die Anfrage erfolgreich war
+        data = response.json()
+        return data.get("data", [])
+    except requests.RequestException as e:
+        st.error(f"Fehler bei der Semantic Scholar Anfrage: {e}")
+        return []
+
+##############################################################################
 # 2) Gene-Loader: Liest ab C3 einer gegebenen Sheet
 ##############################################################################
 
@@ -163,15 +192,15 @@ def check_genes_in_text_with_chatgpt(text: str, genes: list, model="gpt-3.5-turb
 ##############################################################################
 
 def save_current_settings(profile_name: str, 
-                         use_pubmed: bool, 
-                         use_epmc: bool, 
-                         use_google: bool,
-                         use_semantic: bool,
-                         use_openalex: bool,
-                         use_core: bool,
-                         use_chatgpt: bool,
-                         sheet_choice: str,
-                         text_input: str):
+                          use_pubmed: bool, 
+                          use_epmc: bool, 
+                          use_google: bool,
+                          use_semantic: bool,
+                          use_openalex: bool,
+                          use_core: bool,
+                          use_chatgpt: bool,
+                          sheet_choice: str,
+                          text_input: str):
     """
     Speichert die aktuellen Einstellungen in st.session_state["profiles"]
     unter dem Schlüssel = profile_name.
@@ -215,7 +244,8 @@ def module_online_api_filter():
       B) Gene-Filter (ab C3) via ChatGPT
       C) Settings-Speicherung (Profile) mit Name
       D) Gene nur auf Wunsch anzeigen (Checkbox)
-      E) ChatGPT-Synonyme-Fenster (Expander), wenn ChatGPT aktiviert
+      E) ChatGPT-Synonym-Fenster (Expander), wenn ChatGPT aktiviert
+      F) Semantic Scholar Suche (echte API-Anbindung)
     """
     st.title("API-Auswahl & Gene-Filter mit Profile-Speicherung + ChatGPT-Synonym-Fenster")
 
@@ -232,7 +262,7 @@ def module_online_api_filter():
     load_profile_btn = st.button("Profil laden")
 
     # ------------------------------------
-    # A) API-Auswahl
+    # A) API-Auswahl (Checkboxen) + Verbindungstest
     # ------------------------------------
     st.subheader("A) API-Auswahl (Checkboxen) + Verbindungstest")
 
@@ -333,7 +363,6 @@ def module_online_api_filter():
     # ------------------------------------
     # E) ChatGPT-Synonym-Fenster (nur wenn ChatGPT True)
     # ------------------------------------
-    # Standardwerte der Synonym-Checkboxen speichern wir in st.session_state
     if "synonyms_selected" not in st.session_state:
         st.session_state["synonyms_selected"] = {
             "genotype": False,
@@ -345,7 +374,6 @@ def module_online_api_filter():
     synonyms_local = st.session_state["synonyms_selected"]
     if use_chatgpt:
         with st.expander("ChatGPT: Begriffe & Synonyme auswählen"):
-            # Genotyp
             st.markdown("""
 **Genotyp**  
 Deutsch: Erbbild, genetische Ausstattung, genetisches Profil  
@@ -354,7 +382,6 @@ Verwandte Begriffe: Allel, Genom, DNA-Sequenz
 """)
             genotype_check = st.checkbox("Genotyp (inkl. Synonyme)", value=synonyms_local["genotype"])
 
-            # Phänotyp
             st.markdown("""
 **Phänotyp**  
 Deutsch: Erscheinungsbild, äußeres Merkmal, Merkmalsausprägung  
@@ -363,7 +390,6 @@ Verwandte Begriffe: Morphologie, physiologische Eigenschaften, Verhalten
 """)
             phenotype_check = st.checkbox("Phänotyp (inkl. Synonyme)", value=synonyms_local["phenotype"])
 
-            # SNP
             st.markdown("""
 **Single Nucleotide Polymorphism (SNP)**  
 Deutsch: Einzelnukleotid-Polymorphismus, Punktmutation  
@@ -372,10 +398,8 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
 """)
             snp_check = st.checkbox("SNP (inkl. Synonyme)", value=synonyms_local["snp"])
 
-            # Increase/Decrease
             inc_dec_check = st.checkbox("Increase/Decrease (auch das Gegenteil suchen?)", value=synonyms_local["inc_dec"])
 
-            # Lokale Variablen aktualisieren
             synonyms_local["genotype"] = genotype_check
             synonyms_local["phenotype"] = phenotype_check
             synonyms_local["snp"]       = snp_check
@@ -409,7 +433,6 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
         st.error("Keine Sheets in genes.xlsx gefunden.")
         return
 
-    # Falls im Profil ein Sheet steht, übernehmen wir es
     current_sheet = current["sheet_choice"]
     if current_sheet not in sheet_names:
         current_sheet = sheet_names[0]
@@ -421,7 +444,6 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
     if sheet_choice:
         genes = load_genes_from_excel(sheet_choice)
 
-    # Nur auf Wunsch Gene anzeigen (Checkbox)
     show_genes = st.checkbox("Gene-Liste anzeigen?", value=False)
     if show_genes and genes:
         st.markdown(f"**Gelistete Gene** in Sheet '{sheet_choice}' (ab C3):")
@@ -432,27 +454,21 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
 
     text_input = st.text_area("Füge hier deinen Abstract / Text ein:", height=200, value=current["text_input"])
 
-    # Button "Gene filtern mit ChatGPT"
     if st.button("Gene filtern mit ChatGPT"):
         if not genes:
             st.warning("Keine Gene geladen oder das Sheet ist leer.")
         elif not text_input.strip():
             st.warning("Bitte einen Text eingeben.")
         else:
-            # Falls ChatGPT-Synonym-Checkboxen aktiv sind, erweitern wir die Gene-Liste (als Demo)
-            extended_genes = list(genes)  # Kopie
-
-            # Wir holen die Auswahlen:
+            extended_genes = list(genes)
             synset = st.session_state["synonyms_selected"]
             if synset["genotype"]:
-                # Synonyme & verwandte Begriffe anfügen (Beispielhaft)
                 extended_genes += ["genetic makeup", "genetic constitution", "AllEl", "DNA sequence"]
             if synset["phenotype"]:
                 extended_genes += ["observable traits", "physical appearance", "morphology"]
             if synset["snp"]:
                 extended_genes += ["point mutation", "genetic variation", "DNA polymorphism"]
             if synset["inc_dec"]:
-                # "increase/decrease" => Hier nur Demo: wir fügen evtl. "increase" / "decrease" der Genes-Liste hinzu
                 extended_genes += ["increase", "decrease"]
 
             result_map = check_genes_in_text_with_chatgpt(text_input, extended_genes)
@@ -467,6 +483,36 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
                     else:
                         st.write(f"{g}: No")
 
+    # ------------------------------------
+    # F) Semantic Scholar Suche (echte API-Anbindung)
+    # ------------------------------------
+    if use_semantic:
+        st.write("---")
+        st.subheader("F) Semantic Scholar Suche")
+        sem_query = st.text_input("Semantic Scholar Suchbegriff:", "")
+        sem_limit = st.number_input("Anzahl Ergebnisse", min_value=1, max_value=20, value=5, step=1)
+        if st.button("Semantic Scholar durchsuchen"):
+            if not sem_query.strip():
+                st.warning("Bitte einen Suchbegriff eingeben.")
+            else:
+                sem_results = search_semantic_scholar(sem_query, limit=sem_limit)
+                if not sem_results:
+                    st.info("Keine Ergebnisse gefunden oder Fehler bei der Anfrage.")
+                else:
+                    st.markdown(f"### Ergebnisse für '{sem_query}':")
+                    for paper in sem_results:
+                        title = paper.get("title", "Kein Titel verfügbar")
+                        authors = paper.get("authors", [])
+                        # Autoren: Liste von Dictionaries, z. B. {'name': 'Autor Name'}
+                        author_names = ", ".join(author.get("name", "") for author in authors)
+                        year = paper.get("year", "Kein Jahr verfügbar")
+                        abstract = paper.get("abstract", "Kein Abstract verfügbar")
+                        st.markdown(f"**Titel:** {title}")
+                        st.markdown(f"**Autoren:** {author_names}")
+                        st.markdown(f"**Jahr:** {year}")
+                        st.markdown(f"**Abstract:** {abstract}")
+                        st.write("---")
+
     st.write("---")
     st.info(
         "Fertig. Du kannst oben die APIs auswählen und testen, sowie Profile speichern/laden. "
@@ -474,7 +520,6 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
         "Wenn ChatGPT aktiv ist, kannst du im Expander Synonyme auswählen."
     )
 
-    # Einstellungen updaten
     st.session_state["current_settings"] = {
         "use_pubmed": use_pubmed,
         "use_epmc": use_epmc,
@@ -487,7 +532,6 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
         "text_input": text_input
     }
 
-    # Button: Profil speichern
     if st.button("Aktuelle Einstellungen speichern"):
         pname = profile_name_input.strip()
         if not pname:
@@ -505,3 +549,6 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
                 sheet_choice,
                 text_input
             )
+
+if __name__ == "__main__":
+    module_online_api_filter()
