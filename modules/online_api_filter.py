@@ -2,14 +2,10 @@
 
 import streamlit as st
 import requests
-import xml.etree.ElementTree as ET
-import pandas as pd
-from io import BytesIO
 
-
-###############################################################################
-# 1) Hilfsfunktionen für PubMed
-###############################################################################
+##############################################################################
+# 1) Verbindungstest-Funktionen
+##############################################################################
 
 def check_pubmed_connection():
     """
@@ -18,31 +14,12 @@ def check_pubmed_connection():
     test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": "test", "retmode": "json"}
     try:
-        r = requests.get(test_url, params=params, timeout=10)
+        r = requests.get(test_url, params=params, timeout=5)
         r.raise_for_status()
         data = r.json()
         return "esearchresult" in data
     except Exception:
         return False
-
-def search_pubmed_simple(query="test", limit=10):
-    """
-    Beispiel: Sucht bis zu 'limit' PubMed-Einträge nach dem Query.
-    Gibt das JSON-Dict zurück oder None, wenn etwas schiefgeht.
-    """
-    url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-    params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": limit}
-    try:
-        r = requests.get(url, params=params, timeout=10)
-        r.raise_for_status()
-        return r.json()
-    except Exception:
-        return None
-
-
-###############################################################################
-# 2) Hilfsfunktionen für Europe PMC
-###############################################################################
 
 def check_europe_pmc_connection():
     """
@@ -51,102 +28,61 @@ def check_europe_pmc_connection():
     test_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {"query": "test", "format": "json", "pageSize": 1}
     try:
-        r = requests.get(test_url, params=params, timeout=10)
+        r = requests.get(test_url, params=params, timeout=5)
         r.raise_for_status()
         data = r.json()
         return "resultList" in data and "result" in data["resultList"]
     except Exception:
         return False
 
-def search_europe_pmc_simple(query="test", limit=10):
-    """
-    Beispiel: Sucht bis zu 'limit' Europe PMC-Einträge nach dem Query.
-    Gibt das JSON-Dict zurück oder None, wenn etwas schiefgeht.
-    """
-    url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
-    params = {
-        "query": query,
-        "format": "json",
-        "pageSize": limit
-    }
-    try:
-        r = requests.get(url, params=params, timeout=10)
-        r.raise_for_status()
-        return r.json()
-    except Exception:
-        return None
-
-
-###############################################################################
-# 3) HAUPTFUNKTION: Wird im Hauptmenü aufgerufen
-###############################################################################
+##############################################################################
+# 2) Hauptfunktion (wird vom Hauptmenü aufgerufen)
+##############################################################################
 
 def module_online_api_filter():
     """
-    Diese Funktion wird aus main_app.py heraus aufgerufen,
-    z.B. via: from modules.online_api_filter import module_online_api_filter
-              ...
-              module_online_api_filter()
+    Diese Funktion zeigt dem Nutzer zwei Checkboxen (PubMed/Europe PMC).
+    Danach kann er per Button die Verbindung testen – pro angekreuzter API
+    wird ein grüner oder roter Punkt angezeigt.
     """
-    st.title("Online-API_Filter: PubMed & Europe PMC")
+    st.title("API-Auswahl & Verbindungstest (ohne Suchabfrage)")
 
-    st.markdown("Wähle hier die APIs und starte eine einfache Suche.")
-
-    # --- Auswahl der APIs per Checkbox ---
-    col_api1, col_api2 = st.columns(2)
-    with col_api1:
+    # Checkboxen für die beiden APIs
+    col1, col2 = st.columns(2)
+    with col1:
         use_pubmed = st.checkbox("PubMed", value=True)
-    with col_api2:
+    with col2:
         use_epmc = st.checkbox("Europe PMC", value=True)
 
-    # --- Textfeld für Query & Button ---
-    query = st.text_input("Suchbegriff:", "test")
-    limit = st.number_input("Max. Ergebnisse pro API", min_value=1, max_value=100, value=10, step=1)
+    # Button für Verbindungstest
+    if st.button("Verbindung prüfen"):
+        st.write("**Ergebnis:**")
+        
+        # Kurze Hilfsfunktionen für grüne / rote Punkte
+        def green_dot():
+            return "<span style='color: limegreen; font-size: 25px;'>&#9679;</span>"
+        def red_dot():
+            return "<span style='color: red; font-size: 25px;'>&#9679;</span>"
 
-    if st.button("Suche starten"):
-        # Liste zum Sammeln der Ergebnisse
-        results = []
+        # Prüfen, was ausgewählt wurde, und Verbindung testen
+        if not use_pubmed and not use_epmc:
+            st.info("Keine API ausgewählt. Bitte mindestens eine ankreuzen.")
+            return
 
-        # PubMed-Suche
+        # PubMed
         if use_pubmed:
-            pubmed_data = search_pubmed_simple(query, limit=limit)
-            if pubmed_data:
-                results.append(("PubMed", pubmed_data))
+            ok = check_pubmed_connection()
+            if ok:
+                st.markdown(f"{green_dot()} **PubMed**: Verbindung OK", unsafe_allow_html=True)
             else:
-                st.warning("Keine Daten oder Fehler bei PubMed.")
+                st.markdown(f"{red_dot()} **PubMed**: Verbindung fehlgeschlagen!", unsafe_allow_html=True)
 
-        # Europe PMC-Suche
+        # Europe PMC
         if use_epmc:
-            epmc_data = search_europe_pmc_simple(query, limit=limit)
-            if epmc_data:
-                results.append(("Europe PMC", epmc_data))
+            ok = check_europe_pmc_connection()
+            if ok:
+                st.markdown(f"{green_dot()} **Europe PMC**: Verbindung OK", unsafe_allow_html=True)
             else:
-                st.warning("Keine Daten oder Fehler bei Europe PMC.")
-
-        # Ergebnisse ausgeben
-        if not results:
-            st.info("Keine APIs gewählt oder keine Daten.")
-        else:
-            for (api_name, api_data) in results:
-                st.subheader(f"Ergebnisse von {api_name}")
-                st.json(api_data)
-
-    st.write("---")
-
-    # Optional: Verbindungstests einzeln
-    st.markdown("### (Optional) Verbindungstests")
-    col_test1, col_test2 = st.columns(2)
-    with col_test1:
-        if st.button("Check PubMed-Verbindung"):
-            if check_pubmed_connection():
-                st.success("PubMed: Verbindung OK")
-            else:
-                st.error("PubMed: Verbindung fehlgeschlagen!")
-    with col_test2:
-        if st.button("Check Europe PMC-Verbindung"):
-            if check_europe_pmc_connection():
-                st.success("Europe PMC: Verbindung OK")
-            else:
-                st.error("Europe PMC: Verbindung fehlgeschlagen!")
-
-    st.write("Füge weitere APIs, Filteroptionen etc. nach Bedarf hinzu.")
+                st.markdown(f"{red_dot()} **Europe PMC**: Verbindung fehlgeschlagen!", unsafe_allow_html=True)
+    else:
+        st.write("Hier kannst du eine oder beide APIs anklicken und dann auf 'Verbindung prüfen' drücken.")
