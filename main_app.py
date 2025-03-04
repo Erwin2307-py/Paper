@@ -1,5 +1,3 @@
-
-
 import streamlit as st
 import requests
 import xml.etree.ElementTree as ET
@@ -8,9 +6,12 @@ from io import BytesIO
 import re
 import datetime
 
-# Hier musst du ggf. dein eigenes Modul importieren, 
+# Hier musst du ggf. dein eigenes Modul importieren,
 # falls du "module_online_filter" extern hast. Andernfalls auskommentieren.
 from modules.online_filter import module_online_filter
+
+# NEU: Hier importieren wir dein Selenium-Modul aus modules/
+from modules import my_selenium_qa_module
 
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
@@ -52,6 +53,7 @@ def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", 
         return False
 
 
+# Alte "Lightweight"-Funktion, falls sie noch im alten Stil gebraucht wird.
 def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
     if not api_key:
         return []
@@ -75,6 +77,10 @@ def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
         st.error(f"CORE search error: {e}")
         return []
 
+
+################################################################################
+# PubMed Connection Check + (Basis) Search
+################################################################################
 
 def check_pubmed_connection(timeout=10):
     test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
@@ -145,6 +151,10 @@ def fetch_pubmed_abstract(pmid):
         return f"(Error: {e})"
 
 
+################################################################################
+# Europe PMC Connection Check + (Basis) Search
+################################################################################
+
 def check_europe_pmc_connection(timeout=10):
     test_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {"query": "test", "format": "json", "pageSize": 100}
@@ -191,6 +201,10 @@ def search_europe_pmc_simple(query):
         return []
 
 
+################################################################################
+# OpenAlex API Communication
+################################################################################
+
 BASE_URL = "https://api.openalex.org"
 
 def fetch_openalex_data(entity_type, entity_id=None, params=None):
@@ -199,7 +213,7 @@ def fetch_openalex_data(entity_type, entity_id=None, params=None):
         url += f"/{entity_id}"
     if params is None:
         params = {}
-    params["mailto"] = "your_email@example.com"
+    params["mailto"] = "your_email@example.com"  # Ersetze durch deine E-Mail-Adresse
     response = requests.get(url, params=params)
     if response.status_code == 200:
         return response.json()
@@ -212,6 +226,10 @@ def search_openalex_simple(query):
     search_params = {"search": query}
     return fetch_openalex_data("works", params=search_params)
 
+
+################################################################################
+# Google Scholar (Basis) Test
+################################################################################
 
 from scholarly import scholarly
 
@@ -244,6 +262,10 @@ class GoogleScholarSearch:
         except Exception as e:
             st.error(f"Fehler bei der Google Scholar-Suche: {e}")
 
+
+################################################################################
+# Semantic Scholar API Communication
+################################################################################
 
 def check_semantic_scholar_connection(timeout=10):
     try:
@@ -297,6 +319,7 @@ class SemanticScholarSearch:
 ################################################################################
 
 def get_pubmed_details(pmid):
+    """Holt Details über esummary + Abstract per efetch für eine PubMed-ID."""
     details = {}
     esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
     params = {"db": "pubmed", "id": pmid, "retmode": "json"}
@@ -799,22 +822,24 @@ def page_excel_online_search():
         st.session_state["current_page"] = "Home"
 
 
-###############################################################################
-# NEUE SEITE FÜR DAS SELENIUM-MODUL
-###############################################################################
-from Paper.modules import my_selenium_qa_module
+################################################################################
+# NEUE SEITE: Bindet das Modul my_selenium_qa_module ein
+################################################################################
 
 def page_selenium_qa():
-    st.title("Selenium Q&A Demo (Modul)")
-    st.write("Ruft das unveränderte `my_selenium_qa_module` auf.")
+    st.title("Selenium Q&A (Modul)")
+    st.write("Dies ruft das Modul 'my_selenium_qa_module' auf.")
+    
+    # Einfach die main()-Funktion aus dem Modul aufrufen:
     my_selenium_qa_module.main()
 
+    # Button für Rückkehr ins Hauptmenü
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
 
 ################################################################################
-# 4) Sidebar Module Navigation & Main (erweitert um den neuen Menüpunkt)
+# 4) Sidebar Module Navigation & Main
 ################################################################################
 
 def sidebar_module_navigation():
@@ -829,7 +854,7 @@ def sidebar_module_navigation():
         "6) Extended Topics": page_extended_topics,
         "7) PaperQA2": page_paperqa2,
         "8) Excel Online Search": page_excel_online_search,
-        # --> NEU HINZUGEFÜGT:
+        # NEU: Selenium-Q&A-Modul
         "9) Selenium Q&A": page_selenium_qa
     }
     for label, page in pages.items():
@@ -841,6 +866,7 @@ def sidebar_module_navigation():
 
 
 def main():
+    # Optional: CSS-Anpassungen
     st.markdown(
         """
         <style>
