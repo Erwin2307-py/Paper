@@ -12,3 +12,5 @@ pandas
 openpyxl
 requests
 transformers
+selenium
+webdriver-manager
