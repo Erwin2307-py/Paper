@@ -5,7 +5,7 @@ import pandas as pd
 import os
 
 ##############################################################################
-# 1) Verbindungstest-Funktionen für diverse APIs
+# 1) Verbindungstest-Funktionen für diverse APIs (unverändert)
 ##############################################################################
 
 def check_pubmed_connection(timeout=5):
@@ -91,7 +91,7 @@ def check_chatgpt_connection():
         return False
 
 ##############################################################################
-# 2) Gene-Loader: Liest ab C3 einer gegebenen Sheet
+# 2) Gene-Loader: Liest ab C3 einer gegebenen Sheet (unverändert)
 ##############################################################################
 
 def load_genes_from_excel(sheet_name: str) -> list:
@@ -110,9 +110,11 @@ def load_genes_from_excel(sheet_name: str) -> list:
 
 ##############################################################################
 # 3) ChatGPT-Funktion zum Filtern
+#    -> Nicht mehr aufgerufen, aber unverändert stehenlassen
 ##############################################################################
 
 def check_genes_in_text_with_chatgpt(text: str, genes: list, model="gpt-3.5-turbo") -> dict:
+    # Vorhanden, falls im nächsten Modul genutzt werden soll
     openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
     if not openai.api_key:
         st.warning("Kein OPENAI_API_KEY in st.secrets['OPENAI_API_KEY'] hinterlegt!")
@@ -159,7 +161,7 @@ def check_genes_in_text_with_chatgpt(text: str, genes: list, model="gpt-3.5-turb
         return {}
 
 ##############################################################################
-# 4) Einstellungen speichern/laden (Profile)
+# 4) Einstellungen speichern/laden (Profile) -> inkl. Synonym-Checkboxen
 ##############################################################################
 
 def save_current_settings(profile_name: str, 
@@ -171,8 +173,8 @@ def save_current_settings(profile_name: str,
                          use_core: bool,
                          use_chatgpt: bool,
                          sheet_choice: str,
-                         text_input: str,
-                         # NEU: Synonym-Checkboxen
+                         # Kein text_input mehr
+                         # Synonym-Checkboxen
                          syn_genotype: bool,
                          syn_phenotype: bool,
                          syn_snp: bool,
@@ -181,7 +183,8 @@ def save_current_settings(profile_name: str,
     Speichert die aktuellen Einstellungen in st.session_state["profiles"]
     unter dem Schlüssel = profile_name.
 
-    Jetzt inkl. Synonym-Optionen syn_genotype, syn_phenotype, syn_snp, syn_incdec.
+    Jetzt ohne text_input, aber inkl. Synonym-Optionen 
+    (syn_genotype, syn_phenotype, syn_snp, syn_incdec).
     """
     if "profiles" not in st.session_state:
         st.session_state["profiles"] = {}
@@ -195,8 +198,7 @@ def save_current_settings(profile_name: str,
         "use_core": use_core,
         "use_chatgpt": use_chatgpt,
         "sheet_choice": sheet_choice,
-        "text_input": text_input,
-        # speichern der Synonym-Checkboxen
+        # kein text_input-Feld mehr
         "syn_genotype": syn_genotype,
         "syn_phenotype": syn_phenotype,
         "syn_snp": syn_snp,
@@ -222,14 +224,12 @@ def load_settings(profile_name: str):
 
 def module_online_api_filter():
     """
-    Kombiniert:
-      A) API-Auswahl + Verbindungstest
-      B) Gene-Filter (ab C3) via ChatGPT
-      C) Settings-Speicherung (Profile) mit Name
-      D) Gene nur auf Wunsch anzeigen (Checkbox)
-      E) ChatGPT-Synonym-Fenster (Expander), und Synonym-Einstellungen werden auch im Profil gespeichert
+    A) API-Auswahl + Verbindungstest
+    B) Gene-Liste (Spalte C ab Zeile 3) nur auf Wunsch anzeigen (Checkbox)
+    C) ChatGPT-Synonym-Fenster (Expander)
+    D) Profil speichern / laden (ohne Textfeld, aber inkl. Synonym-Checkboxen)
     """
-    st.title("API-Auswahl & Gene-Filter mit Profile-Speicherung + ChatGPT-Synonym-Fenster (inkl. Profil)")
+    st.title("API-Auswahl & Gene-Liste mit Profile-Speicherung - Ohne Text-Feld")
 
     # ------------------------------------
     # Profilverwaltung
@@ -237,10 +237,10 @@ def module_online_api_filter():
     st.subheader("Profilverwaltung")
     
     profile_name_input = st.text_input("Profilname eingeben (für Speichern/Laden):", "")
-    existing_profiles = []
     if "profiles" not in st.session_state:
         st.session_state["profiles"] = {}
     existing_profiles = list(st.session_state["profiles"].keys())
+
     selected_profile_to_load = st.selectbox("Oder wähle ein bestehendes Profil zum Laden:", ["(kein)"] + existing_profiles)
     load_profile_btn = st.button("Profil laden")
 
@@ -251,7 +251,6 @@ def module_online_api_filter():
 
     col1, col2 = st.columns(2)
 
-    # Defaults
     if "current_settings" not in st.session_state:
         st.session_state["current_settings"] = {
             "use_pubmed": True,
@@ -261,8 +260,7 @@ def module_online_api_filter():
             "use_openalex": False,
             "use_core": False,
             "use_chatgpt": False,
-            "sheet_choice": "",
-            "text_input": "",
+            "sheet_choice": ""
         }
     if "synonyms_selected" not in st.session_state:
         st.session_state["synonyms_selected"] = {
@@ -272,11 +270,14 @@ def module_online_api_filter():
             "inc_dec": False
         }
 
-    # Profil Laden
+    current = st.session_state["current_settings"]
+    synonyms_local = st.session_state["synonyms_selected"]
+
+    # Beim Laden eines Profils
     if load_profile_btn:
         if selected_profile_to_load != "(kein)":
             loaded = load_settings(selected_profile_to_load)
-            if loaded:
+            if loaded is not None:
                 # API-Einstellungen
                 st.session_state["current_settings"]["use_pubmed"]   = loaded.get("use_pubmed", True)
                 st.session_state["current_settings"]["use_epmc"]     = loaded.get("use_epmc", True)
@@ -286,7 +287,6 @@ def module_online_api_filter():
                 st.session_state["current_settings"]["use_core"]     = loaded.get("use_core", False)
                 st.session_state["current_settings"]["use_chatgpt"]  = loaded.get("use_chatgpt", False)
                 st.session_state["current_settings"]["sheet_choice"] = loaded.get("sheet_choice", "")
-                st.session_state["current_settings"]["text_input"]   = loaded.get("text_input", "")
 
                 # Synonym-Einstellungen
                 st.session_state["synonyms_selected"]["genotype"] = loaded.get("syn_genotype", False)
@@ -300,25 +300,21 @@ def module_online_api_filter():
         else:
             st.info("Kein Profil zum Laden ausgewählt.")
 
-    current = st.session_state["current_settings"]
-    synonyms_local = st.session_state["synonyms_selected"]
+    # Lokale Variablen einlesen
+    use_pubmed = st.checkbox("PubMed", value=current["use_pubmed"])
+    use_epmc   = st.checkbox("Europe PMC", value=current["use_epmc"])
+    use_google = st.checkbox("Google Scholar", value=current["use_google"])
+    use_semantic = st.checkbox("Semantic Scholar", value=current["use_semantic"])
 
-    with col1:
-        use_pubmed = st.checkbox("PubMed", value=current["use_pubmed"])
-        use_epmc = st.checkbox("Europe PMC", value=current["use_epmc"])
-        use_google = st.checkbox("Google Scholar", value=current["use_google"])
-        use_semantic = st.checkbox("Semantic Scholar", value=current["use_semantic"])
-
-    with col2:
-        use_openalex = st.checkbox("OpenAlex", value=current["use_openalex"])
-        use_core = st.checkbox("CORE", value=current["use_core"])
-        use_chatgpt = st.checkbox("ChatGPT", value=current["use_chatgpt"])
+    use_openalex = st.checkbox("OpenAlex", value=current["use_openalex"])
+    use_core     = st.checkbox("CORE", value=current["use_core"])
+    use_chatgpt  = st.checkbox("ChatGPT", value=current["use_chatgpt"])
 
     if st.button("Verbindung prüfen"):
-        st.write("Hier würdest du deine check_*-Funktionen aufrufen... Demo...")
+        st.write("Demo: Hier würden deine check_*-Funktionen aufgerufen...")
 
     # ------------------------------------
-    # E) ChatGPT-Synonym-Fenster
+    # ChatGPT-Synonym-Fenster (Expander)
     # ------------------------------------
     if use_chatgpt:
         with st.expander("ChatGPT: Begriffe & Synonyme auswählen"):
@@ -341,24 +337,24 @@ Verwandte Begriffe: Morphologie, physiologische Eigenschaften, Verhalten
             st.markdown("""
 **SNP**  
 Deutsch: Einzelnukleotid-Polymorphismus, Punktmutation  
-Englisch: single nucleotide polymorphism, point mutation  
+Englisch: single nucleotide polymorphism (SNP), point mutation  
 Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
 """)
             snp_check = st.checkbox("SNP (inkl. Synonyme)", value=synonyms_local["snp"])
 
             inc_dec_check = st.checkbox("Increase/Decrease (auch das Gegenteil suchen?)", value=synonyms_local["inc_dec"])
 
-            # Update synonyms_local
+            # Update synonyms
             synonyms_local["genotype"] = genotype_check
             synonyms_local["phenotype"] = phenotype_check
             synonyms_local["snp"]       = snp_check
             synonyms_local["inc_dec"]   = inc_dec_check
 
     # ------------------------------------
-    # B) Gene-Filter
+    # B) Gene-Liste (Spalte C ab Zeile 3)
     # ------------------------------------
     st.write("---")
-    st.subheader("B) Gene-Filter via ChatGPT (ab C3)")
+    st.subheader("B) Gene-Liste (ab C3)")
 
     excel_path = os.path.join("modules", "genes.xlsx")
     if not os.path.exists(excel_path):
@@ -383,47 +379,17 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
                                 index=sheet_names.index(current["sheet_choice"]))
 
     genes = load_genes_from_excel(sheet_choice)
+
     show_genes = st.checkbox("Gene-Liste anzeigen?", value=False)
     if show_genes and genes:
         st.markdown(f"**Gelistete Gene** in Sheet '{sheet_choice}' (ab C3):")
         st.write(genes)
 
-    text_input = st.text_area("Füge hier deinen Abstract / Text ein:", height=200, value=current["text_input"])
-
-    if st.button("Gene filtern mit ChatGPT"):
-        if not genes:
-            st.warning("Keine Gene geladen oder das Sheet ist leer.")
-        elif not text_input.strip():
-            st.warning("Bitte einen Text eingeben.")
-        else:
-            # synonyms_local verwenden, um "extended_genes" zu bauen
-            extended_genes = list(genes)
-            if synonyms_local["genotype"]:
-                extended_genes += ["genetic makeup", "genetic constitution", "DNA sequence"]
-            if synonyms_local["phenotype"]:
-                extended_genes += ["observable traits", "physical appearance", "morphology"]
-            if synonyms_local["snp"]:
-                extended_genes += ["point mutation", "genetic variation", "DNA polymorphism"]
-            if synonyms_local["inc_dec"]:
-                extended_genes += ["increase", "decrease"]
-
-            result_map = check_genes_in_text_with_chatgpt(text_input, extended_genes)
-            if not result_map:
-                st.info("Keine Ergebnisse oder Fehler aufgetreten.")
-            else:
-                st.markdown("### Ergebnis (inkl. Synonyme)")
-                for g in extended_genes:
-                    found = result_map.get(g, False)
-                    if found:
-                        st.write(f"**{g}**: YES")
-                    else:
-                        st.write(f"{g}: No")
-
     st.write("---")
     st.info(
         "Fertig. Du kannst oben die APIs auswählen und testen, sowie Profile speichern/laden. "
         "Die Gene werden ab C3 eingelesen und nur angezeigt, wenn du es anforderst. "
-        "Die ChatGPT-Synonym-Checkboxen werden im Profil mitgespeichert."
+        "Die ChatGPT-Synonym-Checkboxen werden im Profil mitgespeichert (aber kein Textfeld mehr)."
     )
 
     # Einstellungen updaten
@@ -435,28 +401,26 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
         "use_openalex": use_openalex,
         "use_core": use_core,
         "use_chatgpt": use_chatgpt,
-        "sheet_choice": sheet_choice,
-        "text_input": text_input
+        "sheet_choice": sheet_choice
     }
 
-    # Profil speichern
+    # Button: Profil speichern
     if st.button("Aktuelle Einstellungen speichern"):
         pname = profile_name_input.strip()
         if not pname:
             st.warning("Bitte einen Profilnamen eingeben.")
         else:
-            # Speichern inkl. Synonyme
             save_current_settings(
-                pname,
-                use_pubmed,
-                use_epmc,
-                use_google,
-                use_semantic,
-                use_openalex,
-                use_core,
-                use_chatgpt,
-                sheet_choice,
-                text_input,
+                profile_name=pname,
+                use_pubmed=use_pubmed,
+                use_epmc=use_epmc,
+                use_google=use_google,
+                use_semantic=use_semantic,
+                use_openalex=use_openalex,
+                use_core=use_core,
+                use_chatgpt=use_chatgpt,
+                sheet_choice=sheet_choice,
+                # kein text_input mehr
                 syn_genotype=synonyms_local["genotype"],
                 syn_phenotype=synonyms_local["phenotype"],
                 syn_snp=synonyms_local["snp"],
