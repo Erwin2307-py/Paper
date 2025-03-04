@@ -2,7 +2,7 @@
 
 import streamlit as st
 import requests
-import openai  # Wichtig: Stelle sicher, dass 'openai' installiert ist
+import openai  # Wichtig: 'openai' installieren (pip install openai)
 
 ##############################################################################
 # 1) Verbindungstest-Funktionen
@@ -32,7 +32,7 @@ def check_europe_pmc_connection(timeout=5):
         r = requests.get(test_url, params=params, timeout=timeout)
         r.raise_for_status()
         data = r.json()
-        return "resultList" in data and "result" in data["resultList"]
+        return ("resultList" in data and "result" in data["resultList"])
     except Exception:
         return False
 
@@ -79,8 +79,7 @@ def check_openalex_connection(timeout=5):
 
 def check_core_connection(api_key="", timeout=5):
     """
-    Prüft Verbindung zu CORE. Benötigt einen CORE-API-Key in st.secrets['CORE_API_KEY'] 
-    oder Übergabe als Parameter.
+    Prüft Verbindung zu CORE. Benötigt einen CORE-API-Key in st.secrets['CORE_API_KEY'].
     """
     if not api_key:
         return False
@@ -95,77 +94,60 @@ def check_core_connection(api_key="", timeout=5):
     except Exception:
         return False
 
-##############################################################################
-# 2) ChatGPT-Filter-Funktion
-##############################################################################
-
-def filter_with_chatgpt(paper_text: str, codewords: list, model="gpt-3.5-turbo") -> bool:
+def check_chatgpt_connection():
     """
-    Fragt die OpenAI-API, ob `paper_text` Informationen zu den gegebenen `codewords` enthält.
-    Falls "Yes" => True, sonst False.
+    Prüft, ob ChatGPT (openai) erreichbar ist, indem ein sehr kurzer Prompt
+    an gpt-3.5-turbo gesendet wird. Benötigt openai.api_key in st.secrets['OPENAI_API_KEY'].
+    Achtung: Verbraucht ein paar Tokens.
     """
-    # OpenAI-Key z.B. aus st.secrets
     openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
-
     if not openai.api_key:
-        st.error("Kein OpenAI-API-Key in st.secrets['OPENAI_API_KEY'] hinterlegt.")
         return False
-
-    # Prompt bauen:
-    criteria_str = ", ".join(codewords)
-    prompt = (
-        f"Analysiere folgenden Text:\n\n"
-        f"-----\n{paper_text}\n-----\n\n"
-        f"Enthält er Informationen über die Codewörter: {criteria_str}?\n"
-        f"Antworte bitte mit 'Yes' oder 'No'."
-    )
-
     try:
         response = openai.ChatCompletion.create(
-            model=model,  # "gpt-3.5-turbo" oder "gpt-4"
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.0,
-            max_tokens=20
+            model="gpt-3.5-turbo",
+            messages=[{"role":"user", "content":"Short connectivity test. Reply with any short message."}],
+            max_tokens=10,
+            temperature=0
         )
-        answer = response.choices[0].message.content.strip().lower()
-        # Wir interpretieren "yes" => True, andernfalls False
-        return "yes" in answer
-    except Exception as e:
-        st.error(f"Fehler bei ChatGPT-Filter: {e}")
+        # Wenn kein Fehler auftrat, gehen wir davon aus, dass die Verbindung OK ist.
+        return True
+    except Exception:
         return False
 
+
 ##############################################################################
-# 3) Hauptfunktion: Wird vom Hauptmenü aufgerufen
+# 2) Hauptfunktion: Wird vom Hauptmenü aufgerufen
 ##############################################################################
 
 def module_online_api_filter():
     """
-    Diese Funktion zeigt dem Nutzer sechs Checkboxen (PubMed/Europe PMC/Google Scholar/
-    Semantic Scholar/OpenAlex/CORE) zum Verbindungscheck. Danach kann er
-    einen 'ChatGPT-Online-Filter' anwenden, indem er:
-     - einen Text (z.B. Paper-Abstract) eingibt
-     - Codewörter eingibt
-     - auf 'Filter mit ChatGPT' klickt
+    Diese Funktion zeigt dem Nutzer sieben Checkboxen (PubMed, Europe PMC,
+    Google Scholar, Semantic Scholar, OpenAlex, CORE, ChatGPT). Danach kann
+    er per Button die Verbindung prüfen – für jede aktivierte API / ChatGPT
+    wird ein grüner oder roter Punkt in einer Zeile ausgegeben.
     """
     st.title("API-Auswahl & Verbindungstest")
 
     st.write("Aktiviere die gewünschten APIs und klicke auf 'Verbindung prüfen'.")
 
-    # -- 2 Columns, 3 Checkboxen pro Spalte --
+    # Wir machen 2 Columns, 4 in einer, 3 in der anderen
     col1, col2 = st.columns(2)
 
     with col1:
         use_pubmed = st.checkbox("PubMed", value=True)
         use_epmc = st.checkbox("Europe PMC", value=True)
         use_google = st.checkbox("Google Scholar", value=False)
+        use_semantic = st.checkbox("Semantic Scholar", value=False)
 
     with col2:
-        use_semantic = st.checkbox("Semantic Scholar", value=False)
         use_openalex = st.checkbox("OpenAlex", value=False)
         use_core = st.checkbox("CORE", value=False)
+        use_chatgpt = st.checkbox("ChatGPT", value=False)
 
-    # -- Button: Verbindung prüfen --
+    # Button für Verbindungstest
     if st.button("Verbindung prüfen"):
+        # Kleine Hilfsfunktionen für grüne/rote Punkte
         def green_dot():
             return "<span style='color: limegreen; font-size: 20px;'>&#9679;</span>"
         def red_dot():
@@ -173,73 +155,68 @@ def module_online_api_filter():
 
         dots_list = []
 
+        # PubMed
         if use_pubmed:
-            if check_pubmed_connection():
+            ok = check_pubmed_connection()
+            if ok:
                 dots_list.append(f"{green_dot()} <strong>PubMed</strong>: OK")
             else:
                 dots_list.append(f"{red_dot()} <strong>PubMed</strong>: FAIL")
 
+        # Europe PMC
         if use_epmc:
-            if check_europe_pmc_connection():
+            ok = check_europe_pmc_connection()
+            if ok:
                 dots_list.append(f"{green_dot()} <strong>Europe PMC</strong>: OK")
             else:
                 dots_list.append(f"{red_dot()} <strong>Europe PMC</strong>: FAIL")
 
+        # Google Scholar
         if use_google:
-            if check_google_scholar_connection():
+            ok = check_google_scholar_connection()
+            if ok:
                 dots_list.append(f"{green_dot()} <strong>Google Scholar</strong>: OK")
             else:
                 dots_list.append(f"{red_dot()} <strong>Google Scholar</strong>: FAIL")
 
+        # Semantic Scholar
         if use_semantic:
-            if check_semantic_scholar_connection():
+            ok = check_semantic_scholar_connection()
+            if ok:
                 dots_list.append(f"{green_dot()} <strong>Semantic Scholar</strong>: OK")
             else:
                 dots_list.append(f"{red_dot()} <strong>Semantic Scholar</strong>: FAIL")
 
+        # OpenAlex
         if use_openalex:
-            if check_openalex_connection():
+            ok = check_openalex_connection()
+            if ok:
                 dots_list.append(f"{green_dot()} <strong>OpenAlex</strong>: OK")
             else:
                 dots_list.append(f"{red_dot()} <strong>OpenAlex</strong>: FAIL")
 
+        # CORE
         if use_core:
             core_api_key = st.secrets.get("CORE_API_KEY", "")
-            if check_core_connection(core_api_key):
+            ok = check_core_connection(core_api_key)
+            if ok:
                 dots_list.append(f"{green_dot()} <strong>CORE</strong>: OK")
             else:
-                dots_list.append(f"{red_dot()} <strong>CORE</strong>: FAIL (API Key nötig?)")
+                dots_list.append(f"{red_dot()} <strong>CORE</strong>: FAIL (Key nötig?)")
 
-        if not dots_list:
-            st.info("Keine API ausgewählt. Bitte mindestens eine ankreuzen.")
-        else:
-            st.markdown(" &nbsp;&nbsp;&nbsp; ".join(dots_list), unsafe_allow_html=True)
-
-    st.write("---")
-    st.header("ChatGPT-Online-Filter")
-
-    st.write("Hier kannst du einen beliebigen Text (z.B. Abstract, Paper-Auszug) eingeben und Codewörter definieren. "
-             "ChatGPT (gpt-3.5-turbo) erkennt, ob diese Codewörter im Text thematisch vorkommen.")
-
-    # -- Eingabe: Paper-Text / Abstract --
-    paper_text = st.text_area("Paper-Text / Abstract / HTML", 
-                              "Hier den Abstract oder Website-Inhalt einfügen...")
-
-    # -- Eingabe: Codewörter (komma-getrennt) --
-    codewords_str = st.text_input("Codewörter (kommagetrennt)", "genotype, phenotype, snp")
-
-    # -- Button: ChatGPT-Filter --
-    if st.button("Filter mit ChatGPT"):
-        if not paper_text.strip():
-            st.warning("Bitte zuerst einen Text eingeben.")
-        else:
-            # Codewörter in Liste umwandeln
-            cw_list = [cw.strip() for cw in codewords_str.split(",") if cw.strip()]
-            if not cw_list:
-                st.warning("Keine gültigen Codewörter angegeben.")
+        # ChatGPT
+        if use_chatgpt:
+            ok = check_chatgpt_connection()
+            if ok:
+                dots_list.append(f"{green_dot()} <strong>ChatGPT</strong>: OK")
             else:
-                result = filter_with_chatgpt(paper_text, cw_list, model="gpt-3.5-turbo")
-                if result:
-                    st.success("ChatGPT sagt: 'Yes' -> Codewörter inhaltlich gefunden!")
-                else:
-                    st.info("ChatGPT sagt: 'No' -> Keine passenden Infos gefunden (oder Fehler).")
+                dots_list.append(f"{red_dot()} <strong>ChatGPT</strong>: FAIL (API-Key nötig?)")
+
+        # Falls überhaupt keine API/ChatGPT ausgewählt
+        if not dots_list:
+            st.info("Keine Option ausgewählt. Bitte mindestens eine ankreuzen.")
+        else:
+            # Nebeneinander in einer einzigen Zeile:
+            st.markdown(" &nbsp;&nbsp;&nbsp; ".join(dots_list), unsafe_allow_html=True)
+    else:
+        st.write("Bitte wähle mindestens eine API / ChatGPT aus und klicke auf 'Verbindung prüfen'.")
