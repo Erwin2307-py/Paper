@@ -6,12 +6,14 @@ from io import BytesIO
 import re
 import datetime
 
-# Hier musst du ggf. dein eigenes Modul importieren,
-# falls du "module_online_filter" extern hast. Andernfalls auskommentieren.
-from modules.online_filter import module_online_filter
+# Remove or comment out the direct module_online_filter import if you no longer need it here:
+# from modules.online_filter import module_online_filter
 
 # NEU: Hier importieren wir dein Selenium-Modul aus modules/
 from modules import my_selenium_qa_module
+
+# NEW: We import the combined “online API + filter” module
+from modules.online_api_filter import module_online_api_filter  # <-- CHANGED HERE
 
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
@@ -53,7 +55,6 @@ def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", 
         return False
 
 
-# Alte "Lightweight"-Funktion, falls sie noch im alten Stil gebraucht wird.
 def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
     if not api_key:
         return []
@@ -698,87 +699,6 @@ def page_home():
     st.write("Choose a module in the sidebar to proceed.")
 
 
-def page_api_selection():
-    st.title("API Selection & Connection Status")
-    st.write("Auf dieser Seite kannst du die zu verwendenden APIs wählen und den Verbindungsstatus prüfen.")
-    all_apis = [
-        "Europe PMC",
-        "PubMed",
-        "CORE Aggregate",
-        "OpenAlex",
-        "Google Scholar",
-        "Semantic Scholar"
-    ]
-    if "selected_apis" not in st.session_state:
-        st.session_state["selected_apis"] = ["Europe PMC"]
-    chosen_apis = [
-        api for api in all_apis
-        if st.checkbox(api, value=(api in st.session_state["selected_apis"]))
-    ]
-    st.session_state["selected_apis"] = chosen_apis
-    st.write("Currently selected APIs:", chosen_apis)
-
-    st.subheader("Connection Tests")
-    msgs = []
-
-    if "PubMed" in chosen_apis:
-        if check_pubmed_connection():
-            msgs.append("PubMed: OK")
-        else:
-            msgs.append("PubMed: FAIL")
-
-    if "Europe PMC" in chosen_apis:
-        if check_europe_pmc_connection():
-            msgs.append("Europe PMC: OK")
-        else:
-            msgs.append("Europe PMC: FAIL")
-
-    if "CORE Aggregate" in chosen_apis:
-        core_key = "LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"
-        if core_key and check_core_aggregate_connection(core_key):
-            msgs.append("CORE: OK")
-        else:
-            msgs.append("CORE: FAIL (No valid key or no connection)")
-
-    if "OpenAlex" in chosen_apis:
-        openalex_test = fetch_openalex_data("works", "W2741809807")
-        if openalex_test:
-            msgs.append("OpenAlex: OK")
-        else:
-            msgs.append("OpenAlex: FAIL")
-
-    if "Google Scholar" in chosen_apis:
-        try:
-            test_scholar = GoogleScholarSearch()
-            test_scholar.search_google_scholar("test")  # Versuchsabfrage
-            msgs.append("Google Scholar: OK")
-        except Exception as e:
-            msgs.append(f"Google Scholar: FAIL ({str(e)})")
-
-    if "Semantic Scholar" in chosen_apis:
-        if check_semantic_scholar_connection():
-            msgs.append("Semantic Scholar: OK")
-        else:
-            msgs.append("Semantic Scholar: FAIL")
-
-    if msgs:
-        for m in msgs:
-            st.write("- ", m)
-    else:
-        st.write("No APIs selected or no checks performed.")
-
-    if st.button("Back to Main Menu"):
-        st.session_state["current_page"] = "Home"
-
-
-def page_online_filter():
-    st.title("Online Filter Settings")
-    st.write("Configure your online filter here.")
-    module_online_filter()
-    if st.button("Back to Main Menu"):
-        st.session_state["current_page"] = "Home"
-
-
 def page_codewords_pubmed():
     st.title("Codewords & PubMed Settings")
     from modules.codewords_pubmed import module_codewords_pubmed
@@ -822,12 +742,11 @@ def page_excel_online_search():
         st.session_state["current_page"] = "Home"
 
 
-################################################################################
-# NEUE SEITE: Bindet das Modul my_selenium_qa_module ein
-################################################################################
-
+# ---------------------------------------------------------------------------
+# 4) NEUE SEITE: Bindet das Modul my_selenium_qa_module ein
+# ---------------------------------------------------------------------------
 def page_selenium_qa():
-    st.title("Selenium Q&A (Modul)")
+    st.title("Selenium Q&A (Modul) - Example")
     st.write("Dies ruft das Modul 'my_selenium_qa_module' auf.")
     
     # Einfach die main()-Funktion aus dem Modul aufrufen:
@@ -838,23 +757,37 @@ def page_selenium_qa():
         st.session_state["current_page"] = "Home"
 
 
+# ---------------------------------------------------------------------------
+# 5) NEUE SEITE STATT API Selection UND Online Filter
+#    Wir rufen hier die kombinierte Funktion aus modules auf
+# ---------------------------------------------------------------------------
+def page_online_api_filter():  # <-- CHANGED HERE: new page
+    st.title("Online-API_Filter (Kombiniert)")
+    st.write("Hier kombinierst du ggf. API-Auswahl und Online-Filter in einem Schritt.")
+    # Aufruf deines 'modules.online_api_filter.py'
+    module_online_api_filter()  # This function is presumably the combined logic
+    if st.button("Back to Main Menu"):
+        st.session_state["current_page"] = "Home"
+
+
 ################################################################################
-# 4) Sidebar Module Navigation & Main
+# 6) Sidebar Module Navigation & Main
 ################################################################################
 
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
+    # We remove "1) API Selection" and "2) Online Filter" from the dictionary
     pages = {
         "Home": page_home,
-        "1) API Selection": page_api_selection,
-        "2) Online Filter": page_online_filter,
+        # "1) API Selection": page_api_selection,     # <-- REMOVED
+        # "2) Online Filter": page_online_filter,     # <-- REMOVED
+        "Online-API_Filter": page_online_api_filter,  # <-- NEW
         "3) Codewords & PubMed": page_codewords_pubmed,
         "4) Paper Selection": page_paper_selection,
         "5) Analysis & Evaluation": page_analysis,
         "6) Extended Topics": page_extended_topics,
         "7) PaperQA2": page_paperqa2,
         "8) Excel Online Search": page_excel_online_search,
-        # NEU: Selenium-Q&A-Modul
         "9) Selenium Q&A": page_selenium_qa
     }
     for label, page in pages.items():
