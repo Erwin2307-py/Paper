@@ -1,5 +1,4 @@
 # Datei: my_selenium_qa_module.py
-
 import streamlit as st
 import time
 from selenium import webdriver
@@ -15,7 +14,7 @@ def accept_cookies(driver):
     Sucht nach einem Cookie-Einwilligungspopup und klickt auf den Zustimmungs-Button.
     """
     try:
-        wait = WebDriverWait(driver, 15)  # Warte bis zu 15 Sekunden auf das Popup
+        wait = WebDriverWait(driver, 15)
         cookie_button = wait.until(
             EC.element_to_be_clickable(
                 (
@@ -51,22 +50,21 @@ def wait_for_answer(driver, question_text, timeout=300, poll_frequency=2):
     Wartet bis zum Timeout darauf, dass im DOM die Frage gefunden wird
     und darunter ein nicht-leerer Text erscheint.
 
-    Geht dabei so vor:
-    1. Finde ein Element, das den Text der 'question_text' enthält.
-    2. Schaue in den Folgesiblings (folgenden Elementen) nach Text.
-    3. Sobald eines der folgenden Elemente nicht-leeren Text hat, wird dieser zurückgegeben.
+    1. Finde ein Element, das den Text von 'question_text' enthält.
+    2. Schaue in den folgenden Geschwister-Elementen nach Text.
+    3. Sobald eines davon nicht-leeren Text hat, wird dieser zurückgegeben.
     """
     end_time = time.time() + timeout
     while time.time() < end_time:
         try:
-            # 1) Finde die Frage im DOM:
+            # Frage-Element im DOM suchen
             question_element = driver.find_element(
                 By.XPATH, f"//*[contains(text(), '{question_text}')]"
             )
-            # 2) Nimm sämtliche unmittelbar folgenden Geschwister-Elemente
+            # Unmittelbare "folgenden" Geschwister-Elemente holen
             siblings = question_element.find_elements(By.XPATH, "following-sibling::*")
 
-            # 3) Prüfe jedes dieser folgenden Elemente auf nicht-leeren Text
+            # Jedes dieser Geschwister auf nicht-leeren Text prüfen
             for sib in siblings:
                 text = sib.text.strip()
                 if text:
@@ -80,26 +78,31 @@ def wait_for_answer(driver, question_text, timeout=300, poll_frequency=2):
 
 def ask_question(url, question):
     """
-    Öffnet die gegebene URL in einer eigenen Browserinstanz, versucht, das Einwilligungspopup zu schließen,
-    sucht nach einem Eingabefeld, sendet die Frage und wartet auf die Antwort.
-    
-    Gibt die gefundene Antwort als String zurück (oder None, falls keine Antwort).
+    Öffnet die gegebene URL in einer eigenen Browserinstanz, versucht,
+    das Einwilligungspopup zu schließen, sucht nach einem Eingabefeld,
+    sendet die Frage und wartet auf die Antwort.
+
+    Gibt die Antwort als String zurück (oder None, falls keine gefunden).
     """
+    # Installiere/aktualisiere ChromeDriver automatisch
     service = Service(ChromeDriverManager().install())
 
-    # Optional: Headless-Chrome verwenden, damit kein Fenster aufspringt
+    # Browser-Optionen anpassen: Headless + No-Sandbox + Dev-Shm
     options = webdriver.ChromeOptions()
-    # options.add_argument("--headless")  # auskommentieren, wenn du GUI-Fenster sehen willst
-    
+    options.add_argument("--headless")  # Ohne sichtbare UI
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+
+    # ChromeDriver starten
     driver = webdriver.Chrome(service=service, options=options)
-    
-    # Seite aufrufen
+
+    # Seite laden
     driver.get(url)
-    time.sleep(3)  # Kurze Wartezeit für initiales Laden
-    
-    # Cookies akzeptieren (falls möglich)
+    time.sleep(3)  # Kurze Pause, damit alles initial laden kann
+
+    # Cookies akzeptieren (falls vorhanden)
     accept_cookies(driver)
-    
+
     # Eingabefeld suchen
     input_field = find_input_field(driver)
     if not input_field:
@@ -107,37 +110,32 @@ def ask_question(url, question):
         driver.quit()
         return None
 
-    # Frage senden
+    # Frage eingeben und abschicken
     input_field.click()
     input_field.send_keys(question)
     input_field.send_keys(Keys.RETURN)
     st.write("Frage wurde gesendet, warte auf die Antwort...")
 
-    # Warten, bis ein Text unter der Frage erscheint
+    # Warten, bis ein Text direkt unter der Frage erscheint
     answer = wait_for_answer(driver, question, timeout=60, poll_frequency=2)
-    
     driver.quit()
-    
+
     return answer
 
 def main():
-    st.title("Selenium-Frage-Antwort mit Streamlit")
-    
-    st.write("Dieses kleine Tool nutzt Selenium, um auf eine Seite zu gehen, eine Frage einzugeben und die Antwort auszulesen.")
+    st.title("Selenium-Frage-Antwort mit Streamlit (Headless Chrome)")
 
-    # Eingabe für URL und Frage
+    st.write("Dieses Tool nutzt Selenium (Headless Chrome), um eine Seite aufzurufen, eine Frage einzugeben und die Antwort auszulesen.")
+
+    # Benutzer-Eingaben
     url = st.text_input("URL eingeben (z.B. https://chatgpt.ch/):", "https://chatgpt.ch/")
     question = st.text_input("Frage eingeben:", "Was ist die Hauptstadt von Österreich?")
 
+    # Button zum Abschicken der Frage
     if st.button("Frage stellen"):
-        st.write(f"Ich stelle nun folgende Frage: '{question}' an '{url}' ...")
+        st.write(f"Ich stelle folgende Frage an {url}: {question}")
         answer = ask_question(url, question)
-
         if answer:
             st.write("**Antwort:**", answer)
         else:
-            st.write("Keine Antwort gefunden oder Timeout erreicht.")
-
-
-if __name__ == "__main__":
-    main()
+            st.write("Keine Antwort gefunden oder Timeout.")
