@@ -9,9 +9,6 @@ import os
 ##############################################################################
 
 def check_pubmed_connection(timeout=5):
-    """
-    Prüft Verbindung zu PubMed (vereinfacht).
-    """
     test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": "test", "retmode": "json"}
     try:
@@ -23,9 +20,6 @@ def check_pubmed_connection(timeout=5):
         return False
 
 def check_europe_pmc_connection(timeout=5):
-    """
-    Prüft Verbindung zu Europe PMC (vereinfacht).
-    """
     test_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {"query": "test", "format": "json", "pageSize": 1}
     try:
@@ -37,22 +31,15 @@ def check_europe_pmc_connection(timeout=5):
         return False
 
 def check_google_scholar_connection(timeout=5):
-    """
-    Prüft Verbindung zu Google Scholar, indem eine kurze Testsuche gemacht wird.
-    Erfordert 'scholarly' installiert.
-    """
     try:
         from scholarly import scholarly
         search_results = scholarly.search_pubs("test")
-        _ = next(search_results)  # 1 Ergebnis abrufen
+        _ = next(search_results)
         return True
     except Exception:
         return False
 
 def check_semantic_scholar_connection(timeout=5):
-    """
-    Prüft Verbindung zu Semantic Scholar (API).
-    """
     url = "https://api.semanticscholar.org/graph/v1/paper/search"
     params = {"query": "test", "limit": 1, "fields": "title"}
     try:
@@ -64,9 +51,6 @@ def check_semantic_scholar_connection(timeout=5):
         return False
 
 def check_openalex_connection(timeout=5):
-    """
-    Prüft Verbindung zu OpenAlex.
-    """
     url = "https://api.openalex.org/works"
     params = {"search": "test", "per-page": 1}
     try:
@@ -78,10 +62,6 @@ def check_openalex_connection(timeout=5):
         return False
 
 def check_core_connection(api_key="", timeout=5):
-    """
-    Prüft Verbindung zu CORE. 
-    Benötigt CORE_API_KEY in st.secrets["CORE_API_KEY"] oder Übergabe als Parameter.
-    """
     if not api_key:
         return False
     url = "https://api.core.ac.uk/v3/search/works"
@@ -96,16 +76,13 @@ def check_core_connection(api_key="", timeout=5):
         return False
 
 def check_chatgpt_connection():
-    """
-    Prüft Verbindung zu ChatGPT (OpenAI). Benötigt OPENAI_API_KEY in st.secrets["OPENAI_API_KEY"].
-    """
     openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
     if not openai.api_key:
         return False
     try:
         openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": "Short connectivity test. Reply with any short message."}],
+            messages=[{"role":"user", "content":"Short connectivity test. Reply with any short message."}],
             max_tokens=10,
             temperature=0
         )
@@ -119,18 +96,13 @@ def check_chatgpt_connection():
 
 def load_genes_from_excel(sheet_name: str) -> list:
     """
-    Lädt Gene ab Zelle C3 (Spalte C, Zeile 3) aus dem gewählten Sheet in `modules/genes.xlsx`.
-    
-    Annahmen:
-      - 'genes.xlsx' liegt direkt im Ordner 'modules'.
-      - In Spalte C (Index=2) ab Zeile 3 (Index=2) stehen die Gene.
+    Lädt Gene ab C3 (Spalte C, Zeile 3) im gewählten Sheet in 'genes.xlsx'.
     """
     excel_path = os.path.join("modules", "genes.xlsx")
     try:
         df = pd.read_excel(excel_path, sheet_name=sheet_name, header=None)
-        # df.iloc[2:, 2] => Ab Zeile 3 (0-basiert=2), Spalte C (0-basiert=2)
+        # Ab Zeile 3 (Index=2), Spalte C (Index=2)
         gene_series = df.iloc[2:, 2]
-        # NaN entfernen + in String umwandeln
         gene_list = gene_series.dropna().astype(str).tolist()
         return gene_list
     except Exception as e:
@@ -142,13 +114,9 @@ def load_genes_from_excel(sheet_name: str) -> list:
 ##############################################################################
 
 def check_genes_in_text_with_chatgpt(text: str, genes: list, model="gpt-3.5-turbo") -> dict:
-    """
-    Fragt ChatGPT, ob die gegebenen 'genes' im 'text' thematisch erwähnt werden.
-    Gibt ein Dict {GenA: True, GenB: False, ...} zurück.
-    """
     openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
     if not openai.api_key:
-        st.warning("Kein OPENAI_API_KEY in st.secrets['OPENAI_API_KEY']!")
+        st.warning("Kein OPENAI_API_KEY in st.secrets['OPENAI_API_KEY'] hinterlegt!")
         return {}
 
     if not text.strip():
@@ -164,7 +132,7 @@ def check_genes_in_text_with_chatgpt(text: str, genes: list, model="gpt-3.5-turb
         f"Hier ist ein Text:\n\n{text}\n\n"
         f"Hier eine Liste von Genen: {joined_genes}\n"
         f"Gib für jedes Gen an, ob es im Text vorkommt (Yes) oder nicht (No).\n"
-        f"Antworte zeilenweise in der Form:\n"
+        f"Antworte in der Form:\n"
         f"GENE: Yes\nGENE2: No\n"
     )
 
@@ -192,36 +160,127 @@ def check_genes_in_text_with_chatgpt(text: str, genes: list, model="gpt-3.5-turb
         return {}
 
 ##############################################################################
-# 4) Haupt-Funktion für Streamlit
+# 4) Einstellungen speichern/laden (Profile)
+##############################################################################
+
+def save_current_settings(profile_name: str, 
+                         use_pubmed: bool, 
+                         use_epmc: bool, 
+                         use_google: bool,
+                         use_semantic: bool,
+                         use_openalex: bool,
+                         use_core: bool,
+                         use_chatgpt: bool,
+                         sheet_choice: str,
+                         text_input: str):
+    """
+    Speichert die aktuellen Einstellungen in st.session_state["profiles"]
+    unter dem Schlüssel = profile_name.
+    """
+    if "profiles" not in st.session_state:
+        st.session_state["profiles"] = {}
+
+    st.session_state["profiles"][profile_name] = {
+        "use_pubmed": use_pubmed,
+        "use_epmc": use_epmc,
+        "use_google": use_google,
+        "use_semantic": use_semantic,
+        "use_openalex": use_openalex,
+        "use_core": use_core,
+        "use_chatgpt": use_chatgpt,
+        "sheet_choice": sheet_choice,
+        "text_input": text_input
+    }
+    st.success(f"Profil '{profile_name}' erfolgreich gespeichert.")
+
+def load_settings(profile_name: str):
+    """
+    Lädt die Einstellungen aus st.session_state["profiles"][profile_name]
+    und gibt sie als Dict zurück.
+    Wenn das Profil nicht existiert, None zurückgeben.
+    """
+    if "profiles" in st.session_state:
+        profiles = st.session_state["profiles"]
+        if profile_name in profiles:
+            return profiles[profile_name]
+    return None
+
+##############################################################################
+# 5) Haupt-Funktion für Streamlit
 ##############################################################################
 
 def module_online_api_filter():
     """
     Kombiniert:
-      A) API-Auswahl (PubMed, Europe PMC, Google Scholar, Semantic Scholar,
-         OpenAlex, CORE, ChatGPT) + Verbindungstest
-      B) Gene-Filter: ab C3 eines Sheets in 'genes.xlsx', 
-         ChatGPT-Abfrage, ob diese Gene im eingegebenen Text vorkommen.
+      A) API-Auswahl + Verbindungstest
+      B) Gene-Filter (ab C3) via ChatGPT
+      C) Settings-Speicherung (Profile) mit Name
     """
-    st.title("API-Auswahl & Gene-Filter (ab C3) mit ChatGPT")
+    st.title("API-Auswahl & Gene-Filter mit Profile-Speicherung")
 
-    # ------------------------------------------------------
-    # A) API-Verbindungschecks
-    # ------------------------------------------------------
-    st.subheader("A) API-Verbindungschecks")
+    # ------------------------------------
+    # Profile: Eingabefeld + "Load Profile"
+    # ------------------------------------
+    st.subheader("Profilverwaltung")
+    
+    # Eingabe für Profilname
+    profile_name_input = st.text_input("Profilname eingeben (für Speichern/Laden):", "")
+
+    # Falls wir schon Profile haben, ermöglichen wir ein Dropdown:
+    existing_profiles = []
+    if "profiles" in st.session_state:
+        existing_profiles = list(st.session_state["profiles"].keys())
+    selected_profile_to_load = st.selectbox("Oder wähle ein bestehendes Profil zum Laden:", ["(kein)"] + existing_profiles)
+
+    load_profile_btn = st.button("Profil laden")
+
+    # ------------------------------------
+    # A) API-Auswahl
+    # ------------------------------------
+    st.subheader("A) API-Auswahl (Checkboxen) + Verbindungstest")
 
     col1, col2 = st.columns(2)
+    # Wir legen default-Werte an, damit man nach "Profil laden" wieder updaten kann
+    if "current_settings" not in st.session_state:
+        st.session_state["current_settings"] = {
+            "use_pubmed": True,
+            "use_epmc": True,
+            "use_google": False,
+            "use_semantic": False,
+            "use_openalex": False,
+            "use_core": False,
+            "use_chatgpt": False,
+            "sheet_choice": "",
+            "text_input": ""
+        }
+
+    # Falls wir gerade ein Profil laden:
+    if load_profile_btn:
+        if selected_profile_to_load != "(kein)":
+            loaded = load_settings(selected_profile_to_load)
+            if loaded:
+                st.session_state["current_settings"].update(loaded)
+                st.success(f"Profil '{selected_profile_to_load}' geladen.")
+            else:
+                st.warning(f"Profil '{selected_profile_to_load}' nicht gefunden.")
+        else:
+            st.info("Kein Profil zum Laden ausgewählt.")
+
+    # Jetzt lesen wir die "current_settings" in lokale Variablen,
+    # damit wir sie als Checkboxen/Textfelder anzeigen
+    current = st.session_state["current_settings"]
     with col1:
-        use_pubmed = st.checkbox("PubMed", value=True)
-        use_epmc = st.checkbox("Europe PMC", value=True)
-        use_google = st.checkbox("Google Scholar", value=False)
-        use_semantic = st.checkbox("Semantic Scholar", value=False)
+        use_pubmed = st.checkbox("PubMed", value=current["use_pubmed"])
+        use_epmc = st.checkbox("Europe PMC", value=current["use_epmc"])
+        use_google = st.checkbox("Google Scholar", value=current["use_google"])
+        use_semantic = st.checkbox("Semantic Scholar", value=current["use_semantic"])
 
     with col2:
-        use_openalex = st.checkbox("OpenAlex", value=False)
-        use_core = st.checkbox("CORE", value=False)
-        use_chatgpt = st.checkbox("ChatGPT", value=False)
+        use_openalex = st.checkbox("OpenAlex", value=current["use_openalex"])
+        use_core = st.checkbox("CORE", value=current["use_core"])
+        use_chatgpt = st.checkbox("ChatGPT", value=current["use_chatgpt"])
 
+    # Button: Verbindung prüfen
     if st.button("Verbindung prüfen"):
         def green_dot():
             return "<span style='color: limegreen; font-size: 20px;'>&#9679;</span>"
@@ -230,42 +289,36 @@ def module_online_api_filter():
 
         dots_list = []
 
-        # PubMed
         if use_pubmed:
             if check_pubmed_connection():
                 dots_list.append(f"{green_dot()} <strong>PubMed</strong>: OK")
             else:
                 dots_list.append(f"{red_dot()} <strong>PubMed</strong>: FAIL")
 
-        # Europe PMC
         if use_epmc:
             if check_europe_pmc_connection():
                 dots_list.append(f"{green_dot()} <strong>Europe PMC</strong>: OK")
             else:
                 dots_list.append(f"{red_dot()} <strong>Europe PMC</strong>: FAIL")
 
-        # Google Scholar
         if use_google:
             if check_google_scholar_connection():
                 dots_list.append(f"{green_dot()} <strong>Google Scholar</strong>: OK")
             else:
                 dots_list.append(f"{red_dot()} <strong>Google Scholar</strong>: FAIL")
 
-        # Semantic Scholar
         if use_semantic:
             if check_semantic_scholar_connection():
                 dots_list.append(f"{green_dot()} <strong>Semantic Scholar</strong>: OK")
             else:
                 dots_list.append(f"{red_dot()} <strong>Semantic Scholar</strong>: FAIL")
 
-        # OpenAlex
         if use_openalex:
             if check_openalex_connection():
                 dots_list.append(f"{green_dot()} <strong>OpenAlex</strong>: OK")
             else:
                 dots_list.append(f"{red_dot()} <strong>OpenAlex</strong>: FAIL")
 
-        # CORE
         if use_core:
             core_api_key = st.secrets.get("CORE_API_KEY", "")
             if check_core_connection(core_api_key):
@@ -273,7 +326,6 @@ def module_online_api_filter():
             else:
                 dots_list.append(f"{red_dot()} <strong>CORE</strong>: FAIL (Key nötig?)")
 
-        # ChatGPT
         if use_chatgpt:
             if check_chatgpt_connection():
                 dots_list.append(f"{green_dot()} <strong>ChatGPT</strong>: OK")
@@ -285,16 +337,15 @@ def module_online_api_filter():
         else:
             st.markdown(" &nbsp;&nbsp;&nbsp; ".join(dots_list), unsafe_allow_html=True)
 
-    # ------------------------------------------------------
+    # ------------------------------------
     # B) Gene-Filter-Bereich
-    # ------------------------------------------------------
+    # ------------------------------------
     st.write("---")
-    st.subheader("B) Gene-Filter mit ChatGPT (ab C3)")
+    st.subheader("B) Gene-Filter via ChatGPT (ab C3)")
 
     st.write(
-        "Wähle ein Sheet aus `modules/genes.xlsx`, ab Spalte C, Zeile 3. "
-        "Danach kannst du einen Text (Paper-Abstract) eingeben. "
-        "ChatGPT prüft, ob diese Gene erwähnt werden."
+        "Wähle ein Sheet aus `modules/genes.xlsx` (ab Spalte C, Zeile 3). "
+        "Danach einen Text eingeben. ChatGPT prüft, ob die Gene erwähnt sind."
     )
 
     excel_path = os.path.join("modules", "genes.xlsx")
@@ -313,7 +364,14 @@ def module_online_api_filter():
         st.error("Keine Sheets in genes.xlsx gefunden.")
         return
 
-    sheet_choice = st.selectbox("Wähle ein Sheet in genes.xlsx:", sheet_names)
+    # Falls im Profil etwas steht, hier übernehmen wir's:
+    current_sheet = current["sheet_choice"]
+    if current_sheet not in sheet_names:
+        # Falls das Profil-Sheet nicht mehr existiert, Standard = 0
+        current_sheet = sheet_names[0]
+
+    sheet_choice = st.selectbox("Wähle ein Sheet in genes.xlsx:", sheet_names, 
+                                index=sheet_names.index(current_sheet) if current_sheet in sheet_names else 0)
 
     genes = []
     if sheet_choice:
@@ -324,32 +382,62 @@ def module_online_api_filter():
     st.write("---")
     st.subheader("Text eingeben (z. B. Abstract)")
 
-    text_input = st.text_area("Füge hier deinen Abstract / Text ein:", height=200)
+    text_input = st.text_area("Füge hier deinen Abstract / Text ein:", height=200, value=current["text_input"])
 
     if st.button("Gene filtern mit ChatGPT"):
         if not genes:
-            st.warning("Keine Gene geladen oder Sheet ist leer.")
-            return
-        if not text_input.strip():
+            st.warning("Keine Gene geladen oder das Sheet ist leer.")
+        elif not text_input.strip():
             st.warning("Bitte einen Text eingeben.")
-            return
-
-        result_map = check_genes_in_text_with_chatgpt(text_input, genes)
-        if not result_map:
-            st.info("Keine Ergebnisse oder Fehler aufgetreten.")
-            return
-
-        st.markdown("### Ergebnis:")
-        for g in genes:
-            found = result_map.get(g, False)
-            if found:
-                st.write(f"**{g}**: YES")
+        else:
+            result_map = check_genes_in_text_with_chatgpt(text_input, genes)
+            if not result_map:
+                st.info("Keine Ergebnisse oder Fehler aufgetreten.")
             else:
-                st.write(f"{g}: No")
+                st.markdown("### Ergebnis:")
+                for g in genes:
+                    found = result_map.get(g, False)
+                    if found:
+                        st.write(f"**{g}**: YES")
+                    else:
+                        st.write(f"{g}: No")
 
     st.write("---")
     st.info(
-        "Fertig. Oben kannst du die APIs aktivieren und testen, "
-        "und hier kannst du die Gene analysieren. "
+        "Fertig. Du kannst oben die APIs auswählen und testen, sowie Profile speichern/laden. "
         "Die Gene werden ab C3 eingelesen."
     )
+
+    # -----------------------------
+    # Am Ende aktualisieren wir die aktuellen Einstellungen in session_state
+    # -----------------------------
+    st.session_state["current_settings"] = {
+        "use_pubmed": use_pubmed,
+        "use_epmc": use_epmc,
+        "use_google": use_google,
+        "use_semantic": use_semantic,
+        "use_openalex": use_openalex,
+        "use_core": use_core,
+        "use_chatgpt": use_chatgpt,
+        "sheet_choice": sheet_choice,
+        "text_input": text_input
+    }
+
+    # Button: Profil speichern
+    if st.button("Aktuelle Einstellungen speichern"):
+        pname = profile_name_input.strip()
+        if not pname:
+            st.warning("Bitte einen Profilnamen eingeben.")
+        else:
+            save_current_settings(
+                pname,
+                use_pubmed,
+                use_epmc,
+                use_google,
+                use_semantic,
+                use_openalex,
+                use_core,
+                use_chatgpt,
+                sheet_choice,
+                text_input
+            )
