@@ -1,5 +1,3 @@
-# file: codewords_pubmed.py
-
 import streamlit as st
 import requests
 import pandas as pd
@@ -117,17 +115,35 @@ def search_google_scholar(query: str, max_results=100):
 
 def search_semantic_scholar(query: str, max_results=100):
     """
-    Dummy-Funktion: Gibt Beispiel-Daten für Semantic Scholar zurück.
+    Führt eine Suche in der Semantic Scholar API durch und gibt eine Liste von Paper-Daten zurück.
+    Die Ergebnisse werden in das von Codewords erwartete Format transformiert.
     """
-    return [{
-        "Source": "Semantic Scholar",
-        "Title": "Dummy Title from Semantic Scholar",
-        "PubMed ID": "n/a",
-        "DOI": "n/a",
-        "Year": "2023",
-        "Abstract": "Dies ist ein Dummy-Abstract von Semantic Scholar.",
-        "Population": "n/a"
-    }]
+    base_url = "https://api.semanticscholar.org/graph/v1/paper/search"
+    params = {
+        "query": query,
+        "limit": max_results,
+        "fields": "title,authors,year,abstract"
+    }
+    try:
+        r = requests.get(base_url, params=params, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        papers = data.get("data", [])
+        results = []
+        for paper in papers:
+            results.append({
+                "Source": "Semantic Scholar",
+                "Title": paper.get("title", "n/a"),
+                "PubMed ID": "n/a",  # Semantic Scholar liefert in der Regel keine PubMed ID
+                "DOI": "n/a",        # DOI ist hier nicht direkt verfügbar
+                "Year": str(paper.get("year", "n/a")),
+                "Abstract": paper.get("abstract", "n/a"),
+                "Population": "n/a"
+            })
+        return results
+    except Exception as e:
+        st.error(f"Fehler bei der Semantic Scholar-Suche: {e}")
+        return []
 
 def search_openalex(query: str, max_results=100):
     """
