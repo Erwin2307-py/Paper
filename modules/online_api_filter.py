@@ -101,8 +101,7 @@ def load_genes_from_excel(sheet_name: str) -> list:
     excel_path = os.path.join("modules", "genes.xlsx")
     try:
         df = pd.read_excel(excel_path, sheet_name=sheet_name, header=None)
-        # Ab Zeile 3 (Index=2), Spalte C (Index=2)
-        gene_series = df.iloc[2:, 2]
+        gene_series = df.iloc[2:, 2]  # ab Zeile 3, Spalte C
         gene_list = gene_series.dropna().astype(str).tolist()
         return gene_list
     except Exception as e:
@@ -216,8 +215,9 @@ def module_online_api_filter():
       B) Gene-Filter (ab C3) via ChatGPT
       C) Settings-Speicherung (Profile) mit Name
       D) Gene nur auf Wunsch anzeigen (Checkbox)
+      E) ChatGPT-Synonyme-Fenster (Expander), wenn ChatGPT aktiviert
     """
-    st.title("API-Auswahl & Gene-Filter mit Profile-Speicherung")
+    st.title("API-Auswahl & Gene-Filter mit Profile-Speicherung + ChatGPT-Synonym-Fenster")
 
     # ------------------------------------
     # Profilverwaltung
@@ -331,6 +331,57 @@ def module_online_api_filter():
             st.markdown(" &nbsp;&nbsp;&nbsp; ".join(dots_list), unsafe_allow_html=True)
 
     # ------------------------------------
+    # E) ChatGPT-Synonym-Fenster (nur wenn ChatGPT True)
+    # ------------------------------------
+    # Standardwerte der Synonym-Checkboxen speichern wir in st.session_state
+    if "synonyms_selected" not in st.session_state:
+        st.session_state["synonyms_selected"] = {
+            "genotype": False,
+            "phenotype": False,
+            "snp": False,
+            "inc_dec": False
+        }
+
+    synonyms_local = st.session_state["synonyms_selected"]
+    if use_chatgpt:
+        with st.expander("ChatGPT: Begriffe & Synonyme auswählen"):
+            # Genotyp
+            st.markdown("""
+**Genotyp**  
+Deutsch: Erbbild, genetische Ausstattung, genetisches Profil  
+Englisch: genotype, genetic makeup, genetic constitution  
+Verwandte Begriffe: Allel, Genom, DNA-Sequenz
+""")
+            genotype_check = st.checkbox("Genotyp (inkl. Synonyme)", value=synonyms_local["genotype"])
+
+            # Phänotyp
+            st.markdown("""
+**Phänotyp**  
+Deutsch: Erscheinungsbild, äußeres Merkmal, Merkmalsausprägung  
+Englisch: phenotype, observable traits, physical appearance  
+Verwandte Begriffe: Morphologie, physiologische Eigenschaften, Verhalten
+""")
+            phenotype_check = st.checkbox("Phänotyp (inkl. Synonyme)", value=synonyms_local["phenotype"])
+
+            # SNP
+            st.markdown("""
+**Single Nucleotide Polymorphism (SNP)**  
+Deutsch: Einzelnukleotid-Polymorphismus, Punktmutation  
+Englisch: Single Nucleotide Polymorphism (SNP), point mutation  
+Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
+""")
+            snp_check = st.checkbox("SNP (inkl. Synonyme)", value=synonyms_local["snp"])
+
+            # Increase/Decrease
+            inc_dec_check = st.checkbox("Increase/Decrease (auch das Gegenteil suchen?)", value=synonyms_local["inc_dec"])
+
+            # Lokale Variablen aktualisieren
+            synonyms_local["genotype"] = genotype_check
+            synonyms_local["phenotype"] = phenotype_check
+            synonyms_local["snp"]       = snp_check
+            synonyms_local["inc_dec"]   = inc_dec_check
+
+    # ------------------------------------
     # B) Gene-Filter-Bereich
     # ------------------------------------
     st.write("---")
@@ -381,18 +432,35 @@ def module_online_api_filter():
 
     text_input = st.text_area("Füge hier deinen Abstract / Text ein:", height=200, value=current["text_input"])
 
+    # Button "Gene filtern mit ChatGPT"
     if st.button("Gene filtern mit ChatGPT"):
         if not genes:
             st.warning("Keine Gene geladen oder das Sheet ist leer.")
         elif not text_input.strip():
             st.warning("Bitte einen Text eingeben.")
         else:
-            result_map = check_genes_in_text_with_chatgpt(text_input, genes)
+            # Falls ChatGPT-Synonym-Checkboxen aktiv sind, erweitern wir die Gene-Liste (als Demo)
+            extended_genes = list(genes)  # Kopie
+
+            # Wir holen die Auswahlen:
+            synset = st.session_state["synonyms_selected"]
+            if synset["genotype"]:
+                # Synonyme & verwandte Begriffe anfügen (Beispielhaft)
+                extended_genes += ["genetic makeup", "genetic constitution", "AllEl", "DNA sequence"]
+            if synset["phenotype"]:
+                extended_genes += ["observable traits", "physical appearance", "morphology"]
+            if synset["snp"]:
+                extended_genes += ["point mutation", "genetic variation", "DNA polymorphism"]
+            if synset["inc_dec"]:
+                # "increase/decrease" => Hier nur Demo: wir fügen evtl. "increase" / "decrease" der Genes-Liste hinzu
+                extended_genes += ["increase", "decrease"]
+
+            result_map = check_genes_in_text_with_chatgpt(text_input, extended_genes)
             if not result_map:
                 st.info("Keine Ergebnisse oder Fehler aufgetreten.")
             else:
-                st.markdown("### Ergebnis:")
-                for g in genes:
+                st.markdown("### Ergebnis (inkl. Synonyme):")
+                for g in extended_genes:
                     found = result_map.get(g, False)
                     if found:
                         st.write(f"**{g}**: YES")
@@ -402,7 +470,8 @@ def module_online_api_filter():
     st.write("---")
     st.info(
         "Fertig. Du kannst oben die APIs auswählen und testen, sowie Profile speichern/laden. "
-        "Die Gene werden ab C3 eingelesen und nur angezeigt, wenn du es anforderst."
+        "Die Gene werden ab C3 eingelesen und nur angezeigt, wenn du es anforderst. "
+        "Wenn ChatGPT aktiv ist, kannst du im Expander Synonyme auswählen."
     )
 
     # Einstellungen updaten
