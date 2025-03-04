@@ -2,9 +2,11 @@
 
 import streamlit as st
 import requests
+import pandas as pd
+import os
 
 ##############################
-# Dummy Suchfunktionen für verschiedene APIs
+# Echte API-Suchfunktionen
 ##############################
 
 def esearch_pubmed(query: str, max_results=100, timeout=10):
@@ -30,7 +32,8 @@ def esearch_pubmed(query: str, max_results=100, timeout=10):
 def get_pubmed_details(pmids: list):
     """
     Ruft über ESummary Details zu den übergebenen PMID ab und gibt eine Liste von Dictionaries zurück.
-    (Hinweis: Abstract und Populationsgröße werden hier als Demo nicht detailliert abgerufen.)
+    Liefert Informationen wie Quelle, Titel, PubMed ID, DOI, Jahr, Abstract und Population.
+    (Hinweis: Für Abstract und Populationsgröße werden Demo-Werte zurückgegeben.)
     """
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
     params = {
@@ -46,13 +49,13 @@ def get_pubmed_details(pmids: list):
         for pmid in pmids:
             info = data.get("result", {}).get(pmid, {})
             results.append({
-                "source": "PubMed",
-                "title": info.get("title", "n/a"),
-                "pubmed_id": pmid,
-                "doi": info.get("elocationid", "n/a"),
-                "year": info.get("pubdate", "n/a")[:4] if info.get("pubdate") else "n/a",
-                "abstract": "Abstract nicht abgerufen",  # Für Demo
-                "pop_size": "n/a"  # Für Demo
+                "Source": "PubMed",
+                "Title": info.get("title", "n/a"),
+                "PubMed ID": pmid,
+                "DOI": info.get("elocationid", "n/a"),
+                "Year": info.get("pubdate", "n/a")[:4] if info.get("pubdate") else "n/a",
+                "Abstract": "Abstract nicht abgerufen",  # Hier könnte man via efetch nachladen
+                "Population": "n/a"
             })
         return results
     except Exception as e:
@@ -61,7 +64,7 @@ def get_pubmed_details(pmids: list):
 
 def search_pubmed(query: str, max_results=100):
     """
-    Sucht in PubMed und ruft Details zu den gefundenen Papern ab.
+    Führt die vollständige PubMed-Suche aus und ruft Details der gefundenen Paper ab.
     """
     pmids = esearch_pubmed(query, max_results=max_results)
     if not pmids:
@@ -70,8 +73,7 @@ def search_pubmed(query: str, max_results=100):
 
 def search_europe_pmc(query: str, max_results=100):
     """
-    Führt eine Europe PMC-Suche aus und gibt Dummy-Daten zurück.
-    (Echte Detailabfragen müssten analog zu PubMed implementiert werden.)
+    Führt eine Europe PMC-Suche aus und gibt eine Liste von Paper-Daten zurück.
     """
     url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {
@@ -86,13 +88,13 @@ def search_europe_pmc(query: str, max_results=100):
         results = []
         for item in data.get("resultList", {}).get("result", []):
             results.append({
-                "source": "Europe PMC",
-                "title": item.get("title", "n/a"),
-                "pubmed_id": item.get("pmid", "n/a"),
-                "doi": item.get("doi", "n/a"),
-                "year": str(item.get("pubYear", "n/a")),
-                "abstract": item.get("abstractText", "n/a"),
-                "pop_size": "n/a"  # Für Demo
+                "Source": "Europe PMC",
+                "Title": item.get("title", "n/a"),
+                "PubMed ID": item.get("pmid", "n/a"),
+                "DOI": item.get("doi", "n/a"),
+                "Year": str(item.get("pubYear", "n/a")),
+                "Abstract": item.get("abstractText", "n/a"),
+                "Population": "n/a"
             })
         return results
     except Exception as e:
@@ -104,13 +106,13 @@ def search_google_scholar(query: str, max_results=100):
     Dummy-Funktion: Gibt Beispiel-Daten für Google Scholar zurück.
     """
     return [{
-        "source": "Google Scholar",
-        "title": "Dummy Title from Google Scholar",
-        "pubmed_id": "n/a",
-        "doi": "n/a",
-        "year": "2023",
-        "abstract": "Dies ist ein Dummy-Abstract.",
-        "pop_size": "n/a"
+        "Source": "Google Scholar",
+        "Title": "Dummy Title from Google Scholar",
+        "PubMed ID": "n/a",
+        "DOI": "n/a",
+        "Year": "2023",
+        "Abstract": "Dies ist ein Dummy-Abstract von Google Scholar.",
+        "Population": "n/a"
     }]
 
 def search_semantic_scholar(query: str, max_results=100):
@@ -118,13 +120,13 @@ def search_semantic_scholar(query: str, max_results=100):
     Dummy-Funktion: Gibt Beispiel-Daten für Semantic Scholar zurück.
     """
     return [{
-        "source": "Semantic Scholar",
-        "title": "Dummy Title from Semantic Scholar",
-        "pubmed_id": "n/a",
-        "doi": "n/a",
-        "year": "2023",
-        "abstract": "Dies ist ein Dummy-Abstract.",
-        "pop_size": "n/a"
+        "Source": "Semantic Scholar",
+        "Title": "Dummy Title from Semantic Scholar",
+        "PubMed ID": "n/a",
+        "DOI": "n/a",
+        "Year": "2023",
+        "Abstract": "Dies ist ein Dummy-Abstract von Semantic Scholar.",
+        "Population": "n/a"
     }]
 
 def search_openalex(query: str, max_results=100):
@@ -132,13 +134,13 @@ def search_openalex(query: str, max_results=100):
     Dummy-Funktion: Gibt Beispiel-Daten für OpenAlex zurück.
     """
     return [{
-        "source": "OpenAlex",
-        "title": "Dummy Title from OpenAlex",
-        "pubmed_id": "n/a",
-        "doi": "n/a",
-        "year": "2023",
-        "abstract": "Dies ist ein Dummy-Abstract.",
-        "pop_size": "n/a"
+        "Source": "OpenAlex",
+        "Title": "Dummy Title from OpenAlex",
+        "PubMed ID": "n/a",
+        "DOI": "n/a",
+        "Year": "2023",
+        "Abstract": "Dies ist ein Dummy-Abstract von OpenAlex.",
+        "Population": "n/a"
     }]
 
 def search_core(query: str, max_results=100):
@@ -146,17 +148,17 @@ def search_core(query: str, max_results=100):
     Dummy-Funktion: Gibt Beispiel-Daten für CORE zurück.
     """
     return [{
-        "source": "CORE",
-        "title": "Dummy Title from CORE",
-        "pubmed_id": "n/a",
-        "doi": "n/a",
-        "year": "2023",
-        "abstract": "Dies ist ein Dummy-Abstract.",
-        "pop_size": "n/a"
+        "Source": "CORE",
+        "Title": "Dummy Title from CORE",
+        "PubMed ID": "n/a",
+        "DOI": "n/a",
+        "Year": "2023",
+        "Abstract": "Dies ist ein Dummy-Abstract von CORE.",
+        "Population": "n/a"
     }]
 
 ##############################
-# Profil-Verwaltung (aus st.session_state)
+# Profil-Verwaltung: Laden der Einstellungen aus st.session_state
 ##############################
 
 def load_settings(profile_name: str):
@@ -170,15 +172,15 @@ def load_settings(profile_name: str):
     return None
 
 ##############################
-# Haupt-Modul: Codewörter & API-Suche
+# Haupt-Modul: Codewörter & Multi-API-Suche
 ##############################
 
 def module_codewords_pubmed():
     st.title("Codewörter & Multi-API-Suche (mind. 100 Paper pro API)")
 
-    # 1) Profile auswählen (Dropdown)
+    # 1) Dropdown: Profile auswählen
     if "profiles" not in st.session_state or not st.session_state["profiles"]:
-        st.warning("Keine Profile vorhanden. Bitte erst ein Profil in einem anderen Modul speichern.")
+        st.warning("Keine Profile vorhanden. Bitte zuerst ein Profil speichern.")
         return
 
     profile_names = list(st.session_state["profiles"].keys())
@@ -191,73 +193,67 @@ def module_codewords_pubmed():
     st.subheader("Profil-Einstellungen")
     st.json(profile_data)
 
-    # 2) Codewörter und Logik abfragen
+    # 2) Eingabefeld für Codewörter und Logik
     st.subheader("Codewörter & Logik")
     codewords_str = st.text_input("Codewörter (kommasepariert oder Leerzeichen):", "")
     st.write("Beispiel: genotyp, SNP, phänotyp")
     logic_option = st.radio("Logik:", options=["AND", "OR"], index=1)
 
-    # 3) Suchanfrage zusammenbauen
+    # 3) Suchanfrage zusammenbauen und API-Suche starten
     if st.button("Suche starten"):
-        # Codewörter parsen
         raw_list = [w.strip() for w in codewords_str.replace(",", " ").split() if w.strip()]
         if not raw_list:
             st.warning("Bitte mindestens ein Codewort eingeben.")
             return
 
         query_str = " AND ".join(raw_list) if logic_option == "AND" else " OR ".join(raw_list)
-        st.write("Suchanfrage:", query_str)
+        st.write("Finale Suchanfrage:", query_str)
 
         results_all = []
 
-        # 4) Suche in allen aktivierten APIs (aus dem Profil)
+        # Aktivierte APIs laut Profil
         if profile_data.get("use_pubmed", False):
             st.write("### PubMed")
             res = search_pubmed(query_str, max_results=100)
-            st.write(f"Anzahl PubMed: {len(res)}")
+            st.write(f"Anzahl PubMed-Ergebnisse: {len(res)}")
             results_all.extend(res)
-            st.write(res)
 
         if profile_data.get("use_epmc", False):
             st.write("### Europe PMC")
             res = search_europe_pmc(query_str, max_results=100)
-            st.write(f"Anzahl Europe PMC: {len(res)}")
+            st.write(f"Anzahl Europe PMC-Ergebnisse: {len(res)}")
             results_all.extend(res)
-            st.write(res)
 
         if profile_data.get("use_google", False):
             st.write("### Google Scholar")
             res = search_google_scholar(query_str, max_results=100)
-            st.write(f"Anzahl Google Scholar: {len(res)}")
+            st.write(f"Anzahl Google Scholar-Ergebnisse: {len(res)}")
             results_all.extend(res)
-            st.write(res)
 
         if profile_data.get("use_semantic", False):
             st.write("### Semantic Scholar")
             res = search_semantic_scholar(query_str, max_results=100)
-            st.write(f"Anzahl Semantic Scholar: {len(res)}")
+            st.write(f"Anzahl Semantic Scholar-Ergebnisse: {len(res)}")
             results_all.extend(res)
-            st.write(res)
 
         if profile_data.get("use_openalex", False):
             st.write("### OpenAlex")
             res = search_openalex(query_str, max_results=100)
-            st.write(f"Anzahl OpenAlex: {len(res)}")
+            st.write(f"Anzahl OpenAlex-Ergebnisse: {len(res)}")
             results_all.extend(res)
-            st.write(res)
 
         if profile_data.get("use_core", False):
             st.write("### CORE")
             res = search_core(query_str, max_results=100)
-            st.write(f"Anzahl CORE: {len(res)}")
+            st.write(f"Anzahl CORE-Ergebnisse: {len(res)}")
             results_all.extend(res)
-            st.write(res)
 
         if not results_all:
             st.info("Keine Ergebnisse gefunden.")
         else:
             st.write("## Gesamtergebnis aus allen aktivierten APIs")
-            st.write(results_all)
+            df = pd.DataFrame(results_all)
+            st.dataframe(df)  # Schöne tabellarische Darstellung
 
     st.write("---")
-    st.info("Dieses Modul nutzt das ausgewählte Profil, um die Codewörter (mit AND/OR-Verknüpfung) auf alle aktivierten APIs anzuwenden und gibt alle Paper-Informationen aus (Quelle, Titel, PubMed ID, DOI, Jahr, Abstract, Population).")
+    st.info("Dieses Modul nutzt das ausgewählte Profil, um Codewörter (mit AND/OR-Verknüpfung) auf alle aktivierten APIs anzuwenden und gibt alle Paper-Informationen aus (Quelle, Titel, PubMed ID, DOI, Jahr, Abstract, Population).")
