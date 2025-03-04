@@ -1,13 +1,12 @@
 # Datei: my_selenium_qa_module.py
+
 import streamlit as st
 import time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
 
 def accept_cookies(driver):
     """
@@ -57,44 +56,36 @@ def wait_for_answer(driver, question_text, timeout=300, poll_frequency=2):
     end_time = time.time() + timeout
     while time.time() < end_time:
         try:
-            # Frage-Element im DOM suchen
             question_element = driver.find_element(
                 By.XPATH, f"//*[contains(text(), '{question_text}')]"
             )
-            # Unmittelbare "folgenden" Geschwister-Elemente holen
             siblings = question_element.find_elements(By.XPATH, "following-sibling::*")
-
-            # Jedes dieser Geschwister auf nicht-leeren Text prüfen
             for sib in siblings:
                 text = sib.text.strip()
                 if text:
                     return text
-
         except Exception:
             pass
-
         time.sleep(poll_frequency)
     return None
 
 def ask_question(url, question):
     """
-    Öffnet die gegebene URL in einer eigenen Browserinstanz, versucht,
-    das Einwilligungspopup zu schließen, sucht nach einem Eingabefeld,
+    Öffnet die gegebene URL in einer eigenen Browserinstanz (Headless Mode),
+    versucht, das Einwilligungspopup zu schließen, sucht nach einem Eingabefeld,
     sendet die Frage und wartet auf die Antwort.
 
     Gibt die Antwort als String zurück (oder None, falls keine gefunden).
     """
-    # Installiere/aktualisiere ChromeDriver automatisch
-    service = Service(ChromeDriverManager().install())
-
-    # Browser-Optionen anpassen: Headless + No-Sandbox + Dev-Shm
+    # Da Selenium 4.6+ Selenium Manager enthält, brauchst du kein webdriver_manager mehr;
+    # der Driver wird automatisch bezogen, wenn Chrome installiert ist.
     options = webdriver.ChromeOptions()
-    options.add_argument("--headless")  # Ohne sichtbare UI
-    options.add_argument("--no-sandbox")
+    options.add_argument("--headless")        # Ohne sichtbare UI
+    options.add_argument("--no-sandbox")      # Für Container-Umgebungen
     options.add_argument("--disable-dev-shm-usage")
 
-    # ChromeDriver starten
-    driver = webdriver.Chrome(service=service, options=options)
+    # Erzeugt automatisiert den passenden ChromeDriver (Selenium Manager)
+    driver = webdriver.Chrome(options=options)
 
     # Seite laden
     driver.get(url)
@@ -110,28 +101,24 @@ def ask_question(url, question):
         driver.quit()
         return None
 
-    # Frage eingeben und abschicken
+    # Frage abschicken
     input_field.click()
     input_field.send_keys(question)
     input_field.send_keys(Keys.RETURN)
     st.write("Frage wurde gesendet, warte auf die Antwort...")
 
-    # Warten, bis ein Text direkt unter der Frage erscheint
     answer = wait_for_answer(driver, question, timeout=60, poll_frequency=2)
     driver.quit()
-
     return answer
 
 def main():
-    st.title("Selenium-Frage-Antwort mit Streamlit (Headless Chrome)")
+    st.title("Selenium-Frage-Antwort mit Streamlit (Selenium Manager)")
 
-    st.write("Dieses Tool nutzt Selenium (Headless Chrome), um eine Seite aufzurufen, eine Frage einzugeben und die Antwort auszulesen.")
+    st.write("Dieses Tool nutzt Selenium (Headless Chrome) mit Selenium Manager, um eine Seite aufzurufen, eine Frage einzugeben und die Antwort auszulesen.")
 
-    # Benutzer-Eingaben
     url = st.text_input("URL eingeben (z.B. https://chatgpt.ch/):", "https://chatgpt.ch/")
     question = st.text_input("Frage eingeben:", "Was ist die Hauptstadt von Österreich?")
 
-    # Button zum Abschicken der Frage
     if st.button("Frage stellen"):
         st.write(f"Ich stelle folgende Frage an {url}: {question}")
         answer = ask_question(url, question)
