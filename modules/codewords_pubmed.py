@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import pandas as pd
 import os
+import time
 
 ##############################
 # Echte API-Suchfunktionen
@@ -113,10 +114,12 @@ def search_google_scholar(query: str, max_results=100):
         "Population": "n/a"
     }]
 
-def search_semantic_scholar(query: str, max_results=100):
+def search_semantic_scholar(query: str, max_results=100, retries=3, delay=5):
     """
     Führt eine Suche in der Semantic Scholar API durch und gibt eine Liste von Paper-Daten zurück.
     Die Ergebnisse werden in das von Codewords erwartete Format transformiert.
+    
+    Bei einem Rate-Limit (HTTP 429) wird bis zu 'retries' Mal mit einer Pause (delay Sekunden) erneut versucht.
     """
     base_url = "https://api.semanticscholar.org/graph/v1/paper/search"
     params = {
@@ -124,26 +127,39 @@ def search_semantic_scholar(query: str, max_results=100):
         "limit": max_results,
         "fields": "title,authors,year,abstract"
     }
-    try:
-        r = requests.get(base_url, params=params, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        papers = data.get("data", [])
-        results = []
-        for paper in papers:
-            results.append({
-                "Source": "Semantic Scholar",
-                "Title": paper.get("title", "n/a"),
-                "PubMed ID": "n/a",  # Semantic Scholar liefert in der Regel keine PubMed ID
-                "DOI": "n/a",        # DOI ist hier nicht direkt verfügbar
-                "Year": str(paper.get("year", "n/a")),
-                "Abstract": paper.get("abstract", "n/a"),
-                "Population": "n/a"
-            })
-        return results
-    except Exception as e:
-        st.error(f"Fehler bei der Semantic Scholar-Suche: {e}")
-        return []
+    attempt = 0
+    while attempt < retries:
+        try:
+            r = requests.get(base_url, params=params, timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            papers = data.get("data", [])
+            results = []
+            for paper in papers:
+                results.append({
+                    "Source": "Semantic Scholar",
+                    "Title": paper.get("title", "n/a"),
+                    "PubMed ID": "n/a",  # Semantic Scholar liefert in der Regel keine PubMed ID
+                    "DOI": "n/a",        # DOI ist hier nicht direkt verfügbar
+                    "Year": str(paper.get("year", "n/a")),
+                    "Abstract": paper.get("abstract", "n/a"),
+                    "Population": "n/a"
+                })
+            return results
+        except requests.exceptions.HTTPError as e:
+            if r.status_code == 429:
+                st.warning(f"Rate limit bei Semantic Scholar erreicht, warte {delay} Sekunden und versuche es erneut...")
+                time.sleep(delay)
+                attempt += 1
+                continue
+            else:
+                st.error(f"Fehler bei der Semantic Scholar-Suche: {e}")
+                return []
+        except Exception as e:
+            st.error(f"Fehler bei der Semantic Scholar-Suche: {e}")
+            return []
+    st.error("Semantic Scholar API: Rate limit überschritten. Bitte später erneut versuchen.")
+    return []
 
 def search_openalex(query: str, max_results=100):
     """
@@ -273,3 +289,7 @@ def module_codewords_pubmed():
 
     st.write("---")
     st.info("Dieses Modul nutzt das ausgewählte Profil, um Codewörter (mit AND/OR-Verknüpfung) auf alle aktivierten APIs anzuwenden und gibt alle Paper-Informationen aus (Quelle, Titel, PubMed ID, DOI, Jahr, Abstract, Population).")
+
+# Falls dieses Modul als Hauptskript ausgeführt wird:
+if __name__ == "__main__":
+    module_codewords_pubmed()
