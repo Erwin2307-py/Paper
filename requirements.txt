@@ -14,3 +14,10 @@ requests
 transformers
 selenium
 webdriver-manager
+streamlit
+selenium
+webdriver-manager
+requests
+pandas
+scholarly
+xlsxwriter
