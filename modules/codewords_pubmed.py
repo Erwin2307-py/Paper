@@ -425,6 +425,9 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     if genes:
         genes_str = ", ".join(genes)
 
+    # Codewörter
+    code_str = codewords if codewords else ""
+
     for idx, paper in enumerate(papers, start=1):
         # Updaten wir NUR diese Zeile => immer das aktuelle Paper
         paper_title = paper.get('Title', '(kein Titel)')
@@ -432,7 +435,7 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
 
         # Prompt:
         prompt_text = (
-            f"Codewörter: {codewords}\n"
+            f"Codewörter: {code_str}\n"
             f"Gene: {genes_str}\n\n"
             f"Paper:\n"
             f"Titel: {paper_title}\n"
@@ -466,116 +469,132 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
 
 
 ###############################################################################
-# H) Multi-API-Suche + ChatGPT mit Genes (falls im Profil hinterlegt)
+# H) Multi-API-Suche + ChatGPT mit Genes (aus Profil)
 ###############################################################################
 def module_codewords_pubmed():
-    st.title("Multi-API-Suche (PubMed, Europe PMC, Google Scholar, ...) + ChatGPT Online Suche (inkl. Genes)")
+    st.title("Multi-API-Suche (PubMed, Europe PMC, Google Scholar, ...) + ChatGPT Online Suche (Genes + Codewörter)")
 
-    # Profile check
+    # Prüfen, ob Profile existieren
     if "profiles" not in st.session_state or not st.session_state["profiles"]:
-        st.warning("Keine Profile (optional).")
+        st.warning("Keine Profile hinterlegt oder SessionState leer.")
         return
 
     prof_names = list(st.session_state["profiles"].keys())
     chosen_profile = st.selectbox("Wähle ein Profil:", ["(kein)"] + prof_names)
     if chosen_profile == "(kein)":
-        st.info("Kein Profil gewählt.")
+        st.info("Kein Profil gewählt. -> Abbruch.")
         return
 
+    # Profil laden
     profile_data = load_settings(chosen_profile)
-    st.json(profile_data)
+    if not profile_data:
+        st.warning("Profil nicht gefunden oder leer.")
+        return
 
-    # Aus dem Profil kann man codewords (String) + genes (Liste) ziehen:
-    codewords_str = st.text_input("Codewörter (werden mit Genes kombiniert):", "")
-    logic_option = st.radio("Logik:", ["AND","OR"], 1)
+    st.write("Profil-Daten:", profile_data)
 
-    # Falls das Profil Genes enthält, nutzen wir sie gleich:
-    genes = profile_data.get("genes", [])
-    st.write(f"Profil-Genes (falls vorhanden): {genes}")
+    # Codewörter aus Profil oder leer
+    default_codewords = profile_data.get("codewords", "")
+    codewords_str = st.text_input("Codewörter (werden mit Genes kombiniert):", value=default_codewords)
+    genes_from_profile = profile_data.get("genes", [])
+
+    st.write(f"Genes aus Profil: {genes_from_profile}")
+
+    # Logik wählbar
+    logic_option = st.radio("Logik für Codewörter + Gene in der finalen Suche:", ["OR", "AND"], index=0)
 
     if st.button("Suche starten"):
-        raw_list = [w.strip() for w in codewords_str.replace(",", " ").split() if w.strip()]
+        # 1) Codewörter in Liste
+        raw_words_list = [w.strip() for w in codewords_str.replace(",", " ").split() if w.strip()]
+        # 2) Genes in Liste
+        raw_genes_list = genes_from_profile
 
-        # Aus codewords + genes => finaler Querystring, z.B. OR-Verknüpfung
-        # 1) codewords verknüpfen (AND oder OR) => query_str
-        if logic_option == "AND":
-            query_str = " AND ".join(raw_list) if raw_list else ""
-        else:
-            query_str = " OR ".join(raw_list) if raw_list else ""
-
-        # 2) Genes in Query einbauen => z.B. als OR:
-        if genes:
-            genes_query = " OR ".join(genes)
-            if query_str:
-                query_str = f"({query_str}) OR ({genes_query})"
-            else:
-                query_str = genes_query
-
-        if not query_str.strip():
-            st.warning("Keine Codewörter und keine Gene vorhanden -> Abbruch.")
+        if not raw_words_list and not raw_genes_list:
+            st.warning("Keine Codewörter und keine Gene -> Suche nicht möglich.")
             return
 
-        st.write("Finale Suchanfrage:", query_str)
+        # Finale Query: wir kombinieren *alle* codewords und *alle* genes
+        # z.B. bei OR: (codeword1 OR codeword2) OR (gene1 OR gene2)
+        # bei AND: (codeword1 AND codeword2) AND (gene1 AND gene2)
+        if logic_option == "OR":
+            query_codewords = " OR ".join(raw_words_list) if raw_words_list else ""
+            query_genes = " OR ".join(raw_genes_list) if raw_genes_list else ""
+            # Falls beides nicht leer: ( ... ) OR ( ... )
+            if query_codewords and query_genes:
+                final_query = f"({query_codewords}) OR ({query_genes})"
+            else:
+                final_query = query_codewords or query_genes
+        else:
+            # logic_option == "AND"
+            query_codewords = " AND ".join(raw_words_list) if raw_words_list else ""
+            query_genes = " AND ".join(raw_genes_list) if raw_genes_list else ""
+            if query_codewords and query_genes:
+                final_query = f"({query_codewords}) AND ({query_genes})"
+            else:
+                final_query = query_codewords or query_genes
+
+        st.write("Finale Suchanfrage:", final_query)
 
         results_all = []
 
         if profile_data.get("use_pubmed", False):
-            pm = search_pubmed(query_str, max_results=200)
+            pm = search_pubmed(final_query, max_results=200)
             st.write(f"PubMed: {len(pm)}")
             results_all.extend(pm)
 
         if profile_data.get("use_epmc", False):
-            ep = search_europe_pmc(query_str, max_results=200)
+            ep = search_europe_pmc(final_query, max_results=200)
             st.write(f"Europe PMC: {len(ep)}")
             results_all.extend(ep)
 
         if profile_data.get("use_google", False):
-            gg = search_google_scholar(query_str, max_results=200)
+            gg = search_google_scholar(final_query, max_results=200)
             st.write(f"Google Scholar: {len(gg)}")
             results_all.extend(gg)
 
         if profile_data.get("use_semantic", False):
-            se = search_semantic_scholar(query_str, max_results=200)
+            se = search_semantic_scholar(final_query, max_results=200)
             st.write(f"Semantic Scholar: {len(se)}")
             results_all.extend(se)
 
         if profile_data.get("use_openalex", False):
-            oa = search_openalex(query_str, max_results=200)
+            oa = search_openalex(final_query, max_results=200)
             st.write(f"OpenAlex: {len(oa)}")
             results_all.extend(oa)
 
-        # Maximal 1000 begrenzen
+        if not results_all:
+            st.info("Keine Treffer gefunden.")
+            return
+
+        # Auf 1000 beschränken
         if len(results_all) > 1000:
             results_all = results_all[:1000]
-
-        if not results_all:
-            st.info("Nichts gefunden.")
-            return
 
         st.session_state["search_results"] = results_all
         st.write(f"Gefundene Papers insgesamt: {len(results_all)}")
 
-    # Falls Ergebnisse vorhanden:
+    # Falls Ergebnisse in der Session
     if "search_results" in st.session_state and st.session_state["search_results"]:
-        df_main = pd.DataFrame(st.session_state["search_results"])
+        all_papers = st.session_state["search_results"]
+        df_main = pd.DataFrame(all_papers)
         st.dataframe(df_main)
 
         st.write("---")
-        st.subheader("ChatGPT-Online-Suche (inkl. Genes)")
+        st.subheader("ChatGPT-Online-Filterung nach Relevanz (Genes + Codewords)")
 
-        if st.button("Starte ChatGPT-Online-Suche (max. 1000 Papers)"):
-            if not codewords_str.strip() and not genes:
-                st.warning("Bitte Codewörter oder Gene eingeben/haben, um Relevanz zu bestimmen!")
+        if st.button("Starte ChatGPT-Online-Suche"):
+            if not codewords_str.strip() and not genes_from_profile:
+                st.warning("Keine Codewords und keine Gene vorhanden -> Abbruch.")
             else:
                 st.write("Starte ChatGPT-Scoring...\n")
                 top_results = chatgpt_online_search_with_genes(
-                    st.session_state["search_results"],
-                    codewords=codewords_str,
-                    genes=genes,
+                    all_papers,
+                    codewords=codewords_str,   # Aus dem Textfeld (ggf. Profil)
+                    genes=genes_from_profile,  # Immer aus Profil
                     top_k=100
                 )
                 if top_results:
-                    st.subheader("Top 100 Paper (nach ChatGPT-Relevanz, inkl. Genes)")
+                    st.subheader("Top 100 Paper (nach ChatGPT-Relevanz)")
                     df_top = pd.DataFrame(top_results)
                     st.dataframe(df_top)
 
@@ -587,7 +606,7 @@ def main():
     st.title("Kombinierte App: ChatGPT-Paper, arXiv-Suche, Multi-API-Suche (Genes+Codewords)")
 
     if "profiles" not in st.session_state:
-        # Beispiel: wir speichern Genes in "genes", Codewords in "codewords"
+        # Beispielhaft legen wir ein Profil an
         st.session_state["profiles"] = {
             "DefaultProfile": {
                 "use_pubmed": True,
@@ -596,7 +615,7 @@ def main():
                 "use_semantic": True,
                 "use_openalex": True,
                 "genes": ["BRCA1", "TP53"],
-                "codewords": "Cancer therapy"
+                "codewords": "cancer therapy"
             }
         }
 
