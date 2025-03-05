@@ -9,13 +9,14 @@ from datetime import datetime
 from collections import defaultdict
 
 ##############################
-# Dict-Flattening-Funktion
+# Dict-Flattening
 ##############################
 
 def flatten_dict(d, parent_key="", sep="__"):
     """
     Macht aus verschachtelten Dicts eine flache Key->Value-Struktur.
-    Bsp.: {"a": 1, "b": {"x": 10, "y": 20}} 
+    Bsp.:
+      {"a": 1, "b": {"x": 10, "y": 20}}
     => {"a": 1, "b__x": 10, "b__y": 20}
     """
     items = []
@@ -109,18 +110,18 @@ def get_pubmed_details(pmids: list):
         abs_text = abstracts_map.get(pmid, "n/a")
         publisher = info.get("fulljournalname") or info.get("source") or "n/a"
 
-        full_data = dict(info)  # ESummary Original
-        full_data["abstract"] = abs_text  # EFetch-Abstract
+        full_data = dict(info)
+        full_data["abstract"] = abs_text
 
         results.append({
             "Source": "PubMed",
             "Title": title,
             "PubMed ID": pmid,
+            "Abstract": abs_text,
             "DOI": doi,
             "Year": pubyear,
-            "Abstract": abs_text,
-            "Population": "n/a",
             "Publisher": publisher,
+            "Population": "n/a",
             "FullData": full_data
         })
     return results
@@ -132,7 +133,7 @@ def search_pubmed(query: str, max_results=100):
     return get_pubmed_details(pmids)
 
 ##############################
-# Europe PMC (Timeout/Retry)
+# Europe PMC
 ##############################
 
 def search_europe_pmc(query: str, max_results=100, timeout=30, retries=3, delay=5):
@@ -149,7 +150,10 @@ def search_europe_pmc(query: str, max_results=100, timeout=30, retries=3, delay=
             data = r.json()
             results = []
             for item in data.get("resultList", {}).get("result", []):
-                # Versuch "journalInfo"->"journal" als Publisher 
+                pub_year = str(item.get("pubYear", "n/a"))
+                abstract_text = item.get("abstractText", "n/a")
+
+                # Publisher: versuche aus "journalInfo" => "journal"
                 publisher = "n/a"
                 jinfo = item.get("journalInfo", {})
                 if isinstance(jinfo, dict):
@@ -159,12 +163,12 @@ def search_europe_pmc(query: str, max_results=100, timeout=30, retries=3, delay=
                     "Source": "Europe PMC",
                     "Title": item.get("title", "n/a"),
                     "PubMed ID": item.get("pmid", "n/a"),
+                    "Abstract": abstract_text,
                     "DOI": item.get("doi", "n/a"),
-                    "Year": str(item.get("pubYear", "n/a")),
-                    "Abstract": item.get("abstractText", "n/a"),
-                    "Population": "n/a",
+                    "Year": pub_year,
                     "Publisher": publisher,
-                    "FullData": dict(item)  # Rohdaten
+                    "Population": "n/a",
+                    "FullData": dict(item)
                 })
             return results
         except requests.exceptions.ReadTimeout:
@@ -198,12 +202,12 @@ def search_google_scholar(query: str, max_results=100):
                 "Source": "Google Scholar",
                 "Title": title,
                 "PubMed ID": "n/a",
+                "Abstract": abstract,
                 "DOI": "n/a",
                 "Year": str(pub_year),
-                "Abstract": abstract,
-                "Population": "n/a",
                 "Publisher": "n/a",
-                "FullData": dict(publication)  # Alles von "scholarly"
+                "Population": "n/a",
+                "FullData": dict(publication)
             })
     except Exception as e:
         st.error(f"Fehler bei der Google Scholar-Suche: {e}")
@@ -229,15 +233,18 @@ def search_semantic_scholar(query: str, max_results=100, retries=3, delay=5):
             papers = data.get("data", [])
             results = []
             for paper in papers:
+                year_ = str(paper.get("year", "n/a"))
+                abstract_ = paper.get("abstract", "n/a")
+
                 results.append({
                     "Source": "Semantic Scholar",
                     "Title": paper.get("title", "n/a"),
                     "PubMed ID": "n/a",
+                    "Abstract": abstract_,
                     "DOI": "n/a",
-                    "Year": str(paper.get("year", "n/a")),
-                    "Abstract": paper.get("abstract", "n/a"),
-                    "Population": "n/a",
+                    "Year": year_,
                     "Publisher": "n/a",
+                    "Population": "n/a",
                     "FullData": dict(paper)
                 })
             return results
@@ -257,7 +264,7 @@ def search_semantic_scholar(query: str, max_results=100, retries=3, delay=5):
     return []
 
 ##############################
-# OpenAlex / CORE (Dummies)
+# OpenAlex / CORE
 ##############################
 
 def search_openalex(query: str, max_results=100):
@@ -265,11 +272,11 @@ def search_openalex(query: str, max_results=100):
         "Source": "OpenAlex",
         "Title": "Dummy Title from OpenAlex",
         "PubMed ID": "n/a",
+        "Abstract": "Dies ist ein Dummy-Abstract von OpenAlex.",
         "DOI": "n/a",
         "Year": "2023",
-        "Abstract": "Dies ist ein Dummy-Abstract von OpenAlex.",
-        "Population": "n/a",
         "Publisher": "n/a",
+        "Population": "n/a",
         "FullData": {"demo_openalex": "Hier stünden Originaldaten."}
     }]
 
@@ -278,11 +285,11 @@ def search_core(query: str, max_results=100):
         "Source": "CORE",
         "Title": "Dummy Title from CORE",
         "PubMed ID": "n/a",
+        "Abstract": "Dies ist ein Dummy-Abstract von CORE.",
         "DOI": "n/a",
         "Year": "2023",
-        "Abstract": "Dies ist ein Dummy-Abstract von CORE.",
-        "Population": "n/a",
         "Publisher": "n/a",
+        "Population": "n/a",
         "FullData": {"demo_core": "CORE dummy data."}
     }]
 
@@ -379,7 +386,7 @@ def module_codewords_pubmed():
 
         st.write("## Gesamtergebnis aus allen aktivierten APIs")
 
-        # (A) MAIN-Sheet: Grundlegende Felder
+        # (A) MAIN-Sheet: mit genau den Spalten Title, PubMed ID, Abstract, Year, Publisher, Population, Source
         df_main = pd.DataFrame([
             {
                 "Title": p.get("Title", "n/a"),
@@ -393,7 +400,7 @@ def module_codewords_pubmed():
             for p in results_all
         ])
 
-        # Zeige Main-Sheet in Streamlit
+        # Zeige Main in Streamlit
         st.dataframe(df_main)
 
         # Expander für Abstract
@@ -407,52 +414,49 @@ def module_codewords_pubmed():
                 st.markdown("---")
                 st.write(f"**Abstract**:\n\n{row.get('Abstract', 'n/a')}")
 
-        # (B) Erzeuge "pro API ein eigenes Tabellenblatt" und flatten "FullData"
-        from openpyxl import Workbook  # nur um sicherzugehen, dass wir openpyxl haben
+        # (B) Pro API ein Tabellenblatt
         timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
-        # Codewörter "säubern" für Dateinamen
+        # Codewörter für Dateiname "säubern"
         safe_codewords = codewords_str.strip().replace(" ", "_").replace(",", "_").replace("/", "_")
         filename = f"{safe_codewords}_{timestamp_str}.xlsx"
 
-        # 1) Groups nach Source
-        from collections import defaultdict
         source_groups = defaultdict(list)
         for p in results_all:
             src = p.get("Source", "n/a")
             source_groups[src].append(p)
 
         with pd.ExcelWriter(filename, engine="openpyxl") as writer:
-            # Sheet "Main"
+            # Sheet "Main": Exakt die 7 Spalten
             df_main.to_excel(writer, sheet_name="Main", index=False)
 
-            # Jetzt pro API ein Sheet
+            # Pro API ein Sheet, "flatten FullData" + die 7 Pflichtspalten
             for source_name, papers_list in source_groups.items():
-                # flatten each paper's FullData
                 rows = []
                 for paper in papers_list:
+                    # 1) "flatten" FullData
                     fd = paper.get("FullData", {})
-                    flattened = flatten_dict(fd)  # => dict mit Key->Value
-                    # Zusätzliche Standardfelder
-                    flattened["Title"] = paper.get("Title", "n/a")
-                    flattened["PubMed ID"] = paper.get("PubMed ID", "n/a")
-                    flattened["Year"] = paper.get("Year", "n/a")
-                    flattened["Publisher"] = paper.get("Publisher", "n/a")
-                    flattened["Population"] = paper.get("Population", "n/a")
-                    flattened["Source"] = paper.get("Source", "n/a")
+                    flat_fd = flatten_dict(fd)
+                    # 2) 7 Pflichtspalten
+                    flat_fd["Title"] = paper.get("Title", "n/a")
+                    flat_fd["PubMed ID"] = paper.get("PubMed ID", "n/a")
+                    flat_fd["Abstract"] = paper.get("Abstract", "n/a")
+                    flat_fd["Year"] = paper.get("Year", "n/a")
+                    flat_fd["Publisher"] = paper.get("Publisher", "n/a")
+                    flat_fd["Population"] = paper.get("Population", "n/a")
+                    flat_fd["Source"] = paper.get("Source", "n/a")
 
-                    rows.append(flattened)
+                    rows.append(flat_fd)
 
                 if rows:
                     df_api = pd.DataFrame(rows)
                 else:
-                    df_api = pd.DataFrame()  # leer
+                    df_api = pd.DataFrame()
 
-                # Sheet-Name (max 31 Zeichen)
+                # Sheetname (max. 31 Zeichen)
                 short_name = source_name[:31] if source_name else "API"
                 df_api.to_excel(writer, sheet_name=short_name, index=False)
 
-        st.success(f"Excel-Datei mit 'Main' + pro API ein Sheet erstellt: {filename}")
+        st.success(f"Excel-Datei erstellt: {filename}")
 
         # Download-Button
         with open(filename, "rb") as f:
@@ -464,8 +468,9 @@ def module_codewords_pubmed():
             )
 
     st.write("---")
-    st.info("Dieses Modul sucht in allen aktivierten APIs und erzeugt ein Excel mit einem Main-Sheet "
-            "sowie je einem Sheet pro API. Dort sind alle Felder in eigenen Spalten (geflattete 'FullData').")
+    st.info("Dieses Modul sucht in allen aktivierten APIs und erzeugt ein Excel mit:\n"
+            "- Einem 'Main'-Sheet (genau 7 Spalten: Title, PubMed ID, Abstract, Year, Publisher, Population, Source)\n"
+            "- Für jede API ein eigenes Sheet (ebenfalls mind. diese 7 Spalten plus alle 'geflatteten' Originalfelder).")
 
 
 # Falls dieses Modul als Hauptskript ausgeführt wird:
