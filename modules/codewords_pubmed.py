@@ -14,8 +14,8 @@ from collections import defaultdict
 
 def flatten_dict(d, parent_key="", sep="__"):
     """
-    Macht aus verschachtelten Dicts eine flache Key->Value-Struktur.
-    Bsp.:
+    Wandelt ein verschachteltes Dictionary in ein flaches Dictionary um.
+    Beispiel:
       {"a": 1, "b": {"x": 10, "y": 20}}
     => {"a": 1, "b__x": 10, "b__y": 20}
     """
@@ -33,6 +33,9 @@ def flatten_dict(d, parent_key="", sep="__"):
 ##############################
 
 def esearch_pubmed(query: str, max_results=100, timeout=10):
+    """
+    Holt über ESearch eine Liste von PMID für einen Suchbegriff.
+    """
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {
         "db": "pubmed",
@@ -50,6 +53,9 @@ def esearch_pubmed(query: str, max_results=100, timeout=10):
         return []
 
 def parse_efetch_response(xml_text: str) -> dict:
+    """
+    Parst das XML von EFetch und extrahiert den Abstract in ein Dict {pmid: abstract_text}.
+    """
     root = ET.fromstring(xml_text)
     pmid_abstract_map = {}
     for article in root.findall(".//PubmedArticle"):
@@ -62,6 +68,10 @@ def parse_efetch_response(xml_text: str) -> dict:
     return pmid_abstract_map
 
 def fetch_pubmed_abstracts(pmids, timeout=10):
+    """
+    EFetch-Aufruf, um für jeden PMID den Abstract zu bekommen.
+    Gibt Dict { pmid -> abstract } zurück.
+    """
     if not pmids:
         return {}
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
@@ -79,6 +89,10 @@ def fetch_pubmed_abstracts(pmids, timeout=10):
         return {}
 
 def get_pubmed_details(pmids: list):
+    """
+    Nutzt ESummary (Titel, Jahr, DOI etc.) und EFetch (Abstract),
+    baut daraus das finale Dict pro Paper zusammen.
+    """
     if not pmids:
         return []
     url_summary = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
@@ -95,6 +109,7 @@ def get_pubmed_details(pmids: list):
         st.error(f"Fehler beim Abrufen von PubMed-Daten (ESummary): {e}")
         return []
 
+    # Abstracts via EFetch
     abstracts_map = fetch_pubmed_abstracts(pmids, timeout=10)
 
     results = []
@@ -127,6 +142,11 @@ def get_pubmed_details(pmids: list):
     return results
 
 def search_pubmed(query: str, max_results=100):
+    """
+    Vollständige PubMed-Suche:
+    1) ESearch => PMIDs
+    2) ESummary + EFetch => Titel, Jahr, DOI, Journal, Abstract ...
+    """
     pmids = esearch_pubmed(query, max_results=max_results)
     if not pmids:
         return []
@@ -153,7 +173,7 @@ def search_europe_pmc(query: str, max_results=100, timeout=30, retries=3, delay=
                 pub_year = str(item.get("pubYear", "n/a"))
                 abstract_text = item.get("abstractText", "n/a")
 
-                # Publisher: versuche aus "journalInfo" => "journal"
+                # Publisher über "journalInfo" -> "journal"
                 publisher = "n/a"
                 jinfo = item.get("journalInfo", {})
                 if isinstance(jinfo, dict):
@@ -172,8 +192,7 @@ def search_europe_pmc(query: str, max_results=100, timeout=30, retries=3, delay=
                 })
             return results
         except requests.exceptions.ReadTimeout:
-            st.warning(f"Europe PMC: Read Timeout (Versuch {attempt+1}/{retries}). "
-                       f"{delay}s warten und erneut versuchen...")
+            st.warning(f"Europe PMC: Read Timeout (Versuch {attempt+1}/{retries}). {delay}s warten ...")
             time.sleep(delay)
         except requests.exceptions.RequestException as e:
             st.error(f"Europe PMC-Suche fehlgeschlagen: {e}")
@@ -188,6 +207,7 @@ def search_europe_pmc(query: str, max_results=100, timeout=30, retries=3, delay=
 def search_google_scholar(query: str, max_results=100):
     results = []
     try:
+        # Scholarly-Aufruf
         search_results = scholarly.search_pubs(query)
         for _ in range(max_results):
             publication = next(search_results, None)
@@ -250,7 +270,7 @@ def search_semantic_scholar(query: str, max_results=100, retries=3, delay=5):
             return results
         except requests.exceptions.HTTPError as e:
             if r.status_code == 429:
-                st.warning(f"Rate limit bei Semantic Scholar erreicht, warte {delay} Sekunden...")
+                st.warning(f"Rate limit bei Semantic Scholar erreicht, warte {delay} Sekunden ...")
                 time.sleep(delay)
                 attempt += 1
                 continue
@@ -328,65 +348,16 @@ def load_settings(profile_name: str):
     return None
 
 ##############################
-# Hilfs-Funktion: Abstract in neuem Tab
-##############################
-
-def show_abstract_window(abstract_idx):
-    if "search_results" not in st.session_state:
-        st.error("Keine Suchergebnisse vorhanden. Bitte zuerst suchen und erneut klicken.")
-        return
-
-    try:
-        idx = int(abstract_idx)
-    except ValueError:
-        st.error("Ungültiger Index für Abstract.")
-        return
-
-    results = st.session_state["search_results"]
-    if idx < 0 or idx >= len(results):
-        st.error("Index außerhalb des gültigen Bereichs.")
-        return
-
-    paper = results[idx]
-    st.title("Abstract in separatem Tab")
-    st.write(f"**Titel**: {paper.get('Title', 'n/a')}")
-    st.write(f"**PubMed ID**: {paper.get('PubMed ID', 'n/a')}")
-    st.write(f"**DOI**: {paper.get('DOI', 'n/a')}")
-    st.write(f"**Year**: {paper.get('Year', 'n/a')}")
-    st.write(f"**Publisher**: {paper.get('Publisher', 'n/a')}")
-    st.write(f"**Population**: {paper.get('Population', 'n/a')}")
-    st.write(f"**Source**: {paper.get('Source', 'n/a')}")
-    st.markdown("---")
-    st.subheader("Abstract")
-    st.write(paper.get("Abstract", "n/a"))
-    st.markdown("---")
-    st.info("Mit [Tab schließen] oder [zurück], um zur Haupt-Ansicht zu wechseln.")
-
-##############################
 # Haupt-Modul
 ##############################
 
 def module_codewords_pubmed():
-    """
-    Haupt-Einstiegspunkt. Unterscheidet anhand st.query_params,
-    ob wir im 'Abstract-Fenster' sind (abstract_id vorhanden)
-    oder im normalen Suchinterface.
-    """
-    query_params = st.query_params
-    abstract_id = query_params.get("abstract_id", [None])[0]
+    st.title("Codewörter & Multi-API-Suche: Abstract direkt in der Liste")
 
-    # 1) Falls "?abstract_id=X" => nur Abstract-Fenster
-    if abstract_id is not None:
-        show_abstract_window(abstract_id)
-        return
-
-    # 2) Normaler Modus
-    st.title("Codewörter & Multi-API-Suche (mind. 100 Paper pro API)")
-
+    # 1) Profil-Auswahl
     if "profiles" not in st.session_state or not st.session_state["profiles"]:
         st.warning("Keine Profile vorhanden. Bitte zuerst ein Profil speichern.")
         return
-
     profile_names = list(st.session_state["profiles"].keys())
     chosen_profile = st.selectbox("Wähle ein Profil:", ["(kein)"] + profile_names)
     if chosen_profile == "(kein)":
@@ -397,11 +368,13 @@ def module_codewords_pubmed():
     st.subheader("Profil-Einstellungen")
     st.json(profile_data)
 
+    # 2) Codewörter & Logik
     st.subheader("Codewörter & Logik")
     codewords_str = st.text_input("Codewörter (kommasepariert oder Leerzeichen):", "")
     st.write("Beispiel: genotyp, SNP, phänotyp")
     logic_option = st.radio("Logik:", options=["AND", "OR"], index=1)
 
+    # 3) Suche starten
     if st.button("Suche starten"):
         raw_list = [w.strip() for w in codewords_str.replace(",", " ").split() if w.strip()]
         if not raw_list:
@@ -413,6 +386,7 @@ def module_codewords_pubmed():
 
         results_all = []
 
+        # Aktivierte APIs laut Profil
         if profile_data.get("use_pubmed", False):
             st.write("### PubMed")
             pubmed_res = search_pubmed(query_str, max_results=100)
@@ -455,7 +429,8 @@ def module_codewords_pubmed():
 
         st.write("## Gesamtergebnis aus allen aktivierten APIs")
 
-        # DataFrame mit Title, PubMed ID, Year, Publisher, Population, Source
+        # 4) DataFrame MIT Spalte "Abstract"
+        #    => Keine separate "Abstract (Link)" mehr
         df_main = pd.DataFrame([
             {
                 "Title": p.get("Title", "n/a"),
@@ -464,29 +439,20 @@ def module_codewords_pubmed():
                 "Publisher": p.get("Publisher", "n/a"),
                 "Population": p.get("Population", "n/a"),
                 "Source": p.get("Source", "n/a"),
+                "Abstract": p.get("Abstract", "n/a")   # <--- Abstract direkt
             }
             for p in results_all
         ])
 
-        # search_results für show_abstract_window
-        st.session_state["search_results"] = results_all
+        # 5) DataFrame zeigen => Abstract sichtbar
+        st.dataframe(df_main)
 
-        # Link-Spalte: "<a href='?abstract_id=idx' target='_blank'>[Abstract anzeigen]</a>"
-        links = []
-        for idx in range(len(results_all)):
-            link_html = f'<a href="?abstract_id={idx}" target="_blank">[Abstract anzeigen]</a>'
-            links.append(link_html)
-        df_main["Abstract (Link)"] = links
-
-        # => HTML-Rendering statt st.dataframe
-        html_table = df_main.to_html(escape=False, index=False)
-        st.markdown(html_table, unsafe_allow_html=True)
-
-        # => Excel-Export
+        # 6) Excel-Export
         timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         safe_codewords = codewords_str.strip().replace(" ", "_").replace(",", "_").replace("/", "_")
         filename = f"{safe_codewords}_{timestamp_str}.xlsx"
 
+        # Main-Sheet inkl. Abstract
         df_main_excel = pd.DataFrame([
             {
                 "Title": p.get("Title", "n/a"),
@@ -500,6 +466,7 @@ def module_codewords_pubmed():
             for p in results_all
         ])
 
+        # => pro API eigenes Sheet
         source_groups = defaultdict(list)
         for paper in results_all:
             src = paper.get("Source", "n/a")
@@ -535,8 +502,8 @@ def module_codewords_pubmed():
             )
 
     st.write("---")
-    st.info("Abstracts werden via EFetch geholt und im separaten Tab angezeigt, Links sind klickbar!")
-    
+    st.info("Der Abstract wird jetzt direkt in der Liste angezeigt – kein separater Klick nötig.")
+
 
 # Falls dieses Modul als Hauptskript ausgeführt wird:
 if __name__ == "__main__":
