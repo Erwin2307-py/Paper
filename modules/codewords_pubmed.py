@@ -10,14 +10,6 @@ from collections import defaultdict
 import re
 import base64
 
-# ------------------------------------------
-# Nur nötig, wenn du Headless Chrome verwendest:
-# from selenium import webdriver
-# from selenium.webdriver.chrome.options import Options
-# from selenium.webdriver.support.ui import WebDriverWait
-# from selenium.common.exceptions import TimeoutException
-# from selenium.webdriver.common.by import By
-# ------------------------------------------
 try:
     import fitz  # PyMuPDF
     from fpdf import FPDF
@@ -159,7 +151,6 @@ def search_europe_pmc(query: str, max_results=100, timeout=30, retries=3, delay=
             for item in data.get("resultList", {}).get("result", []):
                 pub_year = str(item.get("pubYear", "n/a"))
                 abstract_text = item.get("abstractText", "n/a")
-
                 publisher = "n/a"
                 jinfo = item.get("journalInfo", {})
                 if isinstance(jinfo, dict):
@@ -310,7 +301,7 @@ def search_openalex(query: str, max_results=100):
 ##############################
 def search_core(query: str, max_results=100):
     """
-    Hier ggf. an CORE-API anbinden o.Ä.
+    Hier ggf. an CORE-API anbinden.
     """
     return [{
         "Source": "CORE",
@@ -325,12 +316,11 @@ def search_core(query: str, max_results=100):
     }]
 
 ##############################
-# Download/Export-Funktionen
+# PDF/Download-Funktionen
 ##############################
 def create_abstract_pdf(paper, output_file):
     """
-    Erstellt ein PDF mit dem Abstract und Metadaten des Papers.
-    Nutzt FPDF.
+    Erstellt ein PDF mit FPDF, in dem Titel + Abstract + Metadaten enthalten sind.
     """
     try:
         pdf = FPDF()
@@ -366,38 +356,8 @@ def create_abstract_pdf(paper, output_file):
         st.error(f"Fehler beim Erstellen des PDF: {e}")
         return False
 
-def extract_doi_links_from_pdf(pdf_path):
-    """
-    Extrahiert potentielle DOI-Links aus einem PDF (via PyMuPDF).
-    """
-    dois = []
-    try:
-        doc = fitz.open(pdf_path)
-        for page in doc:
-            text = page.get_text()
-            # Evtl. Regex, das https://doi.org/... sucht
-            found = re.findall(r'(https?://(?:dx\.)?doi\.org/\S+)', text)
-            for f in found:
-                if f not in dois:
-                    dois.append(f.strip())
-        doc.close()
-    except Exception as e:
-        st.error(f"Fehler PyMuPDF: {e}")
-    return dois
-
-def download_pdf(url, output_path):
-    """
-    Lädt eine PDF-Datei via Requests herunter.
-    """
-    try:
-        r = requests.get(url, timeout=15)
-        r.raise_for_status()
-        with open(output_path, "wb") as f:
-            f.write(r.content)
-        return True
-    except Exception as e:
-        st.error(f"Fehler beim PDF-Download: {e}")
-        return False
+def _sanitize_filename(fname):
+    return re.sub(r"[^a-zA-Z0-9_\-]+", "_", fname)
 
 ##############################
 # Profil-Verwaltung
@@ -413,9 +373,9 @@ def load_settings(profile_name: str):
 # Haupt-Modul
 ##############################
 def module_codewords_pubmed():
-    st.title("Codewörter & Multi-API-Suche: Abstract direkt in der Liste (mit erweiterter Filter-Checkbox und Paper-Download)")
+    st.title("Codewörter & Multi-API-Suche: Abstract direkt in Liste + Paper Download")
 
-    # Profil-Auswahl
+    # 1) Profil-Auswahl
     if "profiles" not in st.session_state or not st.session_state["profiles"]:
         st.warning("Keine Profile vorhanden. Bitte zuerst ein Profil speichern.")
         return
@@ -429,7 +389,7 @@ def module_codewords_pubmed():
     st.subheader("Profil-Einstellungen")
     st.json(profile_data)
 
-    # Codewörter & Logik
+    # 2) Codewörter & Logik
     st.subheader("Codewörter & Logik")
     codewords_str = st.text_input("Codewörter (kommasepariert oder Leerzeichen):", "")
     st.write("Beispiel: genotyp, SNP, phänotyp")
@@ -447,6 +407,7 @@ def module_codewords_pubmed():
 
         results_all = []
 
+        # APIs laut Profil
         if profile_data.get("use_pubmed", False):
             st.write("### PubMed")
             pubmed_res = search_pubmed(query_str, max_results=100)
@@ -502,7 +463,7 @@ def module_codewords_pubmed():
                 "Publisher": p.get("Publisher", "n/a"),
                 "Population": p.get("Population", "n/a"),
                 "Source": p.get("Source", "n/a"),
-                "Abstract": p.get("Abstract", "n/a")
+                "Abstract": p.get("Abstract", "n/a"),
             }
             for p in results_all
         ])
@@ -512,20 +473,16 @@ def module_codewords_pubmed():
         if adv_filter:
             left_col, right_col = st.columns(2)
             with left_col:
-                st.subheader("Original-Liste (ungefiltert)")
+                st.subheader("Originale Liste (ungefiltert)")
                 st.dataframe(df_main)
 
             with right_col:
                 st.subheader("Gefilterte Liste (rechts)")
-
-                # Filter: text (Title/Publisher)
                 text_filter = st.text_input("Suchbegriff (Title/Publisher):", "")
-                # Jahr: 1900-2025
                 year_list = ["Alle"] + [str(y) for y in range(1900, 2026)]
                 year_choice = st.selectbox("Erscheinungsjahr (1900-2025):", year_list)
 
                 df_filtered = df_main.copy()
-
                 if text_filter.strip():
                     tf = text_filter.lower()
                     def match_filter(row):
@@ -541,20 +498,78 @@ def module_codewords_pubmed():
         else:
             st.dataframe(df_main)
 
-        # Button: Paper herunterladen & PDF erstellen
+        # 1) Paper-Auswahl: per Multiselect
+        st.subheader("Paper-Auswahl")
+        # Du könntest ggf. einen Identifier konstruieren. Hier verwenden wir den 'Title' (kann Duplicate haben).
+        # Besser: Title + Year oder Title + PMID
+        df_main["identifier"] = df_main.apply(lambda r: f"{r['Title']}||{r['PubMed ID']}", axis=1)
+        all_idents = df_main["identifier"].tolist()
+
+        chosen_idents = st.multiselect("Wähle Paper (Basierend auf Titel/PMID):", all_idents)
+        #  -> Set davon machen
+        chosen_idents_set = set(chosen_idents)
+
+        st.write("Ausgewählte Paper:")
+        # Zeige sie an + Link in neuem Tab
+        for c in chosen_idents:
+            row = df_main.loc[df_main["identifier"] == c].iloc[0]
+            # Du kannst zb einen Link bauen: st.markdown
+            # Evtl. PubMed Link oder so:
+            pmid = row["PubMed ID"]
+            # Minimale Logik: wenn wir eine PMID haben, Link => https://pubmed.ncbi.nlm.nih.gov/{pmid}/
+            # Sonst => "n/a"
+            if pmid != "n/a":
+                link_url = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}"
+            else:
+                link_url = "https://www.google.de"
+
+            st.markdown(f"- **{row['Title']}** <br>"
+                        f"[In neuem Tab öffnen]({link_url}){{:target=\"_blank\"}}",
+                        unsafe_allow_html=True)
+
+        # 2) Download-Button: wir machen PDFs nur für die ausgewählten Paper
         if st.button("Paper herunterladen & PDF erstellen"):
-            # Du kannst hier filtern, ob du ALLE nimmst oder nur die gefilterten
-            # z.B. ALLE:
-            papers_to_download = results_all
-            # -> Oder nur Filter:
-            #  papers_to_download = df_filtered.to_dict("records")  # falls man nur gefilterte will
+            if not chosen_idents:
+                st.warning("Keine Paper ausgewählt.")
+            else:
+                # Baue Paper-Liste
+                selected_papers = []
+                for c in chosen_idents:
+                    row = df_main.loc[df_main["identifier"] == c].iloc[0]
+                    # Finde Original-Objekt in results_all
+                    # (z. B. indem wir Title & PMID abgleichen)
+                    match = None
+                    for p in results_all:
+                        if p["Title"] == row["Title"] and p["PubMed ID"] == row["PubMed ID"]:
+                            match = p
+                            break
+                    if match:
+                        selected_papers.append(match)
 
-            _download_all_papers_and_make_pdfs(papers_to_download)
+                if not selected_papers:
+                    st.warning("Keine zu verarbeitenden Paper gefunden.")
+                else:
+                    # Lokales Verzeichnis / Pfad (im realen System)
+                    out_dir = os.path.join(os.getcwd(), f"paper_download_{int(time.time())}")
+                    if not os.path.exists(out_dir):
+                        os.makedirs(out_dir)
+                    st.write(f"Erstelle Ordner: `{out_dir}` (lokal)")
 
-        # Excel-Export
-        codewords_str = "Suchbegriffe"
+                    for i, paper in enumerate(selected_papers, start=1):
+                        title_sane = _sanitize_filename(paper["Title"])[:60]
+                        pdf_filename = f"{title_sane}.pdf"
+                        pdf_path = os.path.join(out_dir, pdf_filename)
+                        ok = create_abstract_pdf(paper, pdf_path)
+                        if ok:
+                            st.write(f"{i}. Abstract-PDF erstellt: **{pdf_filename}**")
+                    st.success("Download/PDF-Erstellung abgeschlossen.")
+
+        # 3) Excel-Export
+        st.subheader("Excel-Export (alle Paper)")
+
+        codewords_ = "Suchbegriffe"
         timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        safe_codewords = codewords_str.replace(" ", "_").replace(",", "_").replace("/", "_")
+        safe_codewords = codewords_.replace(" ", "_").replace(",", "_").replace("/", "_")
         filename = f"{safe_codewords}_{timestamp_str}.xlsx"
 
         df_main_excel = df_main[[
@@ -566,9 +581,9 @@ def module_codewords_pubmed():
 
             from collections import defaultdict
             source_groups = defaultdict(list)
-            for paper in results_all:
-                src = paper.get("Source", "n/a")
-                source_groups[src].append(paper)
+            for p in results_all:
+                src = p.get("Source", "n/a")
+                source_groups[src].append(p)
 
             for s_name, plist in source_groups.items():
                 rows = []
@@ -602,48 +617,7 @@ def module_codewords_pubmed():
         st.info("Noch keine Suchergebnisse - bitte Suche starten.")
 
 
-##############################################
-# Hilfsfunktion: Sammel-Download
-##############################################
-def _download_all_papers_and_make_pdfs(papers):
-    """
-    Beispielhafter Download-Workflow:
-    1) Erstelle Ordner in st.session_state oder so
-    2) Erzeuge pro Paper ein PDF mit create_abstract_pdf
-    3) Ggf. extrahiere DOIs, lad mehr PDFs
-    """
-
-    if not papers:
-        st.warning("Keine Paper zum Download.")
-        return
-
-    # Zieldir:
-    out_dir = os.path.join(os.getcwd(), f"paper_download_{int(time.time())}")
-    if not os.path.exists(out_dir):
-        os.makedirs(out_dir)
-
-    st.write(f"Erstelle Ordner: `{out_dir}` (lokal)")
-
-    for i, paper in enumerate(papers, start=1):
-        st.write(f"{i}/{len(papers)}: **{paper.get('Title','n/a')}**")
-        # PDF-Name
-        pdf_name = re.sub(r"[^a-zA-Z0-9_]+", "_", paper.get("Title","unnamed"))[:50] + ".pdf"
-        pdf_path = os.path.join(out_dir, pdf_name)
-        success = create_abstract_pdf(paper, pdf_path)
-        if success:
-            st.write(f"-> Abstract-PDF erstellt: `{pdf_name}`")
-
-        # Falls man Headless Chrome-Logik integrieren will, hier
-        # (in Streamlit-Cloud geht das meist nicht):
-        # doi_links = extract_doi_links_from_pdf(pdf_path)
-        # st.write(f"Gefundene DOI-Links in PDF: {doi_links}")
-
-    st.success("Download und PDF-Erstellung abgeschlossen.")
-
-
-##############################
-# Falls Direktstart
-##############################
+# Falls dieses Skript direkt gestartet wird:
 if __name__ == "__main__":
     st.set_page_config(layout="wide")
     module_codewords_pubmed()
