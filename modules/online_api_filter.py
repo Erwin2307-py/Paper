@@ -315,7 +315,11 @@ def load_genes_from_excel(sheet_name: str) -> list:
 # 4) ChatGPT-Funktion zum Filtern
 ##############################################################################
 
-def check_genes_in_text_with_chatgpt(text: str, genes: list, model="gpt-3.5-turbo") -> dict:
+def check_genes_in_text_with_chatgpt(text: str, genes: list, codeword="", model="gpt-3.5-turbo") -> dict:
+    """
+    Prüft mithilfe von ChatGPT, ob die übergebenen Gene im Text vorkommen.
+    Zusätzlich wird ein Codewort in den Prompt eingebaut.
+    """
     openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
     if not openai.api_key:
         st.warning("Kein OPENAI_API_KEY in st.secrets['OPENAI_API_KEY'] hinterlegt!")
@@ -326,14 +330,17 @@ def check_genes_in_text_with_chatgpt(text: str, genes: list, model="gpt-3.5-turb
     if not genes:
         st.info("Keine Gene in der Liste (Sheet leer?) oder keines ausgewählt.")
         return {}
+
     joined_genes = ", ".join(genes)
     prompt = (
+        f"Codewort: {codeword}\n\n"
         f"Hier ist ein Text:\n\n{text}\n\n"
         f"Hier eine Liste von Genen: {joined_genes}\n"
         f"Gib für jedes Gen an, ob es im Text vorkommt (Yes) oder nicht (No).\n"
         f"Antworte in der Form:\n"
         f"GENE: Yes\nGENE2: No\n"
     )
+
     try:
         response = openai.ChatCompletion.create(
             model=model,
@@ -358,9 +365,21 @@ def check_genes_in_text_with_chatgpt(text: str, genes: list, model="gpt-3.5-turb
 # 5) Einstellungen speichern/laden (Profile)
 ##############################################################################
 
-def save_current_settings(profile_name: str, use_pubmed: bool, use_epmc: bool, use_google: bool,
-                          use_semantic: bool, use_openalex: bool, use_core: bool, use_chatgpt: bool,
-                          sheet_choice: str, text_input: str):
+def save_current_settings(profile_name: str,
+                          use_pubmed: bool,
+                          use_epmc: bool,
+                          use_google: bool,
+                          use_semantic: bool,
+                          use_openalex: bool,
+                          use_core: bool,
+                          use_chatgpt: bool,
+                          sheet_choice: str,
+                          final_gene: str,
+                          codeword: str,
+                          text_input: str):
+    """
+    Speichert alle relevanten Settings (inkl. final_gene, codeword) in st.session_state["profiles"].
+    """
     if "profiles" not in st.session_state:
         st.session_state["profiles"] = {}
     st.session_state["profiles"][profile_name] = {
@@ -372,11 +391,16 @@ def save_current_settings(profile_name: str, use_pubmed: bool, use_epmc: bool, u
         "use_core": use_core,
         "use_chatgpt": use_chatgpt,
         "sheet_choice": sheet_choice,
+        "final_gene": final_gene,
+        "codeword": codeword,
         "text_input": text_input
     }
     st.success(f"Profil '{profile_name}' erfolgreich gespeichert.")
 
 def load_settings(profile_name: str):
+    """
+    Lädt die Profileinstellungen (inkl. final_gene, codeword) aus st.session_state["profiles"].
+    """
     if "profiles" in st.session_state:
         profiles = st.session_state["profiles"]
         return profiles.get(profile_name, None)
@@ -417,6 +441,8 @@ def module_online_api_filter():
             "use_core": False,
             "use_chatgpt": False,
             "sheet_choice": "",
+            "final_gene": "",
+            "codeword": "",
             "text_input": ""
         }
     current = st.session_state["current_settings"]
@@ -425,14 +451,14 @@ def module_online_api_filter():
     st.subheader("A) API-Auswahl (Checkboxen) + Verbindungstest")
     col1, col2 = st.columns(2)
     with col1:
-        use_pubmed = st.checkbox("PubMed", value=current["use_pubmed"])
-        use_epmc = st.checkbox("Europe PMC", value=current["use_epmc"])
-        use_google = st.checkbox("Google Scholar", value=current["use_google"])
-        use_semantic = st.checkbox("Semantic Scholar", value=current["use_semantic"])
+        use_pubmed = st.checkbox("PubMed", value=current.get("use_pubmed", False))
+        use_epmc = st.checkbox("Europe PMC", value=current.get("use_epmc", False))
+        use_google = st.checkbox("Google Scholar", value=current.get("use_google", False))
+        use_semantic = st.checkbox("Semantic Scholar", value=current.get("use_semantic", False))
     with col2:
-        use_openalex = st.checkbox("OpenAlex", value=current["use_openalex"])
-        use_core = st.checkbox("CORE", value=current["use_core"])
-        use_chatgpt = st.checkbox("ChatGPT", value=current["use_chatgpt"])
+        use_openalex = st.checkbox("OpenAlex", value=current.get("use_openalex", False))
+        use_core = st.checkbox("CORE", value=current.get("use_core", False))
+        use_chatgpt = st.checkbox("ChatGPT", value=current.get("use_chatgpt", False))
 
     if st.button("Verbindung prüfen"):
         def green_dot():
@@ -459,7 +485,12 @@ def module_online_api_filter():
 
     # ChatGPT-Synonym-Fenster (optional)
     if "synonyms_selected" not in st.session_state:
-        st.session_state["synonyms_selected"] = {"genotype": False, "phenotype": False, "snp": False, "inc_dec": False}
+        st.session_state["synonyms_selected"] = {
+            "genotype": False,
+            "phenotype": False,
+            "snp": False,
+            "inc_dec": False
+        }
     synonyms_local = st.session_state["synonyms_selected"]
     if use_chatgpt:
         with st.expander("ChatGPT: Begriffe & Synonyme auswählen"):
@@ -496,7 +527,8 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
     st.subheader("B) Gene-Filter & -Auswahl")
 
     st.markdown("""Wähle ein Sheet aus `modules/genes.xlsx`, filtere nach Anfangsbuchstaben und wähle 
-    genau **ein** Gen aus. Oder gib ein eigenes Gen ein, das die Auswahl aus der Liste überschreibt.""")
+    genau **ein** Gen aus. Oder gib ein eigenes Gen ein, das die Auswahl aus der Liste überschreibt.
+    Außerdem kannst du ein Codewort definieren, das ChatGPT zusätzlich in der Suche berücksichtigt.""")
 
     excel_path = os.path.join("modules", "genes.xlsx")
     if not os.path.exists(excel_path):
@@ -520,7 +552,6 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
     if current_sheet not in sheet_names:
         current_sheet = sheet_names[0]
 
-    # Sheet-Auswahl
     sheet_choice = st.selectbox("Wähle ein Sheet in genes.xlsx:", sheet_names, index=sheet_names.index(current_sheet))
     all_genes_in_sheet = load_genes_from_excel(sheet_choice)
 
@@ -536,7 +567,11 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
             filtered_genes = [g for g in all_genes_in_sheet if g and g[0].upper() == selected_letter]
 
         if filtered_genes:
-            selected_gene = st.selectbox("Wähle genau 1 Gen aus der gefilterten Liste:", filtered_genes)
+            selected_gene = st.selectbox(
+                "Wähle genau 1 Gen aus der gefilterten Liste:",
+                filtered_genes,
+                index=filtered_genes.index(current.get("final_gene", filtered_genes[0])) if current.get("final_gene", "") in filtered_genes else 0
+            )
         else:
             st.info("Keine Gene mit diesem Anfangsbuchstaben gefunden.")
             selected_gene = ""
@@ -545,8 +580,10 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
         selected_gene = ""
 
     # Optional eigenes Gen eingeben (überschreibt die Auswahl)
-    custom_gene_input = st.text_input("Oder eigenes Gen eingeben (optional):")
+    custom_gene_input = st.text_input("Oder eigenes Gen eingeben (optional):", value=current.get("final_gene", ""))
     final_gene = custom_gene_input.strip() if custom_gene_input.strip() else selected_gene.strip()
+
+    codeword_input = st.text_input("Codewort für ChatGPT-Suche (optional):", value=current.get("codeword", ""))
 
     st.write("---")
     st.subheader("Text eingeben (z. B. Abstract)")
@@ -569,7 +606,11 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
             if synonyms_local["inc_dec"]:
                 genes_to_check += ["increase", "decrease"]
 
-            result_map = check_genes_in_text_with_chatgpt(text_input, genes_to_check)
+            result_map = check_genes_in_text_with_chatgpt(
+                text_input,
+                genes=genes_to_check,
+                codeword=codeword_input
+            )
             if not result_map:
                 st.info("Keine Ergebnisse oder Fehler aufgetreten.")
             else:
@@ -676,7 +717,9 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
     st.info(
         "Fertig. Du kannst oben die APIs auswählen und testen sowie Profile speichern/laden. "
         "Im Abschnitt B) kannst du ein Sheet wählen, nach Anfangsbuchstabe filtern und genau 1 Gen auswählen. "
-        "Alternativ kannst du ein eigenes Gen eingeben. Mit ChatGPT kannst du dann prüfen, ob das Gen (ggf. inkl. Synonyme) im eingegebenen Text vorkommt."
+        "Alternativ kannst du ein eigenes Gen eingeben. Du kannst außerdem ein Codewort definieren, "
+        "das ChatGPT zusammen mit dem Gen verwendet. Mit ChatGPT kannst du dann prüfen, ob das Gen (ggf. "
+        "inkl. Synonyme) im eingegebenen Text vorkommt."
     )
 
     # Einstellungen in Session speichern
@@ -689,6 +732,8 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
         "use_core": use_core,
         "use_chatgpt": use_chatgpt,
         "sheet_choice": sheet_choice,
+        "final_gene": final_gene,
+        "codeword": codeword_input,
         "text_input": text_input
     }
 
@@ -699,16 +744,18 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
             st.warning("Bitte einen Profilnamen eingeben.")
         else:
             save_current_settings(
-                pname,
-                use_pubmed,
-                use_epmc,
-                use_google,
-                use_semantic,
-                use_openalex,
-                use_core,
-                use_chatgpt,
-                sheet_choice,
-                text_input
+                profile_name=pname,
+                use_pubmed=use_pubmed,
+                use_epmc=use_epmc,
+                use_google=use_google,
+                use_semantic=use_semantic,
+                use_openalex=use_openalex,
+                use_core=use_core,
+                use_chatgpt=use_chatgpt,
+                sheet_choice=sheet_choice,
+                final_gene=final_gene,
+                codeword=codeword_input,
+                text_input=text_input
             )
 
 if __name__ == "__main__":
