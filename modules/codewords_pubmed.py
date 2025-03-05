@@ -20,7 +20,7 @@ except ImportError:
 
 # ChatGPT/OpenAI:
 import openai
-# openai.api_key = "sk-XXX"  # Bei Bedarf hier deinen API-Key
+# Achtung: Kein Schlüssel hier hartkodieren, sondern st.secrets nutzen.
 
 # PDF-Erzeugung mit fpdf
 try:
@@ -35,8 +35,10 @@ except ImportError:
 def generate_paper_via_chatgpt(prompt_text, model="gpt-3.5-turbo"):
     """
     Ruft die ChatGPT-API auf und erzeugt ein Paper (Text).
+    Holt den API-Key aus st.secrets["openai_api_key"].
     """
     try:
+        openai.api_key = st.secrets["openai_api_key"]  # <-- KEY aus secrets
         response = openai.ChatCompletion.create(
             model=model,
             messages=[{"role": "user", "content": prompt_text}],
@@ -689,7 +691,6 @@ def module_codewords_pubmed():
         main_cols = ["Title","PubMed ID","Abstract","Year","Publisher","Population","Source"]
         ws_main.append(main_cols)
 
-        # Vorher: safe_excel_value
         def safe_row(row):
             return [safe_excel_value(x) for x in row]
 
@@ -700,7 +701,6 @@ def module_codewords_pubmed():
         # Für jede Source ein eigenes Sheet
         for s_name, plist in group_.items():
             wsx = wb.create_sheet(title=s_name[:31])
-            # flatten
             all_dicts = []
             for p in plist:
                 fd = flatten_dict(p.get("FullData", {}))
@@ -805,5 +805,5 @@ def main():
 
 if __name__ == "__main__":
     st.set_page_config(layout="wide")
-    # openai.api_key = "...hier dein Key..."
+    # Kein Key hier direkt, wir verwenden st.secrets["openai_api_key"] im Code.
     main()
