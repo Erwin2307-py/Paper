@@ -301,9 +301,6 @@ def search_openalex(query: str, max_results=100):
 # CORE
 ##############################
 def search_core(query: str, max_results=100):
-    """
-    Hier ggf. an CORE-API anbinden.
-    """
     return [{
         "Source": "CORE",
         "Title": "Dummy Title from CORE",
@@ -322,7 +319,7 @@ def search_core(query: str, max_results=100):
 def create_abstract_pdf(paper, output_stream):
     """
     Erstellt ein PDF mit FPDF, in dem Titel + Abstract + Metadaten enthalten sind.
-    Schreibt das Ergebnis in einen Binary-Stream (output_stream).
+    Schreibt das Ergebnis als Bytes in den übergebenen output_stream.
     """
     pdf = FPDF()
     pdf.add_page()
@@ -351,7 +348,13 @@ def create_abstract_pdf(paper, output_stream):
     pdf.multi_cell(page_width, 8, wrap_text(f"** Year: {paper.get('Year','n/a')}"))
     pdf.multi_cell(page_width, 8, wrap_text(f"** Publisher: {paper.get('Publisher','n/a')}"))
 
-    pdf.output(output_stream, 'F')  # schreibt in den offenen Stream
+    # Statt pdf.output(output_stream, 'F'), geben wir einen String zurück => Bytes
+    pdf_string = pdf.output(dest='S')  # => liefert str in fpdf 1.x
+    # => Umwandeln in Bytes (z.B. latin-1 oder cp1252)
+    pdf_bytes = pdf_string.encode('latin-1', 'replace')
+
+    output_stream.write(pdf_bytes)
+
 
 def _sanitize_filename(fname):
     return re.sub(r"[^a-zA-Z0-9_\-]+", "_", fname)
@@ -370,7 +373,7 @@ def load_settings(profile_name: str):
 # Haupt-Modul
 ##############################
 def module_codewords_pubmed():
-    st.title("Codewörter & Multi-API-Suche: Filter + Neues Browserfenster + PDF-Download")
+    st.title("Codewörter & Multi-API-Suche: Filter + Neues Browserfenster + PDF-Download (gefixt)")
 
     # 1) Profil-Auswahl
     if "profiles" not in st.session_state or not st.session_state["profiles"]:
@@ -448,6 +451,7 @@ def module_codewords_pubmed():
         # Speichern in Session State
         st.session_state["search_results"] = results_all
 
+    # Anzeige der Ergebnisse
     if "search_results" in st.session_state and st.session_state["search_results"]:
         results_all = st.session_state["search_results"]
         st.write("## Gesamtergebnis aus allen aktivierten APIs")
@@ -510,7 +514,6 @@ def module_codewords_pubmed():
                 if not chosen_ids:
                     st.warning("Keine Paper ausgewählt.")
                 else:
-                    # Build a list of Paper-Objects
                     selected_papers = []
                     for c in chosen_ids:
                         row = df_filtered.loc[df_filtered["identifier"] == c].iloc[0]
@@ -526,17 +529,15 @@ def module_codewords_pubmed():
                     if not selected_papers:
                         st.warning("Keine passenden Paper gefunden.")
                     else:
-                        # Erstelle ZIP in memory
                         zip_buffer = io.BytesIO()
                         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
                             for paper in selected_papers:
                                 title_sane = _sanitize_filename(paper["Title"][:50])
                                 pdf_filename = f"{title_sane}.pdf"
 
-                                pdf_bytes = io.BytesIO()
-                                create_abstract_pdf(paper, pdf_bytes)
-                                # pdf_bytes.getvalue() => Inhalt der PDF
-                                zf.writestr(pdf_filename, pdf_bytes.getvalue())
+                                pdf_bytes_io = io.BytesIO()
+                                create_abstract_pdf(paper, pdf_bytes_io)
+                                zf.writestr(pdf_filename, pdf_bytes_io.getvalue())
 
                         zip_buffer.seek(0)
                         zip_filename = f"selected_papers_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
