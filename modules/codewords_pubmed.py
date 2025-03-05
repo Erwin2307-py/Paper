@@ -8,12 +8,7 @@ from scholarly import scholarly
 from datetime import datetime
 from collections import defaultdict
 import re
-
-try:
-    import fitz  # PyMuPDF
-    from fpdf import FPDF
-except ImportError:
-    st.error("Bitte installiere 'fitz' (PyMuPDF) und 'fpdf', z.B.: 'pip install pymupdf fpdf'.")
+import base64
 
 
 ##############################
@@ -28,6 +23,7 @@ def flatten_dict(d, parent_key="", sep="__"):
         else:
             items.append((new_key, v))
     return dict(items)
+
 
 ##############################
 # PubMed-Funktionen
@@ -49,6 +45,7 @@ def esearch_pubmed(query: str, max_results=100, timeout=10):
         st.error(f"PubMed-Suche fehlgeschlagen: {e}")
         return []
 
+
 def parse_efetch_response(xml_text: str) -> dict:
     root = ET.fromstring(xml_text)
     pmid_abstract_map = {}
@@ -60,6 +57,7 @@ def parse_efetch_response(xml_text: str) -> dict:
         if pmid_val:
             pmid_abstract_map[pmid_val] = abstract_text
     return pmid_abstract_map
+
 
 def fetch_pubmed_abstracts(pmids, timeout=10):
     if not pmids:
@@ -77,6 +75,7 @@ def fetch_pubmed_abstracts(pmids, timeout=10):
     except Exception as e:
         st.error(f"Fehler beim Abrufen der Abstracts via EFetch: {e}")
         return {}
+
 
 def get_pubmed_details(pmids: list):
     if not pmids:
@@ -126,11 +125,13 @@ def get_pubmed_details(pmids: list):
         })
     return results
 
+
 def search_pubmed(query: str, max_results=100):
     pmids = esearch_pubmed(query, max_results=max_results)
     if not pmids:
         return []
     return get_pubmed_details(pmids)
+
 
 ##############################
 # Europe PMC
@@ -177,6 +178,7 @@ def search_europe_pmc(query: str, max_results=100, timeout=30, retries=3, delay=
     st.error("Europe PMC-Suche wiederholt fehlgeschlagen (Timeout).")
     return []
 
+
 ##############################
 # Google Scholar
 ##############################
@@ -207,6 +209,7 @@ def search_google_scholar(query: str, max_results=100):
     except Exception as e:
         st.error(f"Fehler bei der Google Scholar-Suche: {e}")
     return results
+
 
 ##############################
 # Semantic Scholar
@@ -257,6 +260,7 @@ def search_semantic_scholar(query: str, max_results=100, retries=3, delay=5):
     st.error("Semantic Scholar: Rate limit überschritten.")
     return results
 
+
 ##############################
 # OpenAlex
 ##############################
@@ -296,6 +300,7 @@ def search_openalex(query: str, max_results=100):
         st.error(f"Fehler bei der OpenAlex-Suche: {e}")
         return []
 
+
 ##############################
 # CORE
 ##############################
@@ -314,6 +319,7 @@ def search_core(query: str, max_results=100):
         "Population": "n/a",
         "FullData": {"demo_core": "CORE dummy data."}
     }]
+
 
 ##############################
 # PDF/Download-Funktionen
@@ -357,8 +363,10 @@ def create_abstract_pdf(paper, output_file):
         st.error(f"Fehler beim Erstellen des PDF: {e}")
         return False
 
+
 def _sanitize_filename(fname):
     return re.sub(r"[^a-zA-Z0-9_\-]+", "_", fname)
+
 
 ##############################
 # Profil-Verwaltung
@@ -370,11 +378,12 @@ def load_settings(profile_name: str):
             return profiles[profile_name]
     return None
 
+
 ##############################
 # Haupt-Modul
 ##############################
 def module_codewords_pubmed():
-    st.title("Codewörter & Multi-API-Suche: Abstract direkt in Liste + Paper Download")
+    st.title("Codewörter & Multi-API-Suche: Filter + Öffnen der gefilterten Paper in neuem Fenster")
 
     # 1) Profil-Auswahl
     if "profiles" not in st.session_state or not st.session_state["profiles"]:
@@ -396,7 +405,6 @@ def module_codewords_pubmed():
     st.write("Beispiel: genotyp, SNP, phänotyp")
     logic_option = st.radio("Logik:", options=["AND", "OR"], index=1)
 
-    # Button => Suche
     if st.button("Suche starten"):
         raw_list = [w.strip() for w in codewords_str.replace(",", " ").split() if w.strip()]
         if not raw_list:
@@ -408,7 +416,7 @@ def module_codewords_pubmed():
 
         results_all = []
 
-        # APIs laut Profil
+        # Aktivierte APIs laut Profil
         if profile_data.get("use_pubmed", False):
             st.write("### PubMed")
             pubmed_res = search_pubmed(query_str, max_results=100)
@@ -451,11 +459,10 @@ def module_codewords_pubmed():
 
         st.session_state["search_results"] = results_all
 
-    # Anzeige / Filter
     if "search_results" in st.session_state and st.session_state["search_results"]:
         results_all = st.session_state["search_results"]
-        st.write("## Gesamtergebnis (aus session_state)")
 
+        st.write("## Gesamtergebnis aus allen aktivierten APIs")
         df_main = pd.DataFrame([
             {
                 "Title": p.get("Title", "n/a"),
@@ -469,100 +476,48 @@ def module_codewords_pubmed():
             for p in results_all
         ])
 
-        adv_filter = st.checkbox("Erweiterte Filter-Funktion aktivieren?")
+        st.dataframe(df_main)
+
+        # Checkbox: Filter
+        st.write("---")
+        st.subheader("Erweiterte Filterung + Öffnen in neuem Fenster")
+        adv_filter = st.checkbox("Filter aktivieren?")
 
         if adv_filter:
-            left_col, right_col = st.columns(2)
-            with left_col:
-                st.subheader("Originale Liste (ungefiltert)")
-                st.dataframe(df_main)
+            text_filter = st.text_input("Suchbegriff (Title/Publisher) für Filter:", "")
+            year_list = ["Alle"] + [str(y) for y in range(1900, 2026)]
+            year_choice = st.selectbox("Erscheinungsjahr (1900-2025):", year_list)
 
-            with right_col:
-                st.subheader("Gefilterte Liste (rechts)")
-                text_filter = st.text_input("Suchbegriff (Title/Publisher):", "")
-                year_list = ["Alle"] + [str(y) for y in range(1900, 2026)]
-                year_choice = st.selectbox("Erscheinungsjahr (1900-2025):", year_list)
+            df_filtered = df_main.copy()
+            if text_filter.strip():
+                tf = text_filter.lower()
+                def match_filter(row):
+                    t = (row["Title"] or "").lower()
+                    p = (row["Publisher"] or "").lower()
+                    return (tf in t) or (tf in p)
+                df_filtered = df_filtered[df_filtered.apply(match_filter, axis=1)]
 
-                df_filtered = df_main.copy()
-                if text_filter.strip():
-                    tf = text_filter.lower()
-                    def match_filter(row):
-                        t = (row["Title"] or "").lower()
-                        p = (row["Publisher"] or "").lower()
-                        return (tf in t) or (tf in p)
-                    df_filtered = df_filtered[df_filtered.apply(match_filter, axis=1)]
+            if year_choice != "Alle":
+                df_filtered = df_filtered[df_filtered["Year"] == year_choice]
 
-                if year_choice != "Alle":
-                    df_filtered = df_filtered[df_filtered["Year"] == year_choice]
+            st.write("### Gefilterte Paper (Preview)")
+            st.dataframe(df_filtered)
 
-                st.dataframe(df_filtered)
-        else:
-            st.dataframe(df_main)
-
-        # Paper-Auswahl: per Multiselect
-        st.subheader("Paper-Auswahl")
-        df_main["identifier"] = df_main.apply(lambda r: f"{r['Title']}||{r['PubMed ID']}", axis=1)
-        all_idents = df_main["identifier"].tolist()
-        chosen_idents = st.multiselect("Wähle Paper (Titel||PMID) für PDF:", all_idents)
-        chosen_idents_set = set(chosen_idents)
-
-        # Lokalen Ordner abfragen
-        st.write("Lokaler Ordner für PDF-Download (z.B. `C:/Users/<Name>/Documents` oder `/home/user/Desktop`):")
-        folder_path = st.text_input("Ordnerpfad:", value=os.path.join(os.getcwd(), "paper_download"))
-
-        # Button: Download
-        if st.button("Paper herunterladen & PDF erstellen"):
-            if not chosen_idents:
-                st.warning("Keine Paper ausgewählt.")
-            else:
-                selected_papers = []
-                for c in chosen_idents:
-                    row = df_main.loc[df_main["identifier"] == c].iloc[0]
-                    match = None
-                    for p in results_all:
-                        if p["Title"] == row["Title"] and p["PubMed ID"] == row["PubMed ID"]:
-                            match = p
-                            break
-                    if match:
-                        selected_papers.append(match)
-
-                if not selected_papers:
-                    st.warning("Keine passenden Paper gefunden.")
+            # Button: "Gefilterte Paper in neuem Fenster öffnen"
+            # => Generiert ein HTML aus df_filtered und bietet Link an
+            if st.button("Gefilterte Paper in neuem Fenster anschauen"):
+                if df_filtered.empty:
+                    st.warning("Keine gefilterten Paper vorhanden.")
                 else:
-                    # Erzeuge Ordner (falls nicht existiert)
-                    if not os.path.exists(folder_path):
-                        try:
-                            os.makedirs(folder_path)
-                            st.write(f"Ordner erstellt: {folder_path}")
-                        except Exception as e:
-                            st.error(f"Konnte Ordner nicht erstellen: {e}")
-                            return
-                    else:
-                        st.write(f"Nutze existierenden Ordner: {folder_path}")
+                    # Erzeuge HTML
+                    filtered_html = df_filtered.to_html(index=False, escape=False)
+                    # Base64-codieren
+                    b64_html = base64.b64encode(filtered_html.encode()).decode()
+                    html_link = f'<a href="data:text/html;base64,{b64_html}" target="_blank">Gefilterte Paper hier öffnen</a>'
+                    st.markdown(html_link, unsafe_allow_html=True)
 
-                    for i, paper in enumerate(selected_papers, start=1):
-                        title_sane = _sanitize_filename(paper["Title"])[:60]
-                        pdf_filename = f"{title_sane}.pdf"
-                        pdf_path = os.path.join(folder_path, pdf_filename)
-                        ok = create_abstract_pdf(paper, pdf_path)
-                        if ok:
-                            st.write(f"{i}. Abstract-PDF erstellt: **{pdf_filename}**")
-                    st.success("Download/PDF-Erstellung abgeschlossen.")
-
-        # Link: in neuem Tab
-        st.subheader("Öffne Paper in separatem Browserfenster")
-        for idx, row in df_main.iterrows():
-            title = row["Title"]
-            pmid = row["PubMed ID"]
-            if pmid != "n/a":
-                link_url = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}"
-            else:
-                link_url = f"https://www.google.com/search?q={title.replace(' ', '+')}"
-
-            # Wir nutzen target=_blank
-            st.markdown(f"- **{title}**: [In neuem Tab öffnen]({link_url}){{:target=\"_blank\"}}")
-
-        # Excel-Export
+        # Download/Export: (wie gehabt)
+        st.write("---")
         st.subheader("Excel-Export (alle Paper)")
 
         codewords_ = "Suchbegriffe"
@@ -570,18 +525,19 @@ def module_codewords_pubmed():
         safe_codewords = codewords_.replace(" ", "_").replace(",", "_").replace("/", "_")
         filename = f"{safe_codewords}_{timestamp_str}.xlsx"
 
-        df_main_excel = df_main[[
-            "Title", "PubMed ID", "Abstract", "Year", "Publisher", "Population", "Source"
-        ]]
-
         from collections import defaultdict
         source_groups = defaultdict(list)
         for p in results_all:
             src = p.get("Source", "n/a")
             source_groups[src].append(p)
 
+        df_main_excel = df_main[[
+            "Title", "PubMed ID", "Abstract", "Year", "Publisher", "Population", "Source"
+        ]]
+
         with pd.ExcelWriter(filename, engine="openpyxl") as writer:
             df_main_excel.to_excel(writer, sheet_name="Main", index=False)
+
             for s_name, plist in source_groups.items():
                 rows = []
                 for p in plist:
@@ -595,7 +551,11 @@ def module_codewords_pubmed():
                     flat_fd["Source"] = p.get("Source", "n/a")
                     rows.append(flat_fd)
 
-                df_api = pd.DataFrame(rows) if rows else pd.DataFrame()
+                if rows:
+                    df_api = pd.DataFrame(rows)
+                else:
+                    df_api = pd.DataFrame()
+
                 short_sheet = s_name[:31] if s_name else "API"
                 df_api.to_excel(writer, sheet_name=short_sheet, index=False)
 
@@ -607,7 +567,7 @@ def module_codewords_pubmed():
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
     else:
-        st.info("Noch keine Suchergebnisse - bitte Suche starten.")
+        st.info("Noch keine Ergebnisse. Bitte Suche starten.")
 
 
 # Falls dieses Skript direkt gestartet wird:
