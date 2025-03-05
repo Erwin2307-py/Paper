@@ -697,7 +697,10 @@ def module_paperqa2():
 def page_home():
     st.title("Welcome to the Main Menu")
     st.write("Choose a module in the sidebar to proceed.")
-    st.image("Bild1.jpg", caption="Willkommen!", use_column_width=True)
+
+    # Anstelle von use_column_width=True nun use_container_width=False
+    # und width=600, damit das Bild nur so breit wie gewünscht angezeigt wird
+    st.image("Bild1.jpg", caption="Willkommen!", use_container_width=False, width=600)
 
 
 def page_codewords_pubmed():
@@ -814,6 +817,7 @@ def main():
     )
     page_fn = sidebar_module_navigation()
     page_fn()
+
 
 if __name__ == '__main__':
     main()
