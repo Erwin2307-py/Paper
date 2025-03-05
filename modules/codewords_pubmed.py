@@ -28,11 +28,9 @@ except ImportError:
 # A) ChatGPT: Paper erstellen & lokal speichern
 ###############################################################################
 def generate_paper_via_chatgpt(prompt_text, model="gpt-3.5-turbo"):
-    """
-    Ruft die ChatGPT-API auf und erzeugt ein Paper (Text).
-    """
+    """Ruft die ChatGPT-API auf und erzeugt ein Paper (Text)."""
     try:
-        openai.api_key = st.secrets["OPENAI_API_KEY"]  # KEY aus secrets
+        openai.api_key = st.secrets["OPENAI_API_KEY"]  # Holt KEY aus secrets
         response = openai.ChatCompletion.create(
             model=model,
             messages=[{"role": "user", "content": prompt_text}],
@@ -42,16 +40,14 @@ def generate_paper_via_chatgpt(prompt_text, model="gpt-3.5-turbo"):
         return response.choices[0].message.content
     except Exception as e:
         st.error(
-            f"Fehler bei ChatGPT-API: '{e}'.\n"
-            "Prüfe, ob 'OPENAI_API_KEY' in secrets.toml hinterlegt ist!"
+            "Fehler bei ChatGPT-API: "
+            f"'{e}'.\nPrüfe, ob 'OPENAI_API_KEY' in secrets.toml hinterlegt ist!"
         )
         return ""
 
 
 def save_text_as_pdf(text, pdf_path, title="Paper"):
-    """
-    Speichert den gegebenen Text in ein PDF (lokal).
-    """
+    """Speichert den gegebenen Text in ein PDF (lokal)."""
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -125,9 +121,10 @@ def download_arxiv_pdf(pdf_url, local_filepath):
 
 
 ###############################################################################
-# C) Multi-API-Suche (PubMed, Europe PMC, Google Scholar, Semantic Scholar, OpenAlex)
+# C) Multi-API-Suche
 ###############################################################################
 def flatten_dict(d, parent_key="", sep="__"):
+    """Wandelt ein verschachteltes Dict in ein flaches Dict um."""
     items = []
     for k, v in d.items():
         new_key = f"{parent_key}{sep}{k}" if parent_key else k
@@ -171,6 +168,7 @@ def parse_efetch_response(xml_text: str) -> dict:
 
 
 def fetch_pubmed_abstracts(pmids, timeout=10):
+    """Holt Abstracts per efetch."""
     if not pmids:
         return {}
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
@@ -381,7 +379,8 @@ def create_gpt_paper_pdf(gpt_text, output_stream, title="ChatGPT-Paper"):
 ###############################################################################
 def load_settings(profile_name: str):
     if "profiles" in st.session_state:
-        return st.session_state["profiles"].get(profile_name, None)
+        profiles = st.session_state["profiles"]
+        return profiles.get(profile_name, None)
     return None
 
 
@@ -399,13 +398,12 @@ def safe_excel_value(value):
 
 
 ###############################################################################
-# G) ChatGPT-Scoring mit Genes + Codewords
+# G) ChatGPT-Scoring in extra Fenster + Genes-Check
 ###############################################################################
-def chatgpt_online_search(papers, codewords, genes, top_k=100):
+def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     """
     Schleife über Papers mit eigener 'Fortschritt'-Anzeige in Expander.
-    codewords: String
-    genes: Liste von Genen (aus Profil) – falls leer, ignorieren wir es.
+    Falls 'genes' vorhanden ist, fließt das in den Prompt mit ein.
     """
     if not papers:
         return []
@@ -422,24 +420,24 @@ def chatgpt_online_search(papers, codewords, genes, top_k=100):
     results_scored = []
     total = len(papers)
 
-    # Genes in Prompt-Text zusammenbauen:
+    # Gene-Liste in String fassen:
     genes_str = ""
     if genes:
         genes_str = ", ".join(genes)
 
     for idx, paper in enumerate(papers, start=1):
-        # Updaten wir nur diese Zeile => immer das aktuelle Paper
-        paper_title = paper.get('Title','(n/a)')
+        # Updaten wir NUR diese Zeile => immer das aktuelle Paper
+        paper_title = paper.get('Title', '(kein Titel)')
         paper_status.write(f"Paper {idx}/{total}: **{paper_title}**")
 
         # Prompt:
         prompt_text = (
             f"Codewörter: {codewords}\n"
-            f"Genes: {genes_str}\n\n"
+            f"Gene: {genes_str}\n\n"
             f"Paper:\n"
             f"Titel: {paper_title}\n"
             f"Abstract:\n{paper.get('Abstract','(kein Abstract)')}\n\n"
-            "Gib mir eine Zahl von 0 bis 100 (Relevanz), wobei du sowohl Codewords als auch Genes berücksichtigst."
+            "Gib mir eine Zahl von 0 bis 100 (Relevanz), wobei sowohl Codewörter als auch Gene berücksichtigt werden."
         )
         try:
             response = openai.ChatCompletion.create(
@@ -462,18 +460,18 @@ def chatgpt_online_search(papers, codewords, genes, top_k=100):
         new_p["Relevance"] = score
         results_scored.append(new_p)
 
-    # Sortieren
+    # Sortieren nach Relevanz
     results_scored.sort(key=lambda x: x["Relevance"], reverse=True)
     return results_scored[:top_k]
 
 
 ###############################################################################
-# H) Multi-API-Suche + ChatGPT
+# H) Multi-API-Suche + ChatGPT mit Genes (falls im Profil hinterlegt)
 ###############################################################################
 def module_codewords_pubmed():
-    st.title("Multi-API-Suche (PubMed, Europe PMC, Google Scholar...) + ChatGPT Online Suche (Genes)")
+    st.title("Multi-API-Suche (PubMed, Europe PMC, Google Scholar, ...) + ChatGPT Online Suche (inkl. Genes)")
 
-    # Profile
+    # Profile check
     if "profiles" not in st.session_state or not st.session_state["profiles"]:
         st.warning("Keine Profile (optional).")
         return
@@ -487,52 +485,40 @@ def module_codewords_pubmed():
     profile_data = load_settings(chosen_profile)
     st.json(profile_data)
 
-    # Hier nehmen wir an, das Profil hat "codewords" (String) und "genes" (Liste)
-    # z.B.:
-    # {
-    #   "use_pubmed": True,
-    #   "use_epmc": True,
-    #   ...
-    #   "codewords": "Vitamin D",
-    #   "genes": ["GeneA", "GeneB"]
-    # }
+    # Aus dem Profil kann man codewords (String) + genes (Liste) ziehen:
+    codewords_str = st.text_input("Codewörter (werden mit Genes kombiniert):", "")
+    logic_option = st.radio("Logik:", ["AND","OR"], 1)
 
-    codewords_str = profile_data.get("codewords", "")
-    gene_list = profile_data.get("genes", [])  # Liste
+    # Falls das Profil Genes enthält, nutzen wir sie gleich:
+    genes = profile_data.get("genes", [])
+    st.write(f"Profil-Genes (falls vorhanden): {genes}")
 
-    st.write("**Codewörter**:", codewords_str)
-    st.write("**Gene** aus Profil:", gene_list)
-
-    logic_option = st.radio("Logik für Codewörter (UND Gene wird extra):", ["AND","OR"], 1)
-
-    # UI-Button "Suche starten"
     if st.button("Suche starten"):
         raw_list = [w.strip() for w in codewords_str.replace(",", " ").split() if w.strip()]
-        if not raw_list and not gene_list:
-            st.warning("Keine Codewörter und keine Gene im Profil. Nichts zu suchen.")
-            return
 
-        # Query aus codewords
+        # Aus codewords + genes => finaler Querystring, z.B. OR-Verknüpfung
+        # 1) codewords verknüpfen (AND oder OR) => query_str
         if logic_option == "AND":
             query_str = " AND ".join(raw_list) if raw_list else ""
         else:
             query_str = " OR ".join(raw_list) if raw_list else ""
 
-        # Genes extra hinzufügen, z.B. Genes => extra anheften:
-        # Du kannst es anpassen, ob du Genes als OR oder AND verknüpfen willst
-        if gene_list:
-            # wir machen "OR Genes"
-            genes_query = " OR ".join(gene_list)
+        # 2) Genes in Query einbauen => z.B. als OR:
+        if genes:
+            genes_query = " OR ".join(genes)
             if query_str:
                 query_str = f"({query_str}) OR ({genes_query})"
             else:
                 query_str = genes_query
 
+        if not query_str.strip():
+            st.warning("Keine Codewörter und keine Gene vorhanden -> Abbruch.")
+            return
+
         st.write("Finale Suchanfrage:", query_str)
 
         results_all = []
 
-        # Schauen, welche APIs aktiv sind
         if profile_data.get("use_pubmed", False):
             pm = search_pubmed(query_str, max_results=200)
             st.write(f"PubMed: {len(pm)}")
@@ -558,7 +544,7 @@ def module_codewords_pubmed():
             st.write(f"OpenAlex: {len(oa)}")
             results_all.extend(oa)
 
-        # Begrenzen auf 1000
+        # Maximal 1000 begrenzen
         if len(results_all) > 1000:
             results_all = results_all[:1000]
 
@@ -569,26 +555,27 @@ def module_codewords_pubmed():
         st.session_state["search_results"] = results_all
         st.write(f"Gefundene Papers insgesamt: {len(results_all)}")
 
-    # Anzeige
+    # Falls Ergebnisse vorhanden:
     if "search_results" in st.session_state and st.session_state["search_results"]:
         df_main = pd.DataFrame(st.session_state["search_results"])
         st.dataframe(df_main)
 
         st.write("---")
-        if st.button("ChatGPT-Online-Suche (Genes+Codewords)"):
-            # Hier ChatGPT-Scoring => codewords + gene_list
-            if not codewords_str.strip() and not gene_list:
-                st.warning("Bitte Codewörter oder Gene haben, um Relevanz zu bestimmen!")
+        st.subheader("ChatGPT-Online-Suche (inkl. Genes)")
+
+        if st.button("Starte ChatGPT-Online-Suche (max. 1000 Papers)"):
+            if not codewords_str.strip() and not genes:
+                st.warning("Bitte Codewörter oder Gene eingeben/haben, um Relevanz zu bestimmen!")
             else:
                 st.write("Starte ChatGPT-Scoring...\n")
-                top_results = chatgpt_online_search(
+                top_results = chatgpt_online_search_with_genes(
                     st.session_state["search_results"],
                     codewords=codewords_str,
-                    genes=gene_list,   # => Gene
+                    genes=genes,
                     top_k=100
                 )
                 if top_results:
-                    st.subheader("Top 100 Paper (nach ChatGPT-Relevanz, Genes+Codewords)")
+                    st.subheader("Top 100 Paper (nach ChatGPT-Relevanz, inkl. Genes)")
                     df_top = pd.DataFrame(top_results)
                     st.dataframe(df_top)
 
@@ -597,10 +584,10 @@ def module_codewords_pubmed():
 # I) Haupt-App
 ###############################################################################
 def main():
-    st.title("Kombinierte App: ChatGPT-Paper, arXiv-Suche, Multi-API-Suche (mit Genes im Profil)")
+    st.title("Kombinierte App: ChatGPT-Paper, arXiv-Suche, Multi-API-Suche (Genes+Codewords)")
 
-    # Beispielprofil
     if "profiles" not in st.session_state:
+        # Beispiel: wir speichern Genes in "genes", Codewords in "codewords"
         st.session_state["profiles"] = {
             "DefaultProfile": {
                 "use_pubmed": True,
@@ -608,8 +595,8 @@ def main():
                 "use_google": True,
                 "use_semantic": True,
                 "use_openalex": True,
-                "codewords": "Vitamin D",
-                "genes": ["GeneX", "GeneY"]
+                "genes": ["BRCA1", "TP53"],
+                "codewords": "Cancer therapy"
             }
         }
 
