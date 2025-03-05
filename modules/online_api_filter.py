@@ -304,6 +304,7 @@ def load_genes_from_excel(sheet_name: str) -> list:
     excel_path = os.path.join("modules", "genes.xlsx")
     try:
         df = pd.read_excel(excel_path, sheet_name=sheet_name, header=None)
+        # Gene ab Zeile 3, Spalte C (Index: Zeile = 2, Spalte = 2)
         gene_series = df.iloc[2:, 2]  # Ab Zeile 3, Spalte C
         return gene_series.dropna().astype(str).tolist()
     except Exception as e:
@@ -323,7 +324,7 @@ def check_genes_in_text_with_chatgpt(text: str, genes: list, model="gpt-3.5-turb
         st.warning("Kein Text eingegeben.")
         return {}
     if not genes:
-        st.info("Keine Gene in der Liste (Sheet leer?).")
+        st.info("Keine Gene in der Liste (Sheet leer?) oder keines ausgewählt.")
         return {}
     joined_genes = ", ".join(genes)
     prompt = (
@@ -405,6 +406,7 @@ def module_online_api_filter():
         else:
             st.info("Kein Profil zum Laden ausgewählt.")
 
+    # Standard-Einstellungen in SessionState anlegen (falls nicht vorhanden)
     if "current_settings" not in st.session_state:
         st.session_state["current_settings"] = {
             "use_pubmed": True,
@@ -419,7 +421,7 @@ def module_online_api_filter():
         }
     current = st.session_state["current_settings"]
 
-    # API-Auswahl & Verbindungstest
+    # A) API-Auswahl & Verbindungstest
     st.subheader("A) API-Auswahl (Checkboxen) + Verbindungstest")
     col1, col2 = st.columns(2)
     with col1:
@@ -455,7 +457,7 @@ def module_online_api_filter():
             dots_list.append(f"{green_dot() if check_chatgpt_connection() else red_dot()} <strong>ChatGPT</strong>")
         st.markdown(" &nbsp;&nbsp;&nbsp; ".join(dots_list), unsafe_allow_html=True)
 
-    # ChatGPT-Synonym-Fenster
+    # ChatGPT-Synonym-Fenster (optional)
     if "synonyms_selected" not in st.session_state:
         st.session_state["synonyms_selected"] = {"genotype": False, "phenotype": False, "snp": False, "inc_dec": False}
     synonyms_local = st.session_state["synonyms_selected"]
@@ -483,72 +485,98 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
 """)
             snp_check = st.checkbox("SNP (inkl. Synonyme)", value=synonyms_local["snp"])
             inc_dec_check = st.checkbox("Increase/Decrease (auch das Gegenteil suchen?)", value=synonyms_local["inc_dec"])
-            synonyms_local.update({"genotype": genotype_check, "phenotype": phenotype_check, "snp": snp_check, "inc_dec": inc_dec_check})
+            synonyms_local.update({
+                "genotype": genotype_check,
+                "phenotype": phenotype_check,
+                "snp": snp_check,
+                "inc_dec": inc_dec_check
+            })
 
-    # Gene-Filter-Bereich
     st.write("---")
-    st.subheader("B) Gene-Filter via ChatGPT (ab C3)")
-    st.write("Wähle ein Sheet aus `modules/genes.xlsx` (ab Spalte C, Zeile 3) und entscheide per Häkchen, ob die Gene aus der Excel-Liste verwendet werden sollen.")
-    
-    use_gene_list = st.checkbox("Gene aus Excel verwenden", value=True)
-    genes = []
-    sheet_choice = ""
-    if use_gene_list:
-        excel_path = os.path.join("modules", "genes.xlsx")
-        if not os.path.exists(excel_path):
-            st.error("Die Datei 'genes.xlsx' wurde nicht in 'modules/' gefunden!")
-            return
-        try:
-            xls = pd.ExcelFile(excel_path)
-            sheet_names = xls.sheet_names
-        except Exception as e:
-            st.error(f"Fehler beim Öffnen von genes.xlsx: {e}")
-            return
-        if not sheet_names:
-            st.error("Keine Sheets in genes.xlsx gefunden.")
-            return
-        current_sheet = current.get("sheet_choice", sheet_names[0])
-        if current_sheet not in sheet_names:
-            current_sheet = sheet_names[0]
-        sheet_choice = st.selectbox("Wähle ein Sheet in genes.xlsx:", sheet_names, index=sheet_names.index(current_sheet))
-        genes = load_genes_from_excel(sheet_choice)
-    else:
-        st.info("Gene werden nicht aus Excel geladen.")
+    st.subheader("B) Gene-Filter & -Auswahl")
 
-    show_genes = st.checkbox("Gene-Liste anzeigen?", value=False)
-    if show_genes and genes:
-        st.markdown("**Gelistete Gene** (ab C3):")
-        st.write(genes)
+    st.markdown("""Wähle ein Sheet aus `modules/genes.xlsx`, filtere nach Anfangsbuchstaben und wähle 
+    genau **ein** Gen aus. Oder gib ein eigenes Gen ein, das die Auswahl aus der Liste überschreibt.""")
+
+    excel_path = os.path.join("modules", "genes.xlsx")
+    if not os.path.exists(excel_path):
+        st.error("Die Datei 'genes.xlsx' wurde nicht in 'modules/' gefunden!")
+        return
+
+    # Verfügbare Sheets einlesen
+    try:
+        xls = pd.ExcelFile(excel_path)
+        sheet_names = xls.sheet_names
+    except Exception as e:
+        st.error(f"Fehler beim Öffnen von genes.xlsx: {e}")
+        return
+
+    if not sheet_names:
+        st.error("Keine Sheets in genes.xlsx gefunden.")
+        return
+
+    # Aktuelles Sheet aus den gespeicherten Einstellungen
+    current_sheet = current.get("sheet_choice", sheet_names[0])
+    if current_sheet not in sheet_names:
+        current_sheet = sheet_names[0]
+
+    # Sheet-Auswahl
+    sheet_choice = st.selectbox("Wähle ein Sheet in genes.xlsx:", sheet_names, index=sheet_names.index(current_sheet))
+    all_genes_in_sheet = load_genes_from_excel(sheet_choice)
+
+    if all_genes_in_sheet:
+        # Erste Buchstaben sammeln
+        unique_first_letters = sorted(list(set(g[0].upper() for g in all_genes_in_sheet if g.strip())))
+        selected_letter = st.selectbox("Anfangsbuchstabe wählen:", ["Alle"] + unique_first_letters)
+
+        # Gefilterte Gene
+        if selected_letter == "Alle":
+            filtered_genes = all_genes_in_sheet
+        else:
+            filtered_genes = [g for g in all_genes_in_sheet if g and g[0].upper() == selected_letter]
+
+        if filtered_genes:
+            selected_gene = st.selectbox("Wähle genau 1 Gen aus der gefilterten Liste:", filtered_genes)
+        else:
+            st.info("Keine Gene mit diesem Anfangsbuchstaben gefunden.")
+            selected_gene = ""
+    else:
+        st.warning("Keine Gene in diesem Sheet gefunden oder Sheet ist leer.")
+        selected_gene = ""
+
+    # Optional eigenes Gen eingeben (überschreibt die Auswahl)
+    custom_gene_input = st.text_input("Oder eigenes Gen eingeben (optional):")
+    final_gene = custom_gene_input.strip() if custom_gene_input.strip() else selected_gene.strip()
 
     st.write("---")
     st.subheader("Text eingeben (z. B. Abstract)")
     text_input = st.text_area("Füge hier deinen Abstract / Text ein:", height=200, value=current.get("text_input", ""))
-    
-    if st.button("Gene filtern mit ChatGPT"):
-        if use_gene_list and not genes:
-            st.warning("Keine Gene geladen oder das Sheet ist leer.")
+
+    if st.button("Gen(e) filtern mit ChatGPT"):
+        if not final_gene:
+            st.warning("Bitte aus der Liste ein Gen wählen oder ein eigenes eingeben.")
         elif not text_input.strip():
             st.warning("Bitte einen Text eingeben.")
         else:
-            extended_genes = list(genes) if use_gene_list else []
+            # Zusätzliche Synonyme bei Bedarf einbauen
+            genes_to_check = [final_gene]
             if synonyms_local["genotype"]:
-                extended_genes += ["genetic makeup", "genetic constitution", "AllEl", "DNA sequence"]
+                genes_to_check += ["genetic makeup", "genetic constitution", "AllEl", "DNA sequence"]
             if synonyms_local["phenotype"]:
-                extended_genes += ["observable traits", "physical appearance", "morphology"]
+                genes_to_check += ["observable traits", "physical appearance", "morphology"]
             if synonyms_local["snp"]:
-                extended_genes += ["point mutation", "genetic variation", "DNA polymorphism"]
+                genes_to_check += ["point mutation", "genetic variation", "DNA polymorphism"]
             if synonyms_local["inc_dec"]:
-                extended_genes += ["increase", "decrease"]
-            if not extended_genes:
-                st.info("Keine Gene zum Filtern vorhanden.")
+                genes_to_check += ["increase", "decrease"]
+
+            result_map = check_genes_in_text_with_chatgpt(text_input, genes_to_check)
+            if not result_map:
+                st.info("Keine Ergebnisse oder Fehler aufgetreten.")
             else:
-                result_map = check_genes_in_text_with_chatgpt(text_input, extended_genes)
-                if not result_map:
-                    st.info("Keine Ergebnisse oder Fehler aufgetreten.")
-                else:
-                    st.markdown("### Ergebnis (inkl. Synonyme):")
-                    for gene in extended_genes:
-                        st.write(f"**{gene}**: {'YES' if result_map.get(gene, False) else 'No'}")
+                st.markdown("### Ergebnis (Gen + ggf. Synonyme):")
+                for gene in genes_to_check:
+                    status = result_map.get(gene, False)
+                    st.write(f"**{gene}**: {'YES' if status else 'No'}")
 
     # F) Semantic Scholar Suche
     if use_semantic:
@@ -566,13 +594,10 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
                 else:
                     st.markdown(f"### Ergebnisse für '{sem_query}':")
                     for paper in sem_results:
-                        title = paper.get("title", "Kein Titel verfügbar")
-                        authors = paper.get("authors", [])
-                        author_names = ", ".join(author.get("name", "") for author in authors)
-                        year = paper.get("year", "Kein Jahr verfügbar")
-                        abstract = paper.get("abstract", "Kein Abstract verfügbar")
+                        title = paper.get("Title", "Kein Titel verfügbar")
+                        year = paper.get("Year", "Kein Jahr verfügbar")
+                        abstract = paper.get("Abstract", "Kein Abstract verfügbar")
                         st.markdown(f"**Titel:** {title}")
-                        st.markdown(f"**Autoren:** {author_names}")
                         st.markdown(f"**Jahr:** {year}")
                         st.markdown(f"**Abstract:** {abstract}")
                         st.write("---")
@@ -650,10 +675,10 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
     st.write("---")
     st.info(
         "Fertig. Du kannst oben die APIs auswählen und testen sowie Profile speichern/laden. "
-        "Die Gene werden ab C3 eingelesen (sofern ausgewählt) und optional angezeigt. "
-        "Mit ChatGPT können Gene im eingegebenen Text gefiltert werden."
+        "Im Abschnitt B) kannst du ein Sheet wählen, nach Anfangsbuchstabe filtern und genau 1 Gen auswählen. "
+        "Alternativ kannst du ein eigenes Gen eingeben. Mit ChatGPT kannst du dann prüfen, ob das Gen (ggf. inkl. Synonyme) im eingegebenen Text vorkommt."
     )
-    
+
     # Einstellungen in Session speichern
     st.session_state["current_settings"] = {
         "use_pubmed": use_pubmed,
@@ -663,10 +688,10 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
         "use_openalex": use_openalex,
         "use_core": use_core,
         "use_chatgpt": use_chatgpt,
-        "sheet_choice": sheet_choice if use_gene_list else "",
+        "sheet_choice": sheet_choice,
         "text_input": text_input
     }
-    
+
     # Profil speichern-Button
     if st.button("Aktuelle Einstellungen speichern"):
         pname = profile_name_input.strip()
@@ -682,7 +707,7 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
                 use_openalex,
                 use_core,
                 use_chatgpt,
-                sheet_choice if use_gene_list else "",
+                sheet_choice,
                 text_input
             )
 
