@@ -16,23 +16,120 @@ import base64
 try:
     from scholarly import scholarly
 except ImportError:
-    st.error("Bitte installiere 'scholarly' (z.B. pip install scholarly).")
+    st.error("Bitte installiere 'scholarly', z.B. via: pip install scholarly")
 
-# OpenAI / ChatGPT:
+# ChatGPT/OpenAI:
 import openai
-# Falls du direkt einen Key setzen willst:
-# openai.api_key = "sk-XXXX"
+# Hier kannst du deinen API-Key direkt setzen oder aus st.secrets holen:
+# openai.api_key = "sk-XXX"
 
-# PDF-Erzeugung
+# PDF-Erzeugung mit fpdf
 try:
     from fpdf import FPDF
 except ImportError:
-    st.error("Bitte installiere 'fpdf' (z.B. pip install fpdf).")
+    st.error("Bitte installiere 'fpdf', z.B. mit: pip install fpdf")
 
-##############################################################################
-# Hilfsfunktionen: Flatten Dict, local PDF-Bau etc.
-##############################################################################
 
+###############################################################################
+# A) ChatGPT: Paper erstellen & lokal speichern
+###############################################################################
+def generate_paper_via_chatgpt(prompt_text, model="gpt-3.5-turbo"):
+    """
+    Ruft die ChatGPT-API auf und erzeugt ein Paper (Text).
+    """
+    try:
+        response = openai.ChatCompletion.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt_text}],
+            max_tokens=1200,
+            temperature=0.7
+        )
+        content = response.choices[0].message.content
+        return content
+    except Exception as e:
+        st.error(f"Fehler bei ChatGPT-API: {e}")
+        return ""
+
+def save_text_as_pdf(text, pdf_path, title="Paper"):
+    """
+    Speichert den gegebenen Text in ein PDF unter pdf_path (lokal).
+    """
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_font("Arial", size=12)
+
+    # Überschrift
+    pdf.cell(0, 10, title, ln=1)
+    pdf.ln(5)
+
+    lines = text.split("\n")
+    for line in lines:
+        pdf.multi_cell(0, 8, line)
+        pdf.ln(2)
+
+    pdf.output(pdf_path, "F")
+
+
+###############################################################################
+# B) arXiv-Suche & Download & lokal speichern
+###############################################################################
+def search_arxiv_papers(query, max_results=5):
+    base_url = "http://export.arxiv.org/api/query?"
+    params = {
+        "search_query": f"all:{query}",
+        "start": 0,
+        "max_results": max_results
+    }
+    try:
+        response = requests.get(base_url, params=params, timeout=10)
+        response.raise_for_status()
+    except Exception as e:
+        st.error(f"Fehler beim Abrufen der Daten von arXiv: {e}")
+        return []
+    
+    feed = feedparser.parse(response.text)
+    papers_info = []
+
+    for entry in feed.entries:
+        title = entry.title
+        summary = entry.summary
+        link_pdf = None
+        for link in entry.links:
+            if link.rel == "related" and "pdf" in link.type:
+                link_pdf = link.href
+                break
+            elif link.type == "application/pdf":
+                link_pdf = link.href
+                break
+        
+        papers_info.append({
+            "title": title,
+            "summary": summary,
+            "pdf_url": link_pdf
+        })
+    
+    return papers_info
+
+def sanitize_filename(fname):
+    """Ersetzt unerlaubte Zeichen durch Unterstriche."""
+    return re.sub(r"[^a-zA-Z0-9_\-]+", "_", fname)
+
+def download_arxiv_pdf(pdf_url, local_filepath):
+    try:
+        r = requests.get(pdf_url, timeout=15)
+        r.raise_for_status()
+        with open(local_filepath, "wb") as f:
+            f.write(r.content)
+        return True
+    except Exception as e:
+        st.error(f"Fehler beim Herunterladen der PDF: {e}")
+        return False
+
+
+###############################################################################
+# C) Multi-API-Suche
+###############################################################################
 def flatten_dict(d, parent_key="", sep="__"):
     items = []
     for k, v in d.items():
@@ -43,89 +140,6 @@ def flatten_dict(d, parent_key="", sep="__"):
             items.append((new_key, v))
     return dict(items)
 
-def _sanitize_filename(fname):
-    return re.sub(r"[^a-zA-Z0-9_\-]+", "_", fname)
-
-def create_abstract_pdf(paper, output_stream):
-    """
-    Baut ein PDF mit fpdf; schreibt es als Bytes in output_stream.
-    """
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.set_font("Arial", size=12)
-
-    def wrap_text(t, max_len=100):
-        chunks = []
-        words = t.split()
-        for w in words:
-            while len(w) > max_len:
-                chunks.append(w[:max_len])
-                w = w[max_len:]
-            chunks.append(w)
-        return " ".join(chunks)
-
-    page_width = pdf.w - pdf.l_margin - pdf.r_margin
-    pdf.cell(0, 10, f"Paper: {paper.get('Title','n/a')}", ln=1)
-    pdf.ln(2)
-    pdf.multi_cell(page_width, 8, wrap_text(f"** Abstract **\n\n{paper.get('Abstract','n/a')}"))
-    pdf.ln(2)
-    pdf.multi_cell(page_width, 8, wrap_text(f"** Source: {paper.get('Source','n/a')}"))
-    pdf.multi_cell(page_width, 8, wrap_text(f"** PubMed ID: {paper.get('PubMed ID','n/a')}"))
-    pdf.multi_cell(page_width, 8, wrap_text(f"** DOI: {paper.get('DOI','n/a')}"))
-    pdf.multi_cell(page_width, 8, wrap_text(f"** Year: {paper.get('Year','n/a')}"))
-    pdf.multi_cell(page_width, 8, wrap_text(f"** Publisher: {paper.get('Publisher','n/a')}"))
-
-    pdf_string = pdf.output(dest='S')  # => str in fpdf 1.x
-    pdf_bytes = pdf_string.encode('latin-1', 'replace')
-    output_stream.write(pdf_bytes)
-
-def create_gpt_paper_pdf(gpt_text, output_stream, title="ChatGPT Summary"):
-    """
-    Erzeugt ein PDF aus dem von ChatGPT zurückgelieferten Text.
-    """
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
-
-    pdf.cell(0, 10, title, ln=1)
-    pdf.ln(5)
-
-    lines = gpt_text.split("\n")
-    for line in lines:
-        pdf.multi_cell(0, 8, line)
-        pdf.ln(2)
-
-    pdf_str = pdf.output(dest='S')
-    pdf_bytes = pdf_str.encode("latin-1", "replace")
-    output_stream.write(pdf_bytes)
-
-##############################################################################
-# OpenAI-Chat
-##############################################################################
-
-def generate_chatgpt_paper(prompt_text):
-    """
-    Ruft ChatGPT auf, um eine "Paper"-Zusammenfassung zu erzeugen.
-    """
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt_text}],
-            max_tokens=1200,
-            temperature=0.7
-        )
-        content = response.choices[0].message.content
-        return content
-    except Exception as e:
-        st.error(f"Fehler bei ChatGPT API: {e}")
-        return ""
-
-##############################################################################
-# Multi-API-Suchfunktionen (PubMed, Europe PMC, Google Scholar, ...).
-##############################################################################
-
-# --- PubMed
 def esearch_pubmed(query: str, max_results=100, timeout=10):
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {
@@ -226,7 +240,6 @@ def search_pubmed(query: str, max_results=100):
         return []
     return get_pubmed_details(pmids)
 
-# --- Europe PMC
 def search_europe_pmc(query: str, max_results=100, timeout=30, retries=3, delay=5):
     url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {
@@ -269,7 +282,6 @@ def search_europe_pmc(query: str, max_results=100, timeout=30, retries=3, delay=
     st.error("Europe PMC-Suche wiederholt fehlgeschlagen (Timeout).")
     return []
 
-# --- Google Scholar
 def search_google_scholar(query: str, max_results=100):
     results = []
     try:
@@ -298,7 +310,6 @@ def search_google_scholar(query: str, max_results=100):
         st.error(f"Fehler bei der Google Scholar-Suche: {e}")
     return results
 
-# --- Semantic Scholar
 def search_semantic_scholar(query: str, max_results=100, retries=3, delay=5):
     base_url = "https://api.semanticscholar.org/graph/v1/paper/search"
     params = {
@@ -345,7 +356,6 @@ def search_semantic_scholar(query: str, max_results=100, retries=3, delay=5):
     st.error("Semantic Scholar: Rate limit überschritten.")
     return results
 
-# --- OpenAlex
 def search_openalex(query: str, max_results=100):
     base_url = "https://api.openalex.org/works"
     params = {
@@ -382,9 +392,34 @@ def search_openalex(query: str, max_results=100):
         st.error(f"Fehler bei der OpenAlex-Suche: {e}")
         return []
 
-##############################################################################
-# Profil-Verwaltung (optional)
-##############################################################################
+###############################################################################
+# D) ChatGPT-Summary von Paper -> PDF
+###############################################################################
+def create_gpt_paper_pdf(gpt_text, output_stream, title="ChatGPT-Paper"):
+    """
+    Baut ein PDF aus dem ChatGPT-Text.
+    """
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_font("Arial", size=12)
+
+    pdf.cell(0, 10, title, ln=1)
+    pdf.ln(5)
+
+    lines = gpt_text.split("\n")
+    for line in lines:
+        pdf.multi_cell(0, 8, line)
+        pdf.ln(2)
+
+    pdf_str = pdf.output(dest='S')
+    pdf_bytes = pdf_str.encode("latin-1", "replace")
+    output_stream.write(pdf_bytes)
+
+
+###############################################################################
+# E) "Profiles" laden (optional)
+###############################################################################
 def load_settings(profile_name: str):
     if "profiles" in st.session_state:
         profiles = st.session_state["profiles"]
@@ -392,70 +427,66 @@ def load_settings(profile_name: str):
             return profiles[profile_name]
     return None
 
-##############################################################################
-# Modul-Funktion (wird in main() aufgerufen)
-##############################################################################
-def module_codewords_pubmed():
-    st.title("Multi-API-Suche + ChatGPT-Paper-Download-Link in Excel")
 
-    # Profil wählen (Demo)
+###############################################################################
+# F) Modul: Multi-API-Suche + ChatGPT-Download
+###############################################################################
+def module_codewords_pubmed():
+    st.title("Multi-API-Suche (PubMed, Europe PMC, Google Scholar, ...)")
     if "profiles" not in st.session_state or not st.session_state["profiles"]:
-        st.warning("Keine Profile in session_state['profiles'].")
+        st.warning("Keine Profile (optional).")
         return
-    profile_names = list(st.session_state["profiles"].keys())
-    chosen_profile = st.selectbox("Wähle ein Profil:", ["(kein)"] + profile_names)
+    prof_names = list(st.session_state["profiles"].keys())
+    chosen_profile = st.selectbox("Wähle ein Profil:", ["(kein)"] + prof_names)
     if chosen_profile == "(kein)":
-        st.info("Bitte ein Profil auswählen.")
+        st.info("Kein Profil gewählt.")
         return
 
     profile_data = load_settings(chosen_profile)
     st.json(profile_data)
 
-    # Eingabe Codewörter
-    codewords_str = st.text_input("Codewörter (kommasepariert/Leerzeichen):", "")
-    logic_option = st.radio("Logik:", ["AND","OR"], index=1)
+    codewords_str = st.text_input("Codewörter:", "")
+    logic_option = st.radio("Logik:", ["AND","OR"], 1)
 
     if st.button("Suche starten"):
         raw_list = [w.strip() for w in codewords_str.replace(",", " ").split() if w.strip()]
         if not raw_list:
-            st.warning("Bitte mindestens ein Codewort eingeben.")
+            st.warning("Bitte mind. 1 Wort eingeben.")
             return
-
         query_str = " AND ".join(raw_list) if logic_option=="AND" else " OR ".join(raw_list)
-        st.write("Finale Suchanfrage:", query_str)
+        st.write("Anfrage:", query_str)
 
         results_all = []
 
         if profile_data.get("use_pubmed", False):
-            pubs = search_pubmed(query_str, max_results=50)
-            st.write(f"PubMed: {len(pubs)} Treffer.")
-            results_all.extend(pubs)
+            pm = search_pubmed(query_str, max_results=100)
+            st.write(f"PubMed: {len(pm)}")
+            results_all.extend(pm)
 
         if profile_data.get("use_epmc", False):
-            epmc = search_europe_pmc(query_str, max_results=50)
-            st.write(f"Europe PMC: {len(epmc)} Treffer.")
-            results_all.extend(epmc)
+            ep = search_europe_pmc(query_str, max_results=100)
+            st.write(f"Europe PMC: {len(ep)}")
+            results_all.extend(ep)
 
         if profile_data.get("use_google", False):
-            goo = search_google_scholar(query_str, max_results=50)
-            st.write(f"Google Scholar: {len(goo)} Treffer.")
-            results_all.extend(goo)
+            gg = search_google_scholar(query_str, max_results=100)
+            st.write(f"Google Scholar: {len(gg)}")
+            results_all.extend(gg)
 
         if profile_data.get("use_semantic", False):
-            sem = search_semantic_scholar(query_str, max_results=50)
-            st.write(f"Semantic Scholar: {len(sem)} Treffer.")
-            results_all.extend(sem)
+            se = search_semantic_scholar(query_str, max_results=100)
+            st.write(f"Semantic Scholar: {len(se)}")
+            results_all.extend(se)
 
         if profile_data.get("use_openalex", False):
-            oa = search_openalex(query_str, max_results=50)
-            st.write(f"OpenAlex: {len(oa)} Treffer.")
+            oa = search_openalex(query_str, max_results=100)
+            st.write(f"OpenAlex: {len(oa)}")
             results_all.extend(oa)
 
         if not results_all:
-            st.info("Keine Ergebnisse gefunden.")
+            st.info("Nichts gefunden.")
             return
 
-        # Speichern
         st.session_state["search_results"] = results_all
 
     if "search_results" in st.session_state and st.session_state["search_results"]:
@@ -469,144 +500,202 @@ def module_codewords_pubmed():
             "Source": p.get("Source","n/a"),
             "Abstract": p.get("Abstract","n/a")
         } for p in results_all])
-
         st.dataframe(df_main)
 
-        # Filter
-        adv_filter = st.checkbox("Erweiterte Filter?")
+        st.subheader("Filter")
+        adv_filter = st.checkbox("Filter aktivieren?")
+
         if adv_filter:
-            text_filter = st.text_input("Suchbegriff in Title/Publisher (Filter):", "")
-            year_list = ["Alle"]+[str(y) for y in range(1900,2026)]
-            year_choice = st.selectbox("Jahr:", year_list)
+            txt_filter = st.text_input("Suchwort (Title/Publisher):", "")
+            years = ["Alle"]+[str(y) for y in range(1900,2026)]
+            y_choice = st.selectbox("Jahr:", years)
 
             df_filt = df_main.copy()
-            if text_filter.strip():
-                tf = text_filter.lower()
+            if txt_filter.strip():
+                tfl = txt_filter.lower()
                 def match_f(r):
                     t = (r["Title"] or "").lower()
-                    p = (r["Publisher"] or "").lower()
-                    return (tf in t) or (tf in p)
+                    pub = (r["Publisher"] or "").lower()
+                    return (tfl in t) or (tfl in pub)
                 df_filt = df_filt[df_filt.apply(match_f, axis=1)]
-            if year_choice!="Alle":
-                df_filt = df_filt[df_filt["Year"]==year_choice]
+            if y_choice!="Alle":
+                df_filt = df_filt[df_filt["Year"]==y_choice]
 
-            st.write("Gefilterte Paper:")
             st.dataframe(df_filt)
 
-            # MultiSelect => ChatGPT generieren
-            df_filt["identifier"] = df_filt.apply(lambda r: f"{r['Title']}||{r['PubMed ID']}", axis=1)
-            chosen_ids = st.multiselect("Paper auswählen für ChatGPT-Paper?", df_filt["identifier"].tolist())
+            # Neuer Button: Gefilterte in neuem Browser-Tab
+            if st.button("Gefilterte in neuem Browserfenster anschauen"):
+                if df_filt.empty:
+                    st.warning("Keine gefilterten Daten.")
+                else:
+                    html_code = df_filt.to_html(index=False, escape=False)
+                    b64_code = base64.b64encode(html_code.encode()).decode()
+                    link_html = f'<a href="data:text/html;base64,{b64_code}" target="_blank">Gefilterte Paper öffnen</a>'
+                    st.markdown(link_html, unsafe_allow_html=True)
 
-            if st.button("ChatGPT-Paper generieren & Download ZIP"):
+            # Multiselect => normaler Abstract-PDF-Download
+            df_filt["identifier"] = df_filt.apply(lambda x: f"{x['Title']}||{x['PubMed ID']}", axis=1)
+            chosen_ids = st.multiselect("Paper für Abstract-PDF (ZIP):", df_filt["identifier"].tolist())
+
+            if st.button("Abstract-PDF (ZIP) herunterladen"):
                 if not chosen_ids:
                     st.warning("Keine Auswahl.")
                 else:
-                    # 1) Hole die Paper aus results_all
-                    chosen_papers = []
+                    selected_papers=[]
                     for cid in chosen_ids:
                         row = df_filt.loc[df_filt["identifier"]==cid].iloc[0]
-                        found=None
+                        # passendes Paper in results_all suchen
+                        match_=None
                         for rp in results_all:
                             if rp["Title"]==row["Title"] and rp["PubMed ID"]==row["PubMed ID"]:
-                                found=rp
+                                match_=rp
                                 break
-                        if found:
-                            chosen_papers.append(found)
-
-                    if not chosen_papers:
+                        if match_:
+                            selected_papers.append(match_)
+                    
+                    if not selected_papers:
                         st.warning("Nichts gefunden.")
                     else:
-                        # 2) Erzeuge ChatGPT-"Paper", speichere PDF in ZIP
                         zip_buf = io.BytesIO()
-                        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                            for pap in chosen_papers:
-                                # Prompt
-                                prompt_str = (
-                                    f"Erstelle eine wissenschaftliche Zusammenfassung (Paper-Stil) "
-                                    f"zu folgendem Titel:\n'{pap['Title']}'.\n\n"
-                                    f"Der Abstract lautet:\n{pap['Abstract']}\n\n"
-                                    f"Beziehe ggf. Jahr, Population, Publisher etc. mit ein."
-                                )
-                                gpt_text = generate_chatgpt_paper(prompt_str)
-                                if gpt_text:
-                                    pdf_io = io.BytesIO()
-                                    # PDF
-                                    create_gpt_paper_pdf(gpt_text, pdf_io, title="ChatGPT-Paper zu: "+pap['Title'][:30])
-                                    pdf_file_name = _sanitize_filename(pap['Title'][:50])+"_gpt.pdf"
-                                    zf.writestr(pdf_file_name, pdf_io.getvalue())
-
+                        with zipfile.ZipFile(zip_buf,"w",zipfile.ZIP_DEFLATED) as zf:
+                            for sp in selected_papers:
+                                fn = _sanitize_filename(sp["Title"][:50])+".pdf"
+                                pdf_io = io.BytesIO()
+                                create_abstract_pdf(sp, pdf_io)
+                                zf.writestr(fn, pdf_io.getvalue())
                         zip_buf.seek(0)
-                        zip_name = f"chatgpt_papers_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+                        zip_name = f"abstracts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
                         st.download_button(
-                            "ChatGPT-Paper-ZIP herunterladen",
+                            "Abstract-PDF-ZIP",
                             data=zip_buf.getvalue(),
                             file_name=zip_name,
                             mime="application/octet-stream"
                         )
 
-        # Excel-Export mit Link-Spalte
+            # **NEU**: ChatGPT-Zusammenfassung (Paper) => PDF (ZIP)
+            st.subheader("ChatGPT-Paper Download (ZIP)")
+            chosen_ids_gpt = st.multiselect("Paper für ChatGPT-Paper (ZIP):", df_filt["identifier"].tolist())
+
+            if st.button("ChatGPT-Paper (ZIP) erstellen"):
+                if not chosen_ids_gpt:
+                    st.warning("Keine Auswahl.")
+                else:
+                    selected_gpt = []
+                    for cid in chosen_ids_gpt:
+                        row = df_filt.loc[df_filt["identifier"]==cid].iloc[0]
+                        found_=None
+                        for rp in results_all:
+                            if rp["Title"]==row["Title"] and rp["PubMed ID"]==row["PubMed ID"]:
+                                found_=rp
+                                break
+                        if found_:
+                            selected_gpt.append(found_)
+
+                    if not selected_gpt:
+                        st.warning("Nichts gefunden.")
+                    else:
+                        gpt_zip_buf = io.BytesIO()
+                        with zipfile.ZipFile(gpt_zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                            for pap in selected_gpt:
+                                # Prompt
+                                prompt_ = (
+                                    f"Erstelle ein zusammenfassendes Paper zu folgendem Artikel:\n"
+                                    f"Titel: {pap['Title']}\n"
+                                    f"Abstract: {pap['Abstract']}\n\n"
+                                    f"Gehe auf mögliche Methoden, Ergebnisse, Diskussion ein.\n"
+                                )
+                                chat_text = generate_paper_via_chatgpt(prompt_)
+                                if chat_text:
+                                    pdf_mem = io.BytesIO()
+                                    create_gpt_paper_pdf(chat_text, pdf_mem, title="ChatGPT-Paper zu: "+pap["Title"][:30])
+                                    fpdf_name = _sanitize_filename(pap["Title"][:50])+"_gpt.pdf"
+                                    zf.writestr(fpdf_name, pdf_mem.getvalue())
+                        gpt_zip_buf.seek(0)
+                        zipfile_name = f"chatgpt_papers_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+                        st.download_button(
+                            "ChatGPT-Paper-ZIP herunterladen",
+                            data=gpt_zip_buf.getvalue(),
+                            file_name=zipfile_name,
+                            mime="application/octet-stream"
+                        )
+
+        # Excel-Export (alle)
         st.write("---")
-        st.subheader("Excel-Export (mit ChatGPT-Link-Spalte)")
-
+        st.subheader("Excel-Export (alle Paper)")
         codewords_ = "Suchbegriffe"
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        excel_name = f"{codewords_}_{stamp}.xlsx"
-
-        # Beispiel: Link kann man als "lokaler PDF-Name" oder als "=HYPERLINK()"
-        # Hier nur demonstration: "ChatGPT_Paper_Link" => f"=HYPERLINK(\"{some_path}\",\"Download\")"
-        # In einer realen Deployment-Umgebung bräuchte man einen Web-Server-Pfad.
-
-        # Hier bauen wir DF + extra Spalte "ChatGPT Paper Link" (Beispiel).
-        df_excel = df_main.copy()
-        df_excel["ChatGPT_Paper_Link"] = "n/a"  # oder HYPERLINK
+        stamp_ = datetime.now().strftime("%Y%m%d_%H%M%S")
+        excel_fn = f"{codewords_}_{stamp_}.xlsx"
 
         from openpyxl import Workbook
         from openpyxl.utils import get_column_letter
         from openpyxl import load_workbook
-        import openpyxl
 
-        from openpyxl.styles import Font
+        df_excel_main = df_main[["Title","PubMed ID","Abstract","Year","Publisher","Population","Source"]]
 
+        # gruppieren
         from openpyxl import Workbook
         wb = Workbook()
         ws_main = wb.active
         ws_main.title = "Main"
 
-        headers = ["Title","PubMed ID","Abstract","Year","Publisher","Population","Source","ChatGPT_Paper_Link"]
-        ws_main.append(headers)
+        # Header
+        head_cols = ["Title","PubMed ID","Abstract","Year","Publisher","Population","Source"]
+        ws_main.append(head_cols)
 
-        for idx, row in df_excel.iterrows():
-            row_list = [
-                row["Title"],
-                row["PubMed ID"],
-                row["Abstract"],
-                row["Year"],
-                row["Publisher"],
-                row["Population"],
-                row["Source"],
-                row["ChatGPT_Paper_Link"]
-            ]
-            ws_main.append(row_list)
+        for idx, row in df_excel_main.iterrows():
+            arr = [row[c] for c in head_cols]
+            ws_main.append(arr)
 
-        # Save
-        wb.save(excel_name)
-        with open(excel_name,"rb") as f:
-            st.download_button(
-                "Excel herunterladen",
-                data=f,
-                file_name=excel_name,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+        # pro Source ein Sheet
+        from collections import defaultdict
+        group_ = defaultdict(list)
+        for p in results_all:
+            group_[p.get("Source","n/a")].append(p)
 
-##############################################################################
-# Haupt-Streamlit: Tabs
-##############################################################################
+        for s_name, plist in group_.items():
+            # flatten
+            wsx = wb.create_sheet(title=s_name[:31])
+            # wir ermitteln dynamisch alle keys
+            all_dicts = []
+            for p in plist:
+                fd = flatten_dict(p.get("FullData", {}))
+                fd["Title"] = p.get("Title","n/a")
+                fd["PubMed ID"] = p.get("PubMed ID","n/a")
+                fd["Abstract"] = p.get("Abstract","n/a")
+                fd["Year"] = p.get("Year","n/a")
+                fd["Publisher"] = p.get("Publisher","n/a")
+                fd["Population"] = p.get("Population","n/a")
+                fd["Source"] = p.get("Source","n/a")
+                all_dicts.append(fd)
+
+            if all_dicts:
+                # Alle möglichen Spalten sammeln
+                colset = set()
+                for d in all_dicts:
+                    colset.update(d.keys())
+                colnames = sorted(list(colset))
+
+                wsx.append(colnames)
+                for d in all_dicts:
+                    row_ = [d.get(c, "") for c in colnames]
+                    wsx.append(row_)
+
+        wb.save(excel_fn)
+        with open(excel_fn,"rb") as f:
+            st.download_button("Excel herunterladen", data=f, file_name=excel_fn,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+###############################################################################
+# G) Haupt-App-Funktion
+###############################################################################
 def main():
-    st.title("Gesamt-App: ChatGPT + Multi-API")
-    # Minimales Profiles-Dummy
+    st.title("Kombinierte App: ChatGPT-Paper, arXiv-Suche, Multi-API-Suche")
+
+    # Beispiel: Profile definieren (falls nicht schon existiert)
     if "profiles" not in st.session_state:
         st.session_state["profiles"] = {
-            "Default": {
+            "DefaultProfile": {
                 "use_pubmed": True,
                 "use_epmc": True,
                 "use_google": True,
@@ -615,9 +704,58 @@ def main():
             }
         }
 
-    module_codewords_pubmed()
+    menu = ["ChatGPT-Paper", "arXiv-Suche", "Multi-API-Suche"]
+    choice = st.sidebar.selectbox("Navigation", menu)
 
-if __name__=="__main__":
+    if choice == "ChatGPT-Paper":
+        st.subheader("1) Paper mit ChatGPT generieren & lokal speichern")
+        prompt_txt = st.text_area("Prompt:", "Schreibe ein Paper über KI in der Medizin.")
+        local_dir = st.text_input("Zielordner lokal:", "chatgpt_papers")
+        if st.button("Paper generieren"):
+            text = generate_paper_via_chatgpt(prompt_txt)
+            if text:
+                if not os.path.exists(local_dir):
+                    os.makedirs(local_dir, exist_ok=True)
+                time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+                pdf_name = f"chatgpt_paper_{time_str}.pdf"
+                pdf_path = os.path.join(local_dir, pdf_name)
+                save_text_as_pdf(text, pdf_path, title="ChatGPT-Paper")
+                st.success(f"Paper gespeichert unter: {pdf_path}")
+
+    elif choice == "arXiv-Suche":
+        st.subheader("2) arXiv-Suche & PDF-Download (lokal)")
+        query = st.text_input("arXiv Suchbegriff:", "quantum computing")
+        num = st.number_input("Anzahl", 1, 50, 5)
+        local_dir_arxiv = st.text_input("Ordner für Downloads:", "arxiv_papers")
+
+        if st.button("arXiv-Suche starten"):
+            results = search_arxiv_papers(query, max_results=num)
+            if not results:
+                st.info("Keine Treffer.")
+            else:
+                st.write(f"Treffer: {len(results)}")
+                if not os.path.exists(local_dir_arxiv):
+                    os.makedirs(local_dir_arxiv, exist_ok=True)
+                for i, paper in enumerate(results, start=1):
+                    st.write(f"**{i})** {paper['title']}")
+                    st.write(paper['summary'][:300],"...")
+                    if paper["pdf_url"]:
+                        fname = sanitize_filename(paper["title"][:50]) + ".pdf"
+                        path_ = os.path.join(local_dir_arxiv, fname)
+                        if st.button(f"PDF herunterladen: {fname}", key=f"arxiv_{i}"):
+                            ok_ = download_arxiv_pdf(paper["pdf_url"], path_)
+                            if ok_:
+                                st.success(f"PDF gespeichert: {path_}")
+                    else:
+                        st.write("_Kein PDF-Link._")
+                    st.write("---")
+
+    else:
+        st.subheader("3) Multi-API-Suche (PubMed, Europe PMC, Google Scholar, Semantic Scholar, OpenAlex)")
+        module_codewords_pubmed()
+
+
+if __name__ == "__main__":
     st.set_page_config(layout="wide")
-    # openai.api_key = "sk-XXXX"  # <--- HIER DEIN KEY
+    # openai.api_key = "...hier dein Key..."
     main()
