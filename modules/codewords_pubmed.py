@@ -4,6 +4,9 @@ import pandas as pd
 import os
 import time
 
+# --- Hier importieren wir 'scholarly' für die Google Scholar Suche ---
+from scholarly import scholarly
+
 ##############################
 # Echte API-Suchfunktionen
 ##############################
@@ -100,26 +103,48 @@ def search_europe_pmc(query: str, max_results=100):
         st.error(f"Europe PMC-Suche fehlgeschlagen: {e}")
         return []
 
+# --- Neu: Google Scholar via 'scholarly' ---
 def search_google_scholar(query: str, max_results=100):
     """
-    Dummy-Funktion: Gibt Beispiel-Daten für Google Scholar zurück.
+    Führt eine Suche auf Google Scholar (inoffiziell via 'scholarly') durch
+    und gibt eine Liste von Paper-Daten zurück (genau wie bei PubMed).
     """
-    return [{
-        "Source": "Google Scholar",
-        "Title": "Dummy Title from Google Scholar",
-        "PubMed ID": "n/a",
-        "DOI": "n/a",
-        "Year": "2023",
-        "Abstract": "Dies ist ein Dummy-Abstract von Google Scholar.",
-        "Population": "n/a"
-    }]
+    results = []
+    try:
+        # Suchergebnisse holen (Generator-Objekt)
+        search_results = scholarly.search_pubs(query)
+
+        # Wir holen maximal max_results Publikationen
+        for _ in range(max_results):
+            publication = next(search_results, None)
+            if not publication:
+                break
+
+            bib = publication.get('bib', {})
+            title = bib.get('title', 'n/a')
+            # 'author' enthält oft einen String mit allen Autoren
+            authors = bib.get('author', 'n/a')
+            # 'pub_year' ist oft das Publikationsjahr
+            pub_year = bib.get('pub_year', 'n/a')
+            abstract = bib.get('abstract', 'n/a')
+
+            results.append({
+                "Source": "Google Scholar",
+                "Title": title,
+                "PubMed ID": "n/a",
+                "DOI": "n/a",
+                "Year": str(pub_year),
+                "Abstract": abstract,
+                "Population": "n/a"  # Entfällt bei Scholar
+            })
+    except Exception as e:
+        st.error(f"Fehler bei der Google Scholar-Suche: {e}")
+    return results
 
 def search_semantic_scholar(query: str, max_results=100, retries=3, delay=5):
     """
     Führt eine Suche in der Semantic Scholar API durch und gibt eine Liste von Paper-Daten zurück.
     Die Ergebnisse werden in das von Codewords erwartete Format transformiert.
-    
-    Bei einem Rate-Limit (HTTP 429) wird bis zu 'retries' Mal mit einer Pause (delay Sekunden) erneut versucht.
     """
     base_url = "https://api.semanticscholar.org/graph/v1/paper/search"
     params = {
@@ -139,8 +164,8 @@ def search_semantic_scholar(query: str, max_results=100, retries=3, delay=5):
                 results.append({
                     "Source": "Semantic Scholar",
                     "Title": paper.get("title", "n/a"),
-                    "PubMed ID": "n/a",  # Semantic Scholar liefert in der Regel keine PubMed ID
-                    "DOI": "n/a",        # DOI ist hier nicht direkt verfügbar
+                    "PubMed ID": "n/a",
+                    "DOI": "n/a",
                     "Year": str(paper.get("year", "n/a")),
                     "Abstract": paper.get("abstract", "n/a"),
                     "Population": "n/a"
@@ -285,10 +310,12 @@ def module_codewords_pubmed():
         else:
             st.write("## Gesamtergebnis aus allen aktivierten APIs")
             df = pd.DataFrame(results_all)
-            st.dataframe(df)  # Schöne tabellarische Darstellung
+            st.dataframe(df)
 
     st.write("---")
-    st.info("Dieses Modul nutzt das ausgewählte Profil, um Codewörter (mit AND/OR-Verknüpfung) auf alle aktivierten APIs anzuwenden und gibt alle Paper-Informationen aus (Quelle, Titel, PubMed ID, DOI, Jahr, Abstract, Population).")
+    st.info("Dieses Modul nutzt das ausgewählte Profil, um Codewörter (mit AND/OR-Verknüpfung) "
+            "auf alle aktivierten APIs anzuwenden und gibt alle Paper-Informationen aus (Quelle, "
+            "Titel, PubMed ID, DOI, Jahr, Abstract, Population).")
 
 # Falls dieses Modul als Hauptskript ausgeführt wird:
 if __name__ == "__main__":
