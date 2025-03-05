@@ -526,7 +526,7 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
     st.write("---")
     st.subheader("B) Gene-Filter & -Auswahl")
 
-    st.markdown("""Wähle ein Sheet aus `modules/genes.xlsx`, filtere nach Anfangsbuchstaben und wähle 
+    st.markdown("""Wähle ein Sheet aus modules/genes.xlsx, filtere nach Anfangsbuchstaben und wähle 
     genau **ein** Gen aus. Oder gib ein eigenes Gen ein, das die Auswahl aus der Liste überschreibt.
     Außerdem kannst du ein Codewort definieren, das ChatGPT zusätzlich in der Suche berücksichtigt.""")
 
@@ -759,4 +759,3 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
             )
 
 if __name__ == "__main__":
-    module_online_api_filter()
