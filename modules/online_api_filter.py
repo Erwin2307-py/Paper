@@ -83,7 +83,7 @@ def check_chatgpt_connection():
     try:
         openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=[{"role":"user", "content":"Short connectivity test. Reply with any short message."}],
+            messages=[{"role": "user", "content": "Short connectivity test. Reply with any short message."}],
             max_tokens=10,
             temperature=0
         )
@@ -251,10 +251,6 @@ def search_openalex(query: str, max_results=100):
     except Exception as e:
         st.error(f"OpenAlex-Suche fehlgeschlagen: {e}")
         return []
-
-##############################################################################
-# CORE Aggregate API (echte API-Anbindung)
-##############################################################################
 
 class CoreAPI:
     def __init__(self, api_key):
@@ -495,8 +491,8 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
     st.write("Wähle ein Sheet aus `modules/genes.xlsx` (ab Spalte C, Zeile 3) und entscheide per Häkchen, ob die Gene aus der Excel-Liste verwendet werden sollen.")
     
     use_gene_list = st.checkbox("Gene aus Excel verwenden", value=True)
-    
     genes = []
+    sheet_choice = ""
     if use_gene_list:
         excel_path = os.path.join("modules", "genes.xlsx")
         if not os.path.exists(excel_path):
@@ -521,7 +517,7 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
 
     show_genes = st.checkbox("Gene-Liste anzeigen?", value=False)
     if show_genes and genes:
-        st.markdown(f"**Gelistete Gene** (ab C3):")
+        st.markdown("**Gelistete Gene** (ab C3):")
         st.write(genes)
 
     st.write("---")
@@ -600,4 +596,95 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
                         title = paper.get("Title", "Kein Titel verfügbar")
                         year = paper.get("Year", "Kein Jahr verfügbar")
                         st.markdown(f"**Titel:** {title}")
-                        st.m
+                        st.markdown(f"**Jahr:** {year}")
+                        st.write("---")
+
+    # H) OpenAlex Suche
+    if use_openalex:
+        st.write("---")
+        st.subheader("H) OpenAlex Suche")
+        oa_query = st.text_input("OpenAlex Suchbegriff:", key="oa_query")
+        oa_limit = st.number_input("Anzahl Ergebnisse", min_value=1, max_value=20, value=5, step=1, key="oa_limit")
+        if st.button("OpenAlex durchsuchen"):
+            if not oa_query.strip():
+                st.warning("Bitte einen Suchbegriff eingeben.")
+            else:
+                oa_results = search_openalex(oa_query, max_results=oa_limit)
+                if not oa_results:
+                    st.info("Keine Ergebnisse gefunden oder Fehler bei der Anfrage.")
+                else:
+                    st.markdown(f"### Ergebnisse für '{oa_query}':")
+                    for paper in oa_results:
+                        title = paper.get("Title", "Kein Titel verfügbar")
+                        doi = paper.get("DOI", "n/a")
+                        year = paper.get("Year", "Kein Jahr verfügbar")
+                        st.markdown(f"**Titel:** {title}")
+                        st.markdown(f"**DOI:** {doi}")
+                        st.markdown(f"**Jahr:** {year}")
+                        st.write("---")
+
+    # I) CORE Aggregate Suche
+    if use_core:
+        st.write("---")
+        st.subheader("I) CORE Aggregate Suche")
+        core_query = st.text_input("CORE Suchbegriff:", key="core_query")
+        core_limit = st.number_input("Anzahl Ergebnisse", min_value=1, max_value=20, value=5, step=1, key="core_limit")
+        if st.button("CORE durchsuchen"):
+            if not core_query.strip():
+                st.warning("Bitte einen Suchbegriff eingeben.")
+            else:
+                core_results = search_core(core_query, max_results=core_limit)
+                if not core_results:
+                    st.info("Keine Ergebnisse gefunden oder Fehler bei der CORE Anfrage.")
+                else:
+                    st.markdown(f"### Ergebnisse für '{core_query}':")
+                    for paper in core_results:
+                        title = paper.get("Title", "Kein Titel verfügbar")
+                        doi = paper.get("DOI", "n/a")
+                        year = paper.get("Year", "Kein Jahr verfügbar")
+                        st.markdown(f"**Titel:** {title}")
+                        st.markdown(f"**DOI:** {doi}")
+                        st.markdown(f"**Jahr:** {year}")
+                        st.write("---")
+
+    st.write("---")
+    st.info(
+        "Fertig. Du kannst oben die APIs auswählen und testen sowie Profile speichern/laden. "
+        "Die Gene werden ab C3 eingelesen (sofern ausgewählt) und optional angezeigt. "
+        "Mit ChatGPT können Gene im eingegebenen Text gefiltert werden."
+    )
+    
+    # Einstellungen in Session speichern
+    st.session_state["current_settings"] = {
+        "use_pubmed": use_pubmed,
+        "use_epmc": use_epmc,
+        "use_google": use_google,
+        "use_semantic": use_semantic,
+        "use_openalex": use_openalex,
+        "use_core": use_core,
+        "use_chatgpt": use_chatgpt,
+        "sheet_choice": sheet_choice if use_gene_list else "",
+        "text_input": text_input
+    }
+    
+    # Profil speichern-Button
+    if st.button("Aktuelle Einstellungen speichern"):
+        pname = profile_name_input.strip()
+        if not pname:
+            st.warning("Bitte einen Profilnamen eingeben.")
+        else:
+            save_current_settings(
+                pname,
+                use_pubmed,
+                use_epmc,
+                use_google,
+                use_semantic,
+                use_openalex,
+                use_core,
+                use_chatgpt,
+                sheet_choice if use_gene_list else "",
+                text_input
+            )
+
+if __name__ == "__main__":
+    module_online_api_filter()
