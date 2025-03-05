@@ -1,13 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-online_api_filter.py
---------------------
-Dieses Modul stellt alle echten API-Funktionen, Verbindungstests, den Gene-Loader,
-den ChatGPT-Filter und die Profilverwaltung bereit. Es enthält die Hauptfunktion
-module_online_api_filter(), die die Auswahl der APIs, den Gene‑Filter und Suchanfragen ermöglicht.
-"""
-
 import streamlit as st
 import requests
 import openai
@@ -105,8 +95,7 @@ def check_chatgpt_connection():
 # 2) API-Suchfunktionen
 ##############################################################################
 
-# PubMed
-def esearch_pubmed_api(query: str, max_results=100, timeout=10):
+def esearch_pubmed(query: str, max_results=100, timeout=10):
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": max_results}
     try:
@@ -143,12 +132,11 @@ def get_pubmed_details(pmids: list):
         return []
 
 def search_pubmed(query: str, max_results=100):
-    pmids = esearch_pubmed_api(query, max_results=max_results)
+    pmids = esearch_pubmed(query, max_results=max_results)
     if not pmids:
         return []
     return get_pubmed_details(pmids)
 
-# Europe PMC
 def search_europe_pmc(query: str, max_results=100):
     url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {"query": query, "format": "json", "pageSize": max_results}
@@ -172,7 +160,6 @@ def search_europe_pmc(query: str, max_results=100):
         st.error(f"Europe PMC-Suche fehlgeschlagen: {e}")
         return []
 
-# Google Scholar (echt, via scholarly)
 def search_google_scholar(query: str, max_results=100):
     try:
         from scholarly import scholarly
@@ -200,7 +187,6 @@ def search_google_scholar(query: str, max_results=100):
         st.error(f"Fehler bei der Google Scholar Suche: {e}")
         return []
 
-# Semantic Scholar
 def search_semantic_scholar(query: str, max_results=100, retries=3, delay=5):
     base_url = "https://api.semanticscholar.org/graph/v1/paper/search"
     params = {"query": query, "limit": max_results, "fields": "title,authors,year,abstract"}
@@ -238,7 +224,6 @@ def search_semantic_scholar(query: str, max_results=100, retries=3, delay=5):
     st.error("Semantic Scholar API: Rate limit überschritten. Bitte später erneut versuchen.")
     return []
 
-# OpenAlex (echt)
 def search_openalex(query: str, max_results=100):
     url = "https://api.openalex.org/works"
     params = {"search": query, "per_page": max_results}
@@ -267,7 +252,6 @@ def search_openalex(query: str, max_results=100):
         st.error(f"OpenAlex-Suche fehlgeschlagen: {e}")
         return []
 
-# CORE Aggregate (echt)
 class CoreAPI:
     def __init__(self, api_key):
         self.base_url = "https://api.core.ac.uk/v3/"
@@ -398,11 +382,11 @@ def load_settings(profile_name: str):
     return None
 
 ##############################################################################
-# 6) Haupt-Modul: Codewörter & Multi-API-Suche
+# 6) Haupt-Modul: Online API Filter & Gene-Filter
 ##############################################################################
 
-def module_codewords_pubmed():
-    st.title("Codewörter & Multi-API-Suche (mind. 100 Paper pro API)")
+def module_online_api_filter():
+    st.title("API-Auswahl & Gene-Filter mit Profile-Speicherung + ChatGPT-Synonym-Fenster")
 
     # Profilverwaltung
     st.subheader("Profilverwaltung")
@@ -425,11 +409,11 @@ def module_codewords_pubmed():
         st.session_state["current_settings"] = {
             "use_pubmed": True,
             "use_epmc": True,
-            "use_google": True,
-            "use_semantic": True,
-            "use_openalex": True,
-            "use_core": True,
-            "use_chatgpt": True,
+            "use_google": False,
+            "use_semantic": False,
+            "use_openalex": False,
+            "use_core": False,
+            "use_chatgpt": False,
             "sheet_choice": "",
             "text_input": ""
         }
@@ -683,25 +667,24 @@ Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
         "text_input": text_input
     }
     
-    # Profil speichern
+    # Profil speichern-Button
     if st.button("Aktuelle Einstellungen speichern"):
         pname = profile_name_input.strip()
         if not pname:
             st.warning("Bitte einen Profilnamen eingeben.")
         else:
-            settings = st.session_state["current_settings"]
             save_current_settings(
                 pname,
-                settings["use_pubmed"],
-                settings["use_epmc"],
-                settings["use_google"],
-                settings["use_semantic"],
-                settings["use_openalex"],
-                settings["use_core"],
-                settings["use_chatgpt"],
-                settings["sheet_choice"],
-                settings["text_input"]
+                use_pubmed,
+                use_epmc,
+                use_google,
+                use_semantic,
+                use_openalex,
+                use_core,
+                use_chatgpt,
+                sheet_choice if use_gene_list else "",
+                text_input
             )
 
 if __name__ == "__main__":
-    module_codewords_pubmed()
+    module_online_api_filter()
