@@ -6,7 +6,7 @@ import os
 import time
 
 ##############################################################################
-# 1) Verbindungstest-Funktionen für diverse APIs
+# 1) Verbindungstest-Funktionen für diverse APIs (unverändert)
 ##############################################################################
 
 def check_pubmed_connection(timeout=5):
@@ -77,7 +77,6 @@ def check_core_connection(api_key="", timeout=5):
         return False
 
 def check_chatgpt_connection():
-    """Beispiel-Funktion, um ChatGPT zu testen (optional)."""
     openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
     if not openai.api_key:
         return False
@@ -303,8 +302,7 @@ def search_core(query: str, max_results=100):
 
 def load_genes_from_excel(sheet_name: str) -> list:
     """
-    Liest ab Spalte C, Zeile 3 (Index [2, 2]) die Gene aus 'genes.xlsx' in 'modules' ein
-    und gibt sie als Liste zurück.
+    Liest ab Spalte C, Zeile 3 (Index [2, 2]) die Gene aus 'genes.xlsx' und gibt sie als Liste zurück.
     """
     excel_path = os.path.join("modules", "genes.xlsx")
     try:
@@ -316,7 +314,7 @@ def load_genes_from_excel(sheet_name: str) -> list:
         return []
 
 ##############################################################################
-# 4) Profile (Speichern & Laden)
+# 4) Profile
 ##############################################################################
 
 def save_current_settings(profile_name: str, use_pubmed: bool, use_epmc: bool, use_google: bool,
@@ -344,11 +342,11 @@ def load_settings(profile_name: str):
     return None
 
 ##############################################################################
-# 5) Haupt-Funktion: Online API Filter + Genes => Multi-API-Suche
+# 5) Haupt-Modul: Genes per DropDown (erster Buchstabe) + MultiSelect
 ##############################################################################
 
 def module_online_api_filter():
-    st.title("Online API Filter: Codewords + Gene aus Excel als zusätzliche Suchwörter")
+    st.title("Multi-API-Suche: Codewords + Gene aus Excel (buchstabenweise)")
 
     # Profilverwaltung
     st.subheader("Profilverwaltung")
@@ -367,7 +365,7 @@ def module_online_api_filter():
         else:
             st.info("Kein Profil zum Laden ausgewählt.")
 
-    # Default-Einstellungen, falls noch nicht in Session:
+    # Default-Settings
     if "current_settings" not in st.session_state:
         st.session_state["current_settings"] = {
             "use_pubmed": True,
@@ -382,7 +380,7 @@ def module_online_api_filter():
         }
     current = st.session_state["current_settings"]
 
-    # A) API-Auswahl & Verbindungstest
+    # A) API-Auswahl + Verbindungstest
     st.subheader("A) API-Auswahl + Verbindungstest")
     col1, col2 = st.columns(2)
     with col1:
@@ -393,7 +391,7 @@ def module_online_api_filter():
     with col2:
         use_openalex = st.checkbox("OpenAlex", value=current["use_openalex"])
         use_core = st.checkbox("CORE", value=current["use_core"])
-        use_chatgpt = st.checkbox("ChatGPT (nur zur Kontrolle)", value=current["use_chatgpt"])
+        use_chatgpt = st.checkbox("ChatGPT (optional)", value=current["use_chatgpt"])
 
     if st.button("Verbindung prüfen"):
         def green_dot(): return "<span style='color: limegreen; font-size: 20px;'>&#9679;</span>"
@@ -418,18 +416,19 @@ def module_online_api_filter():
 
     # B) Codewords-Eingabe
     st.write("---")
-    st.subheader("B) Codewords eingeben + Gene aus Excel einbeziehen")
-
+    st.subheader("B) Codewords eingeben")
     codewords_text = st.text_area("Codewörter (kommasepariert, OR-Suche):", value=current["codewords"], height=80)
 
-    use_gene_list = st.checkbox("Gene aus Excel zusätzlich verwenden?", value=True)
-    genes = []
-    sheet_choice = ""
+    # C) Gene-liste buchstabenweise
+    st.write("---")
+    st.subheader("C) Gene aus Excel (Spalte C, ab Zeile 3) buchstabenweise auswählen")
+
+    use_gene_list = st.checkbox("Gene aus Excel einbeziehen?", value=True)
+    chosen_genes = []  # Diese Genes werden am Ende an die Codewords angehängt
     if use_gene_list:
-        st.write("**Excel-Tabellenblätter**:")
         excel_path = os.path.join("modules", "genes.xlsx")
         if not os.path.exists(excel_path):
-            st.error("Die Datei 'genes.xlsx' wurde nicht in 'modules/' gefunden!")
+            st.error("Die Datei 'genes.xlsx' wurde nicht in 'modules/' gefunden.")
             return
         try:
             xls = pd.ExcelFile(excel_path)
@@ -444,94 +443,81 @@ def module_online_api_filter():
         current_sheet = current.get("sheet_choice", sheet_names[0])
         if current_sheet not in sheet_names:
             current_sheet = sheet_names[0]
-        sheet_choice = st.selectbox("Wähle ein Sheet:", sheet_names, index=sheet_names.index(current_sheet))
-        # Laden
-        genes = load_genes_from_excel(sheet_choice)
-        show_genes = st.checkbox("Geladene Gene anzeigen?", value=False)
-        if show_genes and genes:
-            st.write("**Gene**:", genes)
+        sheet_choice = st.selectbox("Wähle ein Sheet für Genes:", sheet_names, index=sheet_names.index(current_sheet))
 
-    # C) Button: Multi-API-Suche ausführen
+        # Genes laden
+        all_genes = load_genes_from_excel(sheet_choice)
+        if not all_genes:
+            st.info("Keine Gene geladen oder Excel-Sheet leer.")
+        else:
+            # Nach Buchstabe gruppieren
+            # 1) Alle großen Buchstaben, die als Initiale vorkommen
+            letters = sorted(set(g[0].upper() for g in all_genes if g))
+            letter_choice = st.selectbox("Wähle Anfangsbuchstaben:", options=["(Kein)"] + letters)
+            filtered_genes = []
+            if letter_choice != "(Kein)":
+                # Nur Gene, die mit letter_choice starten
+                filtered_genes = [g for g in all_genes if g and g[0].upper() == letter_choice]
+
+            # MultiSelect, damit man mehrere Gene wählen kann
+            chosen_genes = st.multiselect("Wähle Gene, die für die Suche verwendet werden sollen:", filtered_genes)
+
+    # D) Button: Multi-API-Suche
     st.write("---")
-    st.subheader("C) Suche in ausgewählten APIs starten")
-
-    if st.button("Multi-API Suche ausführen"):
-        # 1) Codewords verarbeiten
+    st.subheader("D) Multi-API-Suche starten (Codewords + ausgewählte Gene)")
+    if st.button("Suche starten"):
+        # 1) Codewords aus TextArea
         raw_codewords = [w.strip() for w in codewords_text.replace(",", " ").split() if w.strip()]
-        # 2) Optional Genes dazunehmen
-        if use_gene_list and genes:
-            raw_codewords.extend(genes)
+
+        # 2) Ggf. Genes dran
+        if use_gene_list and chosen_genes:
+            raw_codewords.extend(chosen_genes)
 
         if not raw_codewords:
             st.warning("Keine Codewörter oder Gene vorhanden.")
             return
 
-        # Baue finalen Suchquery -> 'OR'-verknüpft
-        # z. B. "vitamin D" + "BRCA1" => "vitamin D OR BRCA1"
-        query_combined = " OR ".join(raw_codewords)
+        final_query = " OR ".join(raw_codewords)
+        st.write(f"Finale Suchanfrage: **{final_query}**")
 
-        st.write("Finale Suchanfrage:", query_combined)
         all_results = []
 
-        # PubMed
         if use_pubmed:
-            pubmed_res = search_pubmed(query_combined)
+            pubmed_res = search_pubmed(final_query)
             st.write(f"PubMed: {len(pubmed_res)} Treffer")
             all_results.extend(pubmed_res)
-
-        # Europe PMC
         if use_epmc:
-            epmc_res = search_europe_pmc(query_combined)
+            epmc_res = search_europe_pmc(final_query)
             st.write(f"Europe PMC: {len(epmc_res)} Treffer")
             all_results.extend(epmc_res)
-
-        # Google Scholar
         if use_google:
-            gs_res = search_google_scholar(query_combined)
+            gs_res = search_google_scholar(final_query)
             st.write(f"Google Scholar: {len(gs_res)} Treffer")
             all_results.extend(gs_res)
-
-        # Semantic Scholar
         if use_semantic:
-            sem_res = search_semantic_scholar(query_combined)
+            sem_res = search_semantic_scholar(final_query)
             st.write(f"Semantic Scholar: {len(sem_res)} Treffer")
             all_results.extend(sem_res)
-
-        # OpenAlex
         if use_openalex:
-            oa_res = search_openalex(query_combined)
+            oa_res = search_openalex(final_query)
             st.write(f"OpenAlex: {len(oa_res)} Treffer")
             all_results.extend(oa_res)
-
-        # CORE
         if use_core:
-            core_res = search_core(query_combined)
+            core_res = search_core(final_query)
             st.write(f"CORE: {len(core_res)} Treffer")
             all_results.extend(core_res)
 
+        # Results anzeigen
         if not all_results:
             st.info("Keine Treffer in den ausgewählten APIs.")
         else:
             df_res = pd.DataFrame(all_results)
             st.dataframe(df_res)
 
+    # E) Session-Settings speichern
     st.write("---")
-    st.info("Tipp: Speichere deine Einstellungen als Profil, um sie später wiederzuladen.")
-
-    # Einstellungen in Session State schreiben
-    st.session_state["current_settings"] = {
-        "use_pubmed": use_pubmed,
-        "use_epmc": use_epmc,
-        "use_google": use_google,
-        "use_semantic": use_semantic,
-        "use_openalex": use_openalex,
-        "use_core": use_core,
-        "use_chatgpt": use_chatgpt,
-        "sheet_choice": sheet_choice if use_gene_list else "",
-        "codewords": codewords_text
-    }
-
-    if st.button("Einstellungen speichern"):
+    st.info("Einstellungen als Profil speichern (optional).")
+    if st.button("Aktuelle Einstellungen speichern"):
         pname = profile_name_input.strip()
         if not pname:
             st.warning("Bitte einen Profilnamen eingeben.")
@@ -549,12 +535,23 @@ def module_online_api_filter():
                 codewords_text
             )
 
-def main():
-    st.title("Online API Filter: Codewords + Genes as Additional Search Terms")
+    # In Session State sichern
+    st.session_state["current_settings"] = {
+        "use_pubmed": use_pubmed,
+        "use_epmc": use_epmc,
+        "use_google": use_google,
+        "use_semantic": use_semantic,
+        "use_openalex": use_openalex,
+        "use_core": use_core,
+        "use_chatgpt": use_chatgpt,
+        "sheet_choice": sheet_choice if use_gene_list else "",
+        "codewords": codewords_text
+    }
 
+def main():
+    st.title("Online API Filter mit Genes aus Excel (buchstabenweiser DropDown)")
     if "profiles" not in st.session_state:
         st.session_state["profiles"] = {}
-
     module_online_api_filter()
 
 if __name__ == "__main__":
