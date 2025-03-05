@@ -29,7 +29,7 @@ def flatten_dict(d, parent_key="", sep="__"):
     return dict(items)
 
 ##############################
-# PubMed-Funktionen
+# PubMed-Funktionen (ESearch + ESummary + EFetch)
 ##############################
 
 def esearch_pubmed(query: str, max_results=100, timeout=10):
@@ -264,18 +264,11 @@ def search_semantic_scholar(query: str, max_results=100, retries=3, delay=5):
     return []
 
 ##############################
-# OpenAlex / CORE (NEU: Echte OpenAlex-Suche)
+# OpenAlex / CORE
 ##############################
 
 def search_openalex(query: str, max_results=100):
-    """
-    Führt eine Suche in der OpenAlex-API durch, analog zu 'search_pubmed',
-    und gibt eine Liste mit demselben Felder-Layout zurück:
-      ["Source", "Title", "PubMed ID", "Abstract", "DOI", "Year",
-       "Publisher", "Population", "FullData"].
-    """
     base_url = "https://api.openalex.org/works"
-    # Bei OpenAlex heißt es "per-page", wir verwenden "max_results"
     params = {
         "search": query,
         "per-page": max_results
@@ -379,22 +372,21 @@ def module_codewords_pubmed():
     ob wir im 'Abstract-Fenster' sind (abstract_id vorhanden)
     oder im normalen Suchinterface.
     """
-    # Anstelle von st.experimental_get_query_params:
     query_params = st.query_params
     abstract_id = query_params.get("abstract_id", [None])[0]
 
-    # 1) Falls abstract_id gesetzt => nur Abstract in separatem Fenster
+    # 1) Falls "?abstract_id=X" => nur Abstract-Fenster
     if abstract_id is not None:
         show_abstract_window(abstract_id)
         return
 
-    # 2) Normaler Modus:
+    # 2) Normaler Modus
     st.title("Codewörter & Multi-API-Suche (mind. 100 Paper pro API)")
 
-    # Profil wählen
     if "profiles" not in st.session_state or not st.session_state["profiles"]:
         st.warning("Keine Profile vorhanden. Bitte zuerst ein Profil speichern.")
         return
+
     profile_names = list(st.session_state["profiles"].keys())
     chosen_profile = st.selectbox("Wähle ein Profil:", ["(kein)"] + profile_names)
     if chosen_profile == "(kein)":
@@ -405,13 +397,11 @@ def module_codewords_pubmed():
     st.subheader("Profil-Einstellungen")
     st.json(profile_data)
 
-    # Codewörter & Logik
     st.subheader("Codewörter & Logik")
     codewords_str = st.text_input("Codewörter (kommasepariert oder Leerzeichen):", "")
     st.write("Beispiel: genotyp, SNP, phänotyp")
     logic_option = st.radio("Logik:", options=["AND", "OR"], index=1)
 
-    # 3) Suche starten
     if st.button("Suche starten"):
         raw_list = [w.strip() for w in codewords_str.replace(",", " ").split() if w.strip()]
         if not raw_list:
@@ -423,7 +413,6 @@ def module_codewords_pubmed():
 
         results_all = []
 
-        # APIs laut Profil
         if profile_data.get("use_pubmed", False):
             st.write("### PubMed")
             pubmed_res = search_pubmed(query_str, max_results=100)
@@ -466,7 +455,7 @@ def module_codewords_pubmed():
 
         st.write("## Gesamtergebnis aus allen aktivierten APIs")
 
-        # 4) DataFrame mit Spalten: Title, PubMed ID, Year, Publisher, Population, Source
+        # DataFrame mit Title, PubMed ID, Year, Publisher, Population, Source
         df_main = pd.DataFrame([
             {
                 "Title": p.get("Title", "n/a"),
@@ -479,21 +468,21 @@ def module_codewords_pubmed():
             for p in results_all
         ])
 
-        # 5) Speichere die Rohdaten in st.session_state, damit wir den Abstract anzeigen können
+        # search_results für show_abstract_window
         st.session_state["search_results"] = results_all
 
-        # 6) Füge die Spalte "Abstract (Link)" hinzu, die im Browser ?abstract_id=X setzt
-        abstract_links = []
+        # Link-Spalte: "<a href='?abstract_id=idx' target='_blank'>[Abstract anzeigen]</a>"
+        links = []
         for idx in range(len(results_all)):
             link_html = f'<a href="?abstract_id={idx}" target="_blank">[Abstract anzeigen]</a>'
-            abstract_links.append(link_html)
+            links.append(link_html)
+        df_main["Abstract (Link)"] = links
 
-        df_main["Abstract (Link)"] = abstract_links
+        # => HTML-Rendering statt st.dataframe
+        html_table = df_main.to_html(escape=False, index=False)
+        st.markdown(html_table, unsafe_allow_html=True)
 
-        # 7) DataFrame in Streamlit anzeigen
-        st.dataframe(df_main)
-
-        # 8) Excel-Export:
+        # => Excel-Export
         timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         safe_codewords = codewords_str.strip().replace(" ", "_").replace(",", "_").replace("/", "_")
         filename = f"{safe_codewords}_{timestamp_str}.xlsx"
@@ -511,17 +500,14 @@ def module_codewords_pubmed():
             for p in results_all
         ])
 
-        # Pro API ein eigenes Sheet
         source_groups = defaultdict(list)
         for paper in results_all:
             src = paper.get("Source", "n/a")
             source_groups[src].append(paper)
 
         with pd.ExcelWriter(filename, engine="openpyxl") as writer:
-            # Main-Sheet (inkl. Abstract)
             df_main_excel.to_excel(writer, sheet_name="Main", index=False)
 
-            # Pro API => "flatten" FullData + die 7 Felder
             for s_name, paper_list in source_groups.items():
                 rows = []
                 for paper in paper_list:
@@ -535,13 +521,9 @@ def module_codewords_pubmed():
                     flat_fd["Source"] = paper.get("Source", "n/a")
                     rows.append(flat_fd)
 
-                if rows:
-                    df_api = pd.DataFrame(rows)
-                else:
-                    df_api = pd.DataFrame()
-
-                sheet_name = s_name[:31] if s_name else "API"
-                df_api.to_excel(writer, sheet_name=sheet_name, index=False)
+                df_api = pd.DataFrame(rows) if rows else pd.DataFrame()
+                short_name = s_name[:31] if s_name else "API"
+                df_api.to_excel(writer, sheet_name=short_name, index=False)
 
         st.success(f"Excel-Datei erstellt: {filename}")
         with open(filename, "rb") as f:
@@ -553,8 +535,8 @@ def module_codewords_pubmed():
             )
 
     st.write("---")
-    st.info("Abstracts werden über einen separaten Tab angezeigt; OpenAlex nun mit echter Suche.")
-
+    st.info("Abstracts werden via EFetch geholt und im separaten Tab angezeigt, Links sind klickbar!")
+    
 
 # Falls dieses Modul als Hauptskript ausgeführt wird:
 if __name__ == "__main__":
