@@ -353,14 +353,14 @@ def module_codewords_pubmed():
     ob wir im 'Abstract-Fenster' sind (abstract_id vorhanden)
     oder im normalen Suchinterface.
     """
-    # Ersetzt st.experimental_get_query_params durch st.query_params
+    # Wichtig: Hier ersetzen wir st.experimental_get_query_params durch st.query_params
     query_params = st.query_params
     abstract_id = query_params.get("abstract_id", [None])[0]
 
     # Wenn abstract_id gesetzt ist, zeigen wir NUR das Abstract-Fenster:
     if abstract_id is not None:
         show_abstract_window(abstract_id)
-        return  # WICHTIG: restliches Skript abbrechen
+        return  # restliches Skript abbrechen
 
     st.title("Codewörter & Multi-API-Suche (mind. 100 Paper pro API)")
 
