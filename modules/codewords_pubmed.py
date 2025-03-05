@@ -5,13 +5,16 @@ import os
 import time
 import xml.etree.ElementTree as ET  # Für das Parsen des PubMed-XML
 from scholarly import scholarly
-from datetime import datetime  # <-- Wichtig für Datum/Uhrzeit im Dateinamen
+from datetime import datetime  # Für Datum/Uhrzeit im Dateinamen
 
 ##############################
-# Echte API-Suchfunktionen
+# Hilfsfunktionen PubMed
 ##############################
 
 def esearch_pubmed(query: str, max_results=100, timeout=10):
+    """
+    Führt eine PubMed-Suche via E-Utilities aus und gibt eine Liste von PMID zurück.
+    """
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {
         "db": "pubmed",
@@ -29,6 +32,10 @@ def esearch_pubmed(query: str, max_results=100, timeout=10):
         return []
 
 def fetch_pubmed_abstracts(pmids, timeout=10):
+    """
+    Ruft über EFetch die Abstracts zu einer Liste von PMID ab.
+    Gibt ein Dict { pmid -> abstract_text } zurück.
+    """
     if not pmids:
         return {}
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
@@ -46,6 +53,9 @@ def fetch_pubmed_abstracts(pmids, timeout=10):
         return {}
 
 def parse_efetch_response(xml_text: str) -> dict:
+    """
+    Parst den XML-Text von EFetch und gibt ein Dict { pmid -> abstract } zurück.
+    """
     root = ET.fromstring(xml_text)
     pmid_abstract_map = {}
     for article in root.findall(".//PubmedArticle"):
@@ -58,8 +68,26 @@ def parse_efetch_response(xml_text: str) -> dict:
     return pmid_abstract_map
 
 def get_pubmed_details(pmids: list):
+    """
+    Ruft über ESummary Details zu den übergebenen PMID ab und 
+    via EFetch den echten Abstract. Gibt eine Liste Dictionaries zurück.
+    
+    Jeder Eintrag enthält:
+        {
+          "Source": "PubMed",
+          "Title": ...,
+          "PubMed ID": ...,
+          "DOI": ...,
+          "Year": ...,
+          "Abstract": ...,
+          "Population": "n/a",
+          "FullData": { ... alle Felder aus ESummary ... , "abstract": ... }
+        }
+    """
     if not pmids:
         return []
+
+    # ESummary-Abruf
     url_summary = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
     params_sum = {
         "db": "pubmed",
@@ -74,16 +102,29 @@ def get_pubmed_details(pmids: list):
         st.error(f"Fehler beim Abrufen von PubMed-Daten (ESummary): {e}")
         return []
 
+    # Abstracts via EFetch
     abstracts_map = fetch_pubmed_abstracts(pmids, timeout=10)
 
     results = []
     for pmid in pmids:
         info = data_summary.get("result", {}).get(pmid, {})
+        if not info or pmid == "uids":  # "uids" ist manchmal ein Key in "result", ignorieren
+            continue
+
         pubdate = info.get("pubdate", "n/a")
         pubyear = pubdate[:4] if len(pubdate) >= 4 else "n/a"
         doi = info.get("elocationid", "n/a")
         title = info.get("title", "n/a")
         abs_text = abstracts_map.get(pmid, "n/a")
+
+        # "fulljournalname" könnte der Herausgeber sein, fallback auf "source"
+        publisher = info.get("fulljournalname") or info.get("source") or "n/a"
+
+        # Hier packen wir alle ESummary-Daten plus Abstract in "FullData"
+        # => So können wir später pro Paper ein eigenes Sheet mit allen Feldern erstellen
+        full_data = dict(info)
+        full_data["abstract"] = abs_text
+
         results.append({
             "Source": "PubMed",
             "Title": title,
@@ -91,7 +132,9 @@ def get_pubmed_details(pmids: list):
             "DOI": doi,
             "Year": pubyear,
             "Abstract": abs_text,
-            "Population": "n/a"
+            "Population": "n/a",
+            "Publisher": publisher,
+            "FullData": full_data
         })
     return results
 
@@ -100,6 +143,10 @@ def search_pubmed(query: str, max_results=100):
     if not pmids:
         return []
     return get_pubmed_details(pmids)
+
+##############################
+# Europe PMC (Timeout/Retry)
+##############################
 
 def search_europe_pmc(query: str, max_results=100, timeout=30, retries=3, delay=5):
     url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
@@ -122,7 +169,10 @@ def search_europe_pmc(query: str, max_results=100, timeout=30, retries=3, delay=
                     "DOI": item.get("doi", "n/a"),
                     "Year": str(item.get("pubYear", "n/a")),
                     "Abstract": item.get("abstractText", "n/a"),
-                    "Population": "n/a"
+                    "Population": "n/a",
+                    "Publisher": item.get("journalInfo", {}).get("journal", "n/a"),
+                    # EPMC hat nicht dasselbe FullData, hier nur Demo:
+                    "FullData": dict(item)  
                 })
             return results
         except requests.exceptions.ReadTimeout:
@@ -132,8 +182,12 @@ def search_europe_pmc(query: str, max_results=100, timeout=30, retries=3, delay=
         except requests.exceptions.RequestException as e:
             st.error(f"Europe PMC-Suche fehlgeschlagen: {e}")
             return []
-    st.error("Europe PMC-Suche wiederholt fehlgeschlagen (Timeout). Bitte später erneut versuchen.")
+    st.error("Europe PMC-Suche wiederholt fehlgeschlagen (Timeout).")
     return []
+
+##############################
+# Google Scholar
+##############################
 
 def search_google_scholar(query: str, max_results=100):
     results = []
@@ -145,9 +199,10 @@ def search_google_scholar(query: str, max_results=100):
                 break
             bib = publication.get('bib', {})
             title = bib.get('title', 'n/a')
-            authors = bib.get('author', 'n/a')
             pub_year = bib.get('pub_year', 'n/a')
             abstract = bib.get('abstract', 'n/a')
+
+            # "Publisher" nicht verfügbar, also "n/a"
             results.append({
                 "Source": "Google Scholar",
                 "Title": title,
@@ -155,11 +210,18 @@ def search_google_scholar(query: str, max_results=100):
                 "DOI": "n/a",
                 "Year": str(pub_year),
                 "Abstract": abstract,
-                "Population": "n/a"
+                "Population": "n/a",
+                "Publisher": "n/a",
+                # FullData:
+                "FullData": dict(publication)
             })
     except Exception as e:
         st.error(f"Fehler bei der Google Scholar-Suche: {e}")
     return results
+
+##############################
+# Semantic Scholar
+##############################
 
 def search_semantic_scholar(query: str, max_results=100, retries=3, delay=5):
     base_url = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -184,7 +246,9 @@ def search_semantic_scholar(query: str, max_results=100, retries=3, delay=5):
                     "DOI": "n/a",
                     "Year": str(paper.get("year", "n/a")),
                     "Abstract": paper.get("abstract", "n/a"),
-                    "Population": "n/a"
+                    "Population": "n/a",
+                    "Publisher": "n/a",
+                    "FullData": dict(paper)
                 })
             return results
         except requests.exceptions.HTTPError as e:
@@ -199,8 +263,12 @@ def search_semantic_scholar(query: str, max_results=100, retries=3, delay=5):
         except Exception as e:
             st.error(f"Fehler bei der Semantic Scholar-Suche: {e}")
             return []
-    st.error("Semantic Scholar: Rate limit überschritten. Bitte später erneut versuchen.")
+    st.error("Semantic Scholar: Rate limit überschritten.")
     return []
+
+##############################
+# OpenAlex / CORE (Dummies)
+##############################
 
 def search_openalex(query: str, max_results=100):
     return [{
@@ -210,7 +278,9 @@ def search_openalex(query: str, max_results=100):
         "DOI": "n/a",
         "Year": "2023",
         "Abstract": "Dies ist ein Dummy-Abstract von OpenAlex.",
-        "Population": "n/a"
+        "Population": "n/a",
+        "Publisher": "n/a",
+        "FullData": {"demo": "OpenAlex does not return data here."}
     }]
 
 def search_core(query: str, max_results=100):
@@ -221,7 +291,9 @@ def search_core(query: str, max_results=100):
         "DOI": "n/a",
         "Year": "2023",
         "Abstract": "Dies ist ein Dummy-Abstract von CORE.",
-        "Population": "n/a"
+        "Population": "n/a",
+        "Publisher": "n/a",
+        "FullData": {"demo": "CORE dummy data."}
     }]
 
 ##############################
@@ -279,89 +351,129 @@ def module_codewords_pubmed():
         # --- API-Abfragen laut Profil ---
         if profile_data.get("use_pubmed", False):
             st.write("### PubMed")
-            res = search_pubmed(query_str, max_results=100)
-            st.write(f"Anzahl PubMed-Ergebnisse: {len(res)}")
-            results_all.extend(res)
+            pubmed_res = search_pubmed(query_str, max_results=100)
+            st.write(f"Anzahl PubMed-Ergebnisse: {len(pubmed_res)}")
+            results_all.extend(pubmed_res)
 
         if profile_data.get("use_epmc", False):
             st.write("### Europe PMC")
-            res = search_europe_pmc(query_str, max_results=100)
-            st.write(f"Anzahl Europe PMC-Ergebnisse: {len(res)}")
-            results_all.extend(res)
+            epmc_res = search_europe_pmc(query_str, max_results=100)
+            st.write(f"Anzahl Europe PMC-Ergebnisse: {len(epmc_res)}")
+            results_all.extend(epmc_res)
 
         if profile_data.get("use_google", False):
             st.write("### Google Scholar")
-            res = search_google_scholar(query_str, max_results=100)
-            st.write(f"Anzahl Google Scholar-Ergebnisse: {len(res)}")
-            results_all.extend(res)
+            google_res = search_google_scholar(query_str, max_results=100)
+            st.write(f"Anzahl Google Scholar-Ergebnisse: {len(google_res)}")
+            results_all.extend(google_res)
 
         if profile_data.get("use_semantic", False):
             st.write("### Semantic Scholar")
-            res = search_semantic_scholar(query_str, max_results=100)
-            st.write(f"Anzahl Semantic Scholar-Ergebnisse: {len(res)}")
-            results_all.extend(res)
+            sem_res = search_semantic_scholar(query_str, max_results=100)
+            st.write(f"Anzahl Semantic Scholar-Ergebnisse: {len(sem_res)}")
+            results_all.extend(sem_res)
 
         if profile_data.get("use_openalex", False):
             st.write("### OpenAlex")
-            res = search_openalex(query_str, max_results=100)
-            st.write(f"Anzahl OpenAlex-Ergebnisse: {len(res)}")
-            results_all.extend(res)
+            oa_res = search_openalex(query_str, max_results=100)
+            st.write(f"Anzahl OpenAlex-Ergebnisse: {len(oa_res)}")
+            results_all.extend(oa_res)
 
         if profile_data.get("use_core", False):
             st.write("### CORE")
-            res = search_core(query_str, max_results=100)
-            st.write(f"Anzahl CORE-Ergebnisse: {len(res)}")
-            results_all.extend(res)
+            core_res = search_core(query_str, max_results=100)
+            st.write(f"Anzahl CORE-Ergebnisse: {len(core_res)}")
+            results_all.extend(core_res)
 
         # --- Ausgabe ---
         if not results_all:
             st.info("Keine Ergebnisse gefunden.")
-        else:
-            st.write("## Gesamtergebnis aus allen aktivierten APIs")
-            
-            # (a) DataFrame anzeigen
-            df = pd.DataFrame(results_all)
-            st.dataframe(df)
+            return
 
-            # (b) Expanders pro Paper
-            st.write("### Klicke auf einen Titel, um das Abstract anzuzeigen:")
-            for idx, row in df.iterrows():
-                with st.expander(f"{row['Title']} (Quelle: {row['Source']})"):
-                    st.write(f"**PubMed ID**: {row['PubMed ID']}")
-                    st.write(f"**DOI**: {row['DOI']}")
-                    st.write(f"**Jahr**: {row['Year']}")
-                    st.write(f"**Population**: {row['Population']}")
-                    st.markdown("---")
-                    st.write(f"**Abstract**:\n\n{row['Abstract']}")
+        st.write("## Gesamtergebnis aus allen aktivierten APIs")
+        df = pd.DataFrame(results_all)
+        st.dataframe(df)
 
-            # (c) Excel-Dateiname: Codewörter + Datum/Uhrzeit
-            # Sonderzeichen durch Unterstrich ersetzen (je nach Bedarf erweiterbar)
-            safe_codewords = (codewords_str
-                              .replace(" ", "_")
-                              .replace(",", "_")
-                              .replace("/", "_")
-                              .replace("\\", "_")
-                              .replace(":", "_"))
-            timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            filename = f"{safe_codewords}_{timestamp_str}.xlsx"
+        st.write("### Klicke auf einen Titel, um das Abstract anzuzeigen:")
+        for idx, row in df.iterrows():
+            with st.expander(f"{row['Title']} (Quelle: {row['Source']})"):
+                st.write(f"**PubMed ID**: {row.get('PubMed ID', 'n/a')}")
+                st.write(f"**DOI**: {row.get('DOI', 'n/a')}")
+                st.write(f"**Jahr**: {row.get('Year', 'n/a')}")
+                st.write(f"**Herausgeber**: {row.get('Publisher', 'n/a')}")
+                st.write(f"**Populationsgröße**: {row.get('Population', 'n/a')}")
+                st.markdown("---")
+                st.write(f"**Abstract**:\n\n{row.get('Abstract', 'n/a')}")
 
-            # (d) Excel-Datei speichern
-            df.to_excel(filename, index=False)
-            st.success(f"Ergebnisse wurden als **{filename}** abgespeichert (lokal).")
+        # ========== Excel-Schreiben mit mehreren Sheets ==========
+        # (1) Hauptblatt: "Main"
+        #     Felder: Name, PubMed ID, Abstract, Jahr, Herausgeber, Population
+        main_rows = []
+        for paper in results_all:
+            main_rows.append({
+                "Name": paper.get("Title", "n/a"),
+                "PubMed ID": paper.get("PubMed ID", "n/a"),
+                "Abstract": paper.get("Abstract", "n/a"),
+                "Jahr": paper.get("Year", "n/a"),
+                "Herausgeber": paper.get("Publisher", "n/a"),
+                "Populationsgröße": paper.get("Population", "n/a")
+            })
 
-            # (e) Download-Button in Streamlit
-            with open(filename, "rb") as f:
-                st.download_button(
-                    label="Download Excel-Datei",
-                    data=f,
-                    file_name=filename,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+        df_main = pd.DataFrame(main_rows)
+
+        # (2) Für jedes Paper ein eigenes Blatt mit allen Info
+        #     => In "FullData" haben wir die Originalfelder + Abstract
+        #     => Wir schreiben das jeweils in ein DataFrame mit nur 1 Zeile
+        timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        # Codewörter ersetzen für Dateinamen
+        safe_codewords = codewords_str.strip().replace(" ", "_").replace(",", "_").replace("/", "_")
+        filename = f"{safe_codewords}_{timestamp_str}.xlsx"
+
+        with pd.ExcelWriter(filename, engine="openpyxl") as writer:
+            # Hauptblatt
+            df_main.to_excel(writer, sheet_name="Main", index=False)
+
+            # Pro Paper ein eigenes Sheet
+            for paper in results_all:
+                # Falls wir keine "FullData" haben, leeres DF
+                full_dict = paper.get("FullData", {})
+                # Wir fügen "Title", "PubMed ID" etc. hinzu, damit man direkt erkennt,
+                # um welches Paper es geht:
+                full_dict["Title"] = paper.get("Title", "n/a")
+                full_dict["PubMed_ID"] = paper.get("PubMed ID", "n/a")
+                full_dict["DOI"] = paper.get("DOI", "n/a")
+                full_dict["Year"] = paper.get("Year", "n/a")
+                full_dict["Publisher"] = paper.get("Publisher", "n/a")
+                full_dict["Population"] = paper.get("Population", "n/a")
+
+                detail_df = pd.DataFrame([full_dict])
+
+                # Sheet-Name wird PMID (sofern vorhanden), sonst "PaperX"
+                pmid = paper.get("PubMed ID", "n/a")
+                # Verbotene Zeichen entfernen und ggf. limitieren auf <=31 Zeichen
+                sheet_name = f"PMID_{pmid}" if pmid != "n/a" else "Paper"
+                # Sheet-Namen darf max. 31 Zeichen haben:
+                if len(sheet_name) > 31:
+                    sheet_name = sheet_name[:31]
+
+                detail_df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+        st.success(f"Excel mit Hauptblatt und pro Paper extra Sheet wurde erstellt: {filename}")
+
+        # Optionaler Download-Button:
+        with open(filename, "rb") as f:
+            st.download_button(
+                label="Excel-Datei herunterladen",
+                data=f,
+                file_name=filename,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
     st.write("---")
     st.info("Dieses Modul nutzt das ausgewählte Profil, um Codewörter (mit AND/OR-Verknüpfung) "
             "auf alle aktivierten APIs anzuwenden und gibt alle Paper-Informationen aus (Quelle, "
             "Titel, PubMed ID, DOI, Jahr, Abstract, Population).")
+
 
 # Falls dieses Modul als Hauptskript ausgeführt wird:
 if __name__ == "__main__":
