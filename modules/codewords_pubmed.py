@@ -103,7 +103,7 @@ def search_europe_pmc(query: str, max_results=100):
         st.error(f"Europe PMC-Suche fehlgeschlagen: {e}")
         return []
 
-# --- Neu: Google Scholar via 'scholarly' ---
+# --- Google Scholar via 'scholarly' ---
 def search_google_scholar(query: str, max_results=100):
     """
     Führt eine Suche auf Google Scholar (inoffiziell via 'scholarly') durch
@@ -122,9 +122,7 @@ def search_google_scholar(query: str, max_results=100):
 
             bib = publication.get('bib', {})
             title = bib.get('title', 'n/a')
-            # 'author' enthält oft einen String mit allen Autoren
             authors = bib.get('author', 'n/a')
-            # 'pub_year' ist oft das Publikationsjahr
             pub_year = bib.get('pub_year', 'n/a')
             abstract = bib.get('abstract', 'n/a')
 
@@ -309,8 +307,21 @@ def module_codewords_pubmed():
             st.info("Keine Ergebnisse gefunden.")
         else:
             st.write("## Gesamtergebnis aus allen aktivierten APIs")
+            
+            # 1) Tabelle mit allen Ergebnissen anzeigen
             df = pd.DataFrame(results_all)
             st.dataframe(df)
+
+            # 2) Für jedes Paper einen Expander mit Abstract, DOI, usw.
+            st.write("### Klicke auf einen Titel, um das Abstract anzuzeigen:")
+            for idx, row in df.iterrows():
+                with st.expander(f"{row['Title']} (Quelle: {row['Source']})"):
+                    st.write(f"**PubMed ID**: {row['PubMed ID']}")
+                    st.write(f"**DOI**: {row['DOI']}")
+                    st.write(f"**Jahr**: {row['Year']}")
+                    st.write(f"**Population**: {row['Population']}")
+                    st.markdown("---")
+                    st.write(f"**Abstract**:\n\n{row['Abstract']}")
 
     st.write("---")
     st.info("Dieses Modul nutzt das ausgewählte Profil, um Codewörter (mit AND/OR-Verknüpfung) "
