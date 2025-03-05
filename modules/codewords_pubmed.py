@@ -3,22 +3,20 @@ import requests
 import pandas as pd
 import os
 import time
-import xml.etree.ElementTree as ET  # Für das Parsen des PubMed-XML
+import xml.etree.ElementTree as ET
 from scholarly import scholarly
 from datetime import datetime
 from collections import defaultdict
 
 ##############################
-# Hilfsfunktionen zum "Flatten" von Dictionaries
+# Dict-Flattening-Funktion
 ##############################
 
 def flatten_dict(d, parent_key="", sep="__"):
     """
-    Nimmt ein verschachteltes Dictionary (z. B. FullData aus ESummary)
-    und verwandelt es in eine flache Key->Value-Struktur.
-    Beispiel:
-      {"status": "ok", "authors": {"author1": "Smith", "author2": "Jones"}}
-      -> {"status": "ok", "authors__author1": "Smith", "authors__author2": "Jones"}
+    Macht aus verschachtelten Dicts eine flache Key->Value-Struktur.
+    Bsp.: {"a": 1, "b": {"x": 10, "y": 20}} 
+    => {"a": 1, "b__x": 10, "b__y": 20}
     """
     items = []
     for k, v in d.items():
@@ -82,7 +80,6 @@ def fetch_pubmed_abstracts(pmids, timeout=10):
 def get_pubmed_details(pmids: list):
     if not pmids:
         return []
-    # ESummary
     url_summary = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
     params_sum = {
         "db": "pubmed",
@@ -97,7 +94,6 @@ def get_pubmed_details(pmids: list):
         st.error(f"Fehler beim Abrufen von PubMed-Daten (ESummary): {e}")
         return []
 
-    # EFetch
     abstracts_map = fetch_pubmed_abstracts(pmids, timeout=10)
 
     results = []
@@ -113,9 +109,8 @@ def get_pubmed_details(pmids: list):
         abs_text = abstracts_map.get(pmid, "n/a")
         publisher = info.get("fulljournalname") or info.get("source") or "n/a"
 
-        # Kompletter Datensatz + Abstract
-        full_data = dict(info)
-        full_data["abstract"] = abs_text
+        full_data = dict(info)  # ESummary Original
+        full_data["abstract"] = abs_text  # EFetch-Abstract
 
         results.append({
             "Source": "PubMed",
@@ -137,7 +132,7 @@ def search_pubmed(query: str, max_results=100):
     return get_pubmed_details(pmids)
 
 ##############################
-# Europe PMC (mit Timeout/Retry)
+# Europe PMC (Timeout/Retry)
 ##############################
 
 def search_europe_pmc(query: str, max_results=100, timeout=30, retries=3, delay=5):
@@ -154,12 +149,12 @@ def search_europe_pmc(query: str, max_results=100, timeout=30, retries=3, delay=
             data = r.json()
             results = []
             for item in data.get("resultList", {}).get("result", []):
+                # Versuch "journalInfo"->"journal" als Publisher 
                 publisher = "n/a"
-                if "journalInfo" in item:
-                    journal_dict = item["journalInfo"].get("journal", {})
-                    # Falls journal ein String ist, nimm ihn direkt
-                    # Falls es ein Dict ist, musst du anpassen
-                    publisher = journal_dict if isinstance(journal_dict, str) else "n/a"
+                jinfo = item.get("journalInfo", {})
+                if isinstance(jinfo, dict):
+                    publisher = jinfo.get("journal", "n/a")
+
                 results.append({
                     "Source": "Europe PMC",
                     "Title": item.get("title", "n/a"),
@@ -169,8 +164,7 @@ def search_europe_pmc(query: str, max_results=100, timeout=30, retries=3, delay=
                     "Abstract": item.get("abstractText", "n/a"),
                     "Population": "n/a",
                     "Publisher": publisher,
-                    # Originaldaten
-                    "FullData": dict(item)
+                    "FullData": dict(item)  # Rohdaten
                 })
             return results
         except requests.exceptions.ReadTimeout:
@@ -199,7 +193,6 @@ def search_google_scholar(query: str, max_results=100):
             title = bib.get('title', 'n/a')
             pub_year = bib.get('pub_year', 'n/a')
             abstract = bib.get('abstract', 'n/a')
-            full_data = dict(publication)  # Alle Originaldaten
 
             results.append({
                 "Source": "Google Scholar",
@@ -210,7 +203,7 @@ def search_google_scholar(query: str, max_results=100):
                 "Abstract": abstract,
                 "Population": "n/a",
                 "Publisher": "n/a",
-                "FullData": full_data
+                "FullData": dict(publication)  # Alles von "scholarly"
             })
     except Exception as e:
         st.error(f"Fehler bei der Google Scholar-Suche: {e}")
@@ -311,11 +304,10 @@ def load_settings(profile_name: str):
 def module_codewords_pubmed():
     st.title("Codewörter & Multi-API-Suche (mind. 100 Paper pro API)")
 
-    # 1) Dropdown: Profile auswählen
+    # 1) Profil-Auswahl
     if "profiles" not in st.session_state or not st.session_state["profiles"]:
         st.warning("Keine Profile vorhanden. Bitte zuerst ein Profil speichern.")
         return
-
     profile_names = list(st.session_state["profiles"].keys())
     chosen_profile = st.selectbox("Wähle ein Profil:", ["(kein)"] + profile_names)
     if chosen_profile == "(kein)":
@@ -326,26 +318,25 @@ def module_codewords_pubmed():
     st.subheader("Profil-Einstellungen")
     st.json(profile_data)
 
-    # 2) Eingabefeld für Codewörter und Logik
+    # 2) Codewörter + Logik
     st.subheader("Codewörter & Logik")
     codewords_str = st.text_input("Codewörter (kommasepariert oder Leerzeichen):", "")
     st.write("Beispiel: genotyp, SNP, phänotyp")
     logic_option = st.radio("Logik:", options=["AND", "OR"], index=1)
 
-    # 3) Suchanfrage zusammenbauen und API-Suche starten
+    # 3) Suche
     if st.button("Suche starten"):
         raw_list = [w.strip() for w in codewords_str.replace(",", " ").split() if w.strip()]
         if not raw_list:
             st.warning("Bitte mindestens ein Codewort eingeben.")
             return
 
-        # Codewörter mit AND/OR verknüpfen
         query_str = " AND ".join(raw_list) if logic_option == "AND" else " OR ".join(raw_list)
         st.write("Finale Suchanfrage:", query_str)
 
         results_all = []
 
-        # --- API-Abfragen laut Profil ---
+        # APIs laut Profil abfragen
         if profile_data.get("use_pubmed", False):
             st.write("### PubMed")
             pubmed_res = search_pubmed(query_str, max_results=100)
@@ -382,93 +373,88 @@ def module_codewords_pubmed():
             st.write(f"Anzahl CORE-Ergebnisse: {len(core_res)}")
             results_all.extend(core_res)
 
-        # --- Ausgabe ---
         if not results_all:
             st.info("Keine Ergebnisse gefunden.")
             return
 
         st.write("## Gesamtergebnis aus allen aktivierten APIs")
 
-        # (A) Main-Sheet: wichtige Felder
+        # (A) MAIN-Sheet: Grundlegende Felder
         df_main = pd.DataFrame([
             {
                 "Title": p.get("Title", "n/a"),
                 "PubMed ID": p.get("PubMed ID", "n/a"),
                 "Abstract": p.get("Abstract", "n/a"),
                 "Year": p.get("Year", "n/a"),
-                "Publisher/Herausgeber": p.get("Publisher", "n/a"),
+                "Publisher": p.get("Publisher", "n/a"),
                 "Population": p.get("Population", "n/a"),
                 "Source": p.get("Source", "n/a"),
             }
             for p in results_all
         ])
 
+        # Zeige Main-Sheet in Streamlit
         st.dataframe(df_main)
 
+        # Expander für Abstract
         st.write("### Klicke auf einen Titel, um das Abstract anzuzeigen:")
         for idx, row in df_main.iterrows():
             with st.expander(f"{row['Title']} (Quelle: {row['Source']})"):
                 st.write(f"**PubMed ID**: {row.get('PubMed ID', 'n/a')}")
                 st.write(f"**Jahr**: {row.get('Year', 'n/a')}")
-                st.write(f"**Herausgeber**: {row.get('Publisher/Herausgeber', 'n/a')}")
-                st.write(f"**Populationsgröße**: {row.get('Population', 'n/a')}")
+                st.write(f"**Publisher**: {row.get('Publisher', 'n/a')}")
+                st.write(f"**Population**: {row.get('Population', 'n/a')}")
                 st.markdown("---")
                 st.write(f"**Abstract**:\n\n{row.get('Abstract', 'n/a')}")
 
-        # ===========================================================
-        # (B) Erzeuge pro API ein Tabellenblatt mit FullData
-        # ===========================================================
-        # 1) Gruppiere Papers nach Source
-        source_dict = defaultdict(list)
-        for p in results_all:
-            src = p.get("Source", "n/a")
-            source_dict[src].append(p)
-
-        # 2) Excel-Schreibvorgang starten
+        # (B) Erzeuge "pro API ein eigenes Tabellenblatt" und flatten "FullData"
+        from openpyxl import Workbook  # nur um sicherzugehen, dass wir openpyxl haben
         timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        # (WICHTIG) Codewörter "entschärfen", um Dateinamenprobleme zu verhindern
+
+        # Codewörter "säubern" für Dateinamen
         safe_codewords = codewords_str.strip().replace(" ", "_").replace(",", "_").replace("/", "_")
         filename = f"{safe_codewords}_{timestamp_str}.xlsx"
 
+        # 1) Groups nach Source
+        from collections import defaultdict
+        source_groups = defaultdict(list)
+        for p in results_all:
+            src = p.get("Source", "n/a")
+            source_groups[src].append(p)
+
         with pd.ExcelWriter(filename, engine="openpyxl") as writer:
-            # Schreibe Main-Sheet als "Main"
+            # Sheet "Main"
             df_main.to_excel(writer, sheet_name="Main", index=False)
 
-            # Pro API ein Sheet
-            for api_source, papers in source_dict.items():
-                # "api_source" könnte z. B. "PubMed" oder "Google Scholar" sein
-                # Wir flatten FullData und packen sie in einen DataFrame
-                flattened_rows = []
-                for paper in papers:
+            # Jetzt pro API ein Sheet
+            for source_name, papers_list in source_groups.items():
+                # flatten each paper's FullData
+                rows = []
+                for paper in papers_list:
                     fd = paper.get("FullData", {})
-                    flat_fd = flatten_dict(fd)  # => dict mit flachen Keys
+                    flattened = flatten_dict(fd)  # => dict mit Key->Value
+                    # Zusätzliche Standardfelder
+                    flattened["Title"] = paper.get("Title", "n/a")
+                    flattened["PubMed ID"] = paper.get("PubMed ID", "n/a")
+                    flattened["Year"] = paper.get("Year", "n/a")
+                    flattened["Publisher"] = paper.get("Publisher", "n/a")
+                    flattened["Population"] = paper.get("Population", "n/a")
+                    flattened["Source"] = paper.get("Source", "n/a")
 
-                    # Einige Basisfelder zusätzlich
-                    flat_fd["Title"] = paper.get("Title", "n/a")
-                    flat_fd["PubMed_ID"] = paper.get("PubMed ID", "n/a")
-                    flat_fd["Year"] = paper.get("Year", "n/a")
-                    flat_fd["Publisher"] = paper.get("Publisher", "n/a")
-                    flat_fd["Population"] = paper.get("Population", "n/a")
-                    # usw. falls du mehr hinzufügen möchtest
+                    rows.append(flattened)
 
-                    flattened_rows.append(flat_fd)
-
-                if flattened_rows:
-                    df_api = pd.DataFrame(flattened_rows)
+                if rows:
+                    df_api = pd.DataFrame(rows)
                 else:
-                    # Falls keine Daten, leeres DF
-                    df_api = pd.DataFrame()
+                    df_api = pd.DataFrame()  # leer
 
-                # Sheetname darf max. 31 Zeichen haben
-                sheet_name = api_source[:31]  # kürzen, falls nötig
-                if not sheet_name:
-                    sheet_name = "API"  # fallback
+                # Sheet-Name (max 31 Zeichen)
+                short_name = source_name[:31] if source_name else "API"
+                df_api.to_excel(writer, sheet_name=short_name, index=False)
 
-                df_api.to_excel(writer, sheet_name=sheet_name, index=False)
+        st.success(f"Excel-Datei mit 'Main' + pro API ein Sheet erstellt: {filename}")
 
-        st.success(f"Excel-Datei erstellt: {filename}")
-
-        # (C) Download-Button
+        # Download-Button
         with open(filename, "rb") as f:
             st.download_button(
                 label="Excel-Datei herunterladen",
@@ -478,8 +464,8 @@ def module_codewords_pubmed():
             )
 
     st.write("---")
-    st.info("Dieses Modul sucht in allen aktivierten APIs und erzeugt ein Excel mit "
-            "einem Main-Sheet (wichtige Felder) + pro API ein Sheet mit allen Details.")
+    st.info("Dieses Modul sucht in allen aktivierten APIs und erzeugt ein Excel mit einem Main-Sheet "
+            "sowie je einem Sheet pro API. Dort sind alle Felder in eigenen Spalten (geflattete 'FullData').")
 
 
 # Falls dieses Modul als Hauptskript ausgeführt wird:
