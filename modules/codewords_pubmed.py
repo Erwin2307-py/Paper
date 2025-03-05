@@ -20,7 +20,7 @@ except ImportError:
 
 # ChatGPT/OpenAI:
 import openai
-# Wichtig: Den API-Key NICHT hartkodieren, sondern st.secrets["openai_api_key"] nutzen.
+# Hier wird NUR st.secrets["OPENAI_API_KEY"] genutzt.
 
 # PDF-Erzeugung mit fpdf
 try:
@@ -35,10 +35,11 @@ except ImportError:
 def generate_paper_via_chatgpt(prompt_text, model="gpt-3.5-turbo"):
     """
     Ruft die ChatGPT-API auf und erzeugt ein Paper (Text).
-    Holt den API-Key aus st.secrets["openai_api_key"].
+    Holt den API-Key aus st.secrets["OPENAI_API_KEY"].
     """
     try:
-        openai.api_key = st.secrets["openai_api_key"]  # <-- KEY aus Secrets
+        # Beachte: geänderter Schlüssel: "OPENAI_API_KEY" statt "openai_api_key"
+        openai.api_key = st.secrets["OPENAI_API_KEY"]
         response = openai.ChatCompletion.create(
             model=model,
             messages=[{"role": "user", "content": prompt_text}],
@@ -48,7 +49,10 @@ def generate_paper_via_chatgpt(prompt_text, model="gpt-3.5-turbo"):
         content = response.choices[0].message.content
         return content
     except Exception as e:
-        st.error(f"Fehler bei ChatGPT-API: {e}")
+        st.error(
+            "Fehler bei ChatGPT-API: "
+            f"'{e}'.\nHast du den Key 'OPENAI_API_KEY' in secrets.toml eingetragen?"
+        )
         return ""
 
 
@@ -299,7 +303,6 @@ def search_europe_pmc(query: str, max_results=100, timeout=30, retries=3, delay=
 def search_google_scholar(query: str, max_results=100):
     results = []
     try:
-        # from scholarly import scholarly  # Schon global importiert
         search_results = scholarly.search_pubs(query)
         for _ in range(max_results):
             publication = next(search_results, None)
@@ -381,13 +384,12 @@ def search_openalex(query: str, max_results=100):
         "search": query,
         "per-page": max_results
     }
+    results = []
     try:
         r = requests.get(base_url, params=params, timeout=10)
         r.raise_for_status()
         data = r.json()
-        works = data.get("results", [])
-        results = []
-        for work in works:
+        for work in data.get("results", []):
             title = work.get("display_name", "n/a")
             publication_year = str(work.get("publication_year", "n/a"))
             doi = work.get("doi", "n/a")
@@ -409,7 +411,7 @@ def search_openalex(query: str, max_results=100):
         return results
     except Exception as e:
         st.error(f"Fehler bei der OpenAlex-Suche: {e}")
-        return []
+        return results
 
 
 ###############################################################################
@@ -808,5 +810,5 @@ def main():
 
 if __name__ == "__main__":
     st.set_page_config(layout="wide")
-    # Stelle sicher, dass openai.api_key in st.secrets["openai_api_key"] existiert.
+    # Bitte KEY in st.secrets["OPENAI_API_KEY"] hinterlegen!
     main()
