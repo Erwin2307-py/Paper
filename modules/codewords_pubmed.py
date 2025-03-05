@@ -8,13 +8,13 @@ from scholarly import scholarly
 from datetime import datetime
 from collections import defaultdict
 import re
-import base64
 
 try:
     import fitz  # PyMuPDF
     from fpdf import FPDF
 except ImportError:
     st.error("Bitte installiere 'fitz' (PyMuPDF) und 'fpdf', z.B.: 'pip install pymupdf fpdf'.")
+
 
 ##############################
 # Dict-Flattening
@@ -322,6 +322,7 @@ def create_abstract_pdf(paper, output_file):
     """
     Erstellt ein PDF mit FPDF, in dem Titel + Abstract + Metadaten enthalten sind.
     """
+    from fpdf import FPDF
     try:
         pdf = FPDF()
         pdf.add_page()
@@ -498,46 +499,25 @@ def module_codewords_pubmed():
         else:
             st.dataframe(df_main)
 
-        # 1) Paper-Auswahl: per Multiselect
+        # Paper-Auswahl: per Multiselect
         st.subheader("Paper-Auswahl")
-        # Du könntest ggf. einen Identifier konstruieren. Hier verwenden wir den 'Title' (kann Duplicate haben).
-        # Besser: Title + Year oder Title + PMID
         df_main["identifier"] = df_main.apply(lambda r: f"{r['Title']}||{r['PubMed ID']}", axis=1)
         all_idents = df_main["identifier"].tolist()
-
-        chosen_idents = st.multiselect("Wähle Paper (Basierend auf Titel/PMID):", all_idents)
-        #  -> Set davon machen
+        chosen_idents = st.multiselect("Wähle Paper (Titel||PMID) für PDF:", all_idents)
         chosen_idents_set = set(chosen_idents)
 
-        st.write("Ausgewählte Paper:")
-        # Zeige sie an + Link in neuem Tab
-        for c in chosen_idents:
-            row = df_main.loc[df_main["identifier"] == c].iloc[0]
-            # Du kannst zb einen Link bauen: st.markdown
-            # Evtl. PubMed Link oder so:
-            pmid = row["PubMed ID"]
-            # Minimale Logik: wenn wir eine PMID haben, Link => https://pubmed.ncbi.nlm.nih.gov/{pmid}/
-            # Sonst => "n/a"
-            if pmid != "n/a":
-                link_url = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}"
-            else:
-                link_url = "https://www.google.de"
+        # Lokalen Ordner abfragen
+        st.write("Lokaler Ordner für PDF-Download (z.B. `C:/Users/<Name>/Documents` oder `/home/user/Desktop`):")
+        folder_path = st.text_input("Ordnerpfad:", value=os.path.join(os.getcwd(), "paper_download"))
 
-            st.markdown(f"- **{row['Title']}** <br>"
-                        f"[In neuem Tab öffnen]({link_url}){{:target=\"_blank\"}}",
-                        unsafe_allow_html=True)
-
-        # 2) Download-Button: wir machen PDFs nur für die ausgewählten Paper
+        # Button: Download
         if st.button("Paper herunterladen & PDF erstellen"):
             if not chosen_idents:
                 st.warning("Keine Paper ausgewählt.")
             else:
-                # Baue Paper-Liste
                 selected_papers = []
                 for c in chosen_idents:
                     row = df_main.loc[df_main["identifier"] == c].iloc[0]
-                    # Finde Original-Objekt in results_all
-                    # (z. B. indem wir Title & PMID abgleichen)
                     match = None
                     for p in results_all:
                         if p["Title"] == row["Title"] and p["PubMed ID"] == row["PubMed ID"]:
@@ -547,24 +527,42 @@ def module_codewords_pubmed():
                         selected_papers.append(match)
 
                 if not selected_papers:
-                    st.warning("Keine zu verarbeitenden Paper gefunden.")
+                    st.warning("Keine passenden Paper gefunden.")
                 else:
-                    # Lokales Verzeichnis / Pfad (im realen System)
-                    out_dir = os.path.join(os.getcwd(), f"paper_download_{int(time.time())}")
-                    if not os.path.exists(out_dir):
-                        os.makedirs(out_dir)
-                    st.write(f"Erstelle Ordner: `{out_dir}` (lokal)")
+                    # Erzeuge Ordner (falls nicht existiert)
+                    if not os.path.exists(folder_path):
+                        try:
+                            os.makedirs(folder_path)
+                            st.write(f"Ordner erstellt: {folder_path}")
+                        except Exception as e:
+                            st.error(f"Konnte Ordner nicht erstellen: {e}")
+                            return
+                    else:
+                        st.write(f"Nutze existierenden Ordner: {folder_path}")
 
                     for i, paper in enumerate(selected_papers, start=1):
                         title_sane = _sanitize_filename(paper["Title"])[:60]
                         pdf_filename = f"{title_sane}.pdf"
-                        pdf_path = os.path.join(out_dir, pdf_filename)
+                        pdf_path = os.path.join(folder_path, pdf_filename)
                         ok = create_abstract_pdf(paper, pdf_path)
                         if ok:
                             st.write(f"{i}. Abstract-PDF erstellt: **{pdf_filename}**")
                     st.success("Download/PDF-Erstellung abgeschlossen.")
 
-        # 3) Excel-Export
+        # Link: in neuem Tab
+        st.subheader("Öffne Paper in separatem Browserfenster")
+        for idx, row in df_main.iterrows():
+            title = row["Title"]
+            pmid = row["PubMed ID"]
+            if pmid != "n/a":
+                link_url = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}"
+            else:
+                link_url = f"https://www.google.com/search?q={title.replace(' ', '+')}"
+
+            # Wir nutzen target=_blank
+            st.markdown(f"- **{title}**: [In neuem Tab öffnen]({link_url}){{:target=\"_blank\"}}")
+
+        # Excel-Export
         st.subheader("Excel-Export (alle Paper)")
 
         codewords_ = "Suchbegriffe"
@@ -576,15 +574,14 @@ def module_codewords_pubmed():
             "Title", "PubMed ID", "Abstract", "Year", "Publisher", "Population", "Source"
         ]]
 
+        from collections import defaultdict
+        source_groups = defaultdict(list)
+        for p in results_all:
+            src = p.get("Source", "n/a")
+            source_groups[src].append(p)
+
         with pd.ExcelWriter(filename, engine="openpyxl") as writer:
             df_main_excel.to_excel(writer, sheet_name="Main", index=False)
-
-            from collections import defaultdict
-            source_groups = defaultdict(list)
-            for p in results_all:
-                src = p.get("Source", "n/a")
-                source_groups[src].append(p)
-
             for s_name, plist in source_groups.items():
                 rows = []
                 for p in plist:
@@ -598,11 +595,7 @@ def module_codewords_pubmed():
                     flat_fd["Source"] = p.get("Source", "n/a")
                     rows.append(flat_fd)
 
-                if rows:
-                    df_api = pd.DataFrame(rows)
-                else:
-                    df_api = pd.DataFrame()
-
+                df_api = pd.DataFrame(rows) if rows else pd.DataFrame()
                 short_sheet = s_name[:31] if s_name else "API"
                 df_api.to_excel(writer, sheet_name=short_sheet, index=False)
 
