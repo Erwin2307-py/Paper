@@ -5,16 +5,35 @@ import os
 import time
 import xml.etree.ElementTree as ET  # Für das Parsen des PubMed-XML
 from scholarly import scholarly
-from datetime import datetime  # Für Datum/Uhrzeit im Dateinamen
+from datetime import datetime
+from collections import defaultdict
 
 ##############################
-# Hilfsfunktionen PubMed
+# Hilfsfunktionen zum "Flatten" von Dictionaries
+##############################
+
+def flatten_dict(d, parent_key="", sep="__"):
+    """
+    Nimmt ein verschachteltes Dictionary (z. B. FullData aus ESummary)
+    und verwandelt es in eine flache Key->Value-Struktur.
+    Beispiel:
+      {"status": "ok", "authors": {"author1": "Smith", "author2": "Jones"}}
+      -> {"status": "ok", "authors__author1": "Smith", "authors__author2": "Jones"}
+    """
+    items = []
+    for k, v in d.items():
+        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+        if isinstance(v, dict):
+            items.extend(flatten_dict(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)
+
+##############################
+# PubMed-Funktionen
 ##############################
 
 def esearch_pubmed(query: str, max_results=100, timeout=10):
-    """
-    Führt eine PubMed-Suche via E-Utilities aus und gibt eine Liste von PMID zurück.
-    """
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {
         "db": "pubmed",
@@ -31,11 +50,19 @@ def esearch_pubmed(query: str, max_results=100, timeout=10):
         st.error(f"PubMed-Suche fehlgeschlagen: {e}")
         return []
 
+def parse_efetch_response(xml_text: str) -> dict:
+    root = ET.fromstring(xml_text)
+    pmid_abstract_map = {}
+    for article in root.findall(".//PubmedArticle"):
+        pmid_el = article.find(".//PMID")
+        pmid_val = pmid_el.text if pmid_el is not None else None
+        abstract_el = article.find(".//AbstractText")
+        abstract_text = abstract_el.text if abstract_el is not None else "n/a"
+        if pmid_val:
+            pmid_abstract_map[pmid_val] = abstract_text
+    return pmid_abstract_map
+
 def fetch_pubmed_abstracts(pmids, timeout=10):
-    """
-    Ruft über EFetch die Abstracts zu einer Liste von PMID ab.
-    Gibt ein Dict { pmid -> abstract_text } zurück.
-    """
     if not pmids:
         return {}
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
@@ -52,42 +79,10 @@ def fetch_pubmed_abstracts(pmids, timeout=10):
         st.error(f"Fehler beim Abrufen der Abstracts via EFetch: {e}")
         return {}
 
-def parse_efetch_response(xml_text: str) -> dict:
-    """
-    Parst den XML-Text von EFetch und gibt ein Dict { pmid -> abstract } zurück.
-    """
-    root = ET.fromstring(xml_text)
-    pmid_abstract_map = {}
-    for article in root.findall(".//PubmedArticle"):
-        pmid_el = article.find(".//PMID")
-        pmid_val = pmid_el.text if pmid_el is not None else None
-        abstract_el = article.find(".//AbstractText")
-        abstract_text = abstract_el.text if abstract_el is not None else "n/a"
-        if pmid_val:
-            pmid_abstract_map[pmid_val] = abstract_text
-    return pmid_abstract_map
-
 def get_pubmed_details(pmids: list):
-    """
-    Ruft über ESummary Details zu den übergebenen PMID ab und 
-    via EFetch den echten Abstract. Gibt eine Liste Dictionaries zurück.
-    
-    Jeder Eintrag enthält:
-        {
-          "Source": "PubMed",
-          "Title": ...,
-          "PubMed ID": ...,
-          "DOI": ...,
-          "Year": ...,
-          "Abstract": ...,
-          "Population": "n/a",
-          "FullData": { ... alle Felder aus ESummary ... , "abstract": ... }
-        }
-    """
     if not pmids:
         return []
-
-    # ESummary-Abruf
+    # ESummary
     url_summary = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
     params_sum = {
         "db": "pubmed",
@@ -102,13 +97,13 @@ def get_pubmed_details(pmids: list):
         st.error(f"Fehler beim Abrufen von PubMed-Daten (ESummary): {e}")
         return []
 
-    # Abstracts via EFetch
+    # EFetch
     abstracts_map = fetch_pubmed_abstracts(pmids, timeout=10)
 
     results = []
     for pmid in pmids:
         info = data_summary.get("result", {}).get(pmid, {})
-        if not info or pmid == "uids":  # "uids" ist manchmal ein Key in "result", ignorieren
+        if not info or pmid == "uids":
             continue
 
         pubdate = info.get("pubdate", "n/a")
@@ -116,12 +111,9 @@ def get_pubmed_details(pmids: list):
         doi = info.get("elocationid", "n/a")
         title = info.get("title", "n/a")
         abs_text = abstracts_map.get(pmid, "n/a")
-
-        # "fulljournalname" könnte der Herausgeber sein, fallback auf "source"
         publisher = info.get("fulljournalname") or info.get("source") or "n/a"
 
-        # Hier packen wir alle ESummary-Daten plus Abstract in "FullData"
-        # => So können wir später pro Paper ein eigenes Sheet mit allen Feldern erstellen
+        # Kompletter Datensatz + Abstract
         full_data = dict(info)
         full_data["abstract"] = abs_text
 
@@ -145,7 +137,7 @@ def search_pubmed(query: str, max_results=100):
     return get_pubmed_details(pmids)
 
 ##############################
-# Europe PMC (Timeout/Retry)
+# Europe PMC (mit Timeout/Retry)
 ##############################
 
 def search_europe_pmc(query: str, max_results=100, timeout=30, retries=3, delay=5):
@@ -162,6 +154,12 @@ def search_europe_pmc(query: str, max_results=100, timeout=30, retries=3, delay=
             data = r.json()
             results = []
             for item in data.get("resultList", {}).get("result", []):
+                publisher = "n/a"
+                if "journalInfo" in item:
+                    journal_dict = item["journalInfo"].get("journal", {})
+                    # Falls journal ein String ist, nimm ihn direkt
+                    # Falls es ein Dict ist, musst du anpassen
+                    publisher = journal_dict if isinstance(journal_dict, str) else "n/a"
                 results.append({
                     "Source": "Europe PMC",
                     "Title": item.get("title", "n/a"),
@@ -170,9 +168,9 @@ def search_europe_pmc(query: str, max_results=100, timeout=30, retries=3, delay=
                     "Year": str(item.get("pubYear", "n/a")),
                     "Abstract": item.get("abstractText", "n/a"),
                     "Population": "n/a",
-                    "Publisher": item.get("journalInfo", {}).get("journal", "n/a"),
-                    # EPMC hat nicht dasselbe FullData, hier nur Demo:
-                    "FullData": dict(item)  
+                    "Publisher": publisher,
+                    # Originaldaten
+                    "FullData": dict(item)
                 })
             return results
         except requests.exceptions.ReadTimeout:
@@ -201,8 +199,8 @@ def search_google_scholar(query: str, max_results=100):
             title = bib.get('title', 'n/a')
             pub_year = bib.get('pub_year', 'n/a')
             abstract = bib.get('abstract', 'n/a')
+            full_data = dict(publication)  # Alle Originaldaten
 
-            # "Publisher" nicht verfügbar, also "n/a"
             results.append({
                 "Source": "Google Scholar",
                 "Title": title,
@@ -212,8 +210,7 @@ def search_google_scholar(query: str, max_results=100):
                 "Abstract": abstract,
                 "Population": "n/a",
                 "Publisher": "n/a",
-                # FullData:
-                "FullData": dict(publication)
+                "FullData": full_data
             })
     except Exception as e:
         st.error(f"Fehler bei der Google Scholar-Suche: {e}")
@@ -280,7 +277,7 @@ def search_openalex(query: str, max_results=100):
         "Abstract": "Dies ist ein Dummy-Abstract von OpenAlex.",
         "Population": "n/a",
         "Publisher": "n/a",
-        "FullData": {"demo": "OpenAlex does not return data here."}
+        "FullData": {"demo_openalex": "Hier stünden Originaldaten."}
     }]
 
 def search_core(query: str, max_results=100):
@@ -293,7 +290,7 @@ def search_core(query: str, max_results=100):
         "Abstract": "Dies ist ein Dummy-Abstract von CORE.",
         "Population": "n/a",
         "Publisher": "n/a",
-        "FullData": {"demo": "CORE dummy data."}
+        "FullData": {"demo_core": "CORE dummy data."}
     }]
 
 ##############################
@@ -391,76 +388,87 @@ def module_codewords_pubmed():
             return
 
         st.write("## Gesamtergebnis aus allen aktivierten APIs")
-        df = pd.DataFrame(results_all)
-        st.dataframe(df)
+
+        # (A) Main-Sheet: wichtige Felder
+        df_main = pd.DataFrame([
+            {
+                "Title": p.get("Title", "n/a"),
+                "PubMed ID": p.get("PubMed ID", "n/a"),
+                "Abstract": p.get("Abstract", "n/a"),
+                "Year": p.get("Year", "n/a"),
+                "Publisher/Herausgeber": p.get("Publisher", "n/a"),
+                "Population": p.get("Population", "n/a"),
+                "Source": p.get("Source", "n/a"),
+            }
+            for p in results_all
+        ])
+
+        st.dataframe(df_main)
 
         st.write("### Klicke auf einen Titel, um das Abstract anzuzeigen:")
-        for idx, row in df.iterrows():
+        for idx, row in df_main.iterrows():
             with st.expander(f"{row['Title']} (Quelle: {row['Source']})"):
                 st.write(f"**PubMed ID**: {row.get('PubMed ID', 'n/a')}")
-                st.write(f"**DOI**: {row.get('DOI', 'n/a')}")
                 st.write(f"**Jahr**: {row.get('Year', 'n/a')}")
-                st.write(f"**Herausgeber**: {row.get('Publisher', 'n/a')}")
+                st.write(f"**Herausgeber**: {row.get('Publisher/Herausgeber', 'n/a')}")
                 st.write(f"**Populationsgröße**: {row.get('Population', 'n/a')}")
                 st.markdown("---")
                 st.write(f"**Abstract**:\n\n{row.get('Abstract', 'n/a')}")
 
-        # ========== Excel-Schreiben mit mehreren Sheets ==========
-        # (1) Hauptblatt: "Main"
-        #     Felder: Name, PubMed ID, Abstract, Jahr, Herausgeber, Population
-        main_rows = []
-        for paper in results_all:
-            main_rows.append({
-                "Name": paper.get("Title", "n/a"),
-                "PubMed ID": paper.get("PubMed ID", "n/a"),
-                "Abstract": paper.get("Abstract", "n/a"),
-                "Jahr": paper.get("Year", "n/a"),
-                "Herausgeber": paper.get("Publisher", "n/a"),
-                "Populationsgröße": paper.get("Population", "n/a")
-            })
+        # ===========================================================
+        # (B) Erzeuge pro API ein Tabellenblatt mit FullData
+        # ===========================================================
+        # 1) Gruppiere Papers nach Source
+        source_dict = defaultdict(list)
+        for p in results_all:
+            src = p.get("Source", "n/a")
+            source_dict[src].append(p)
 
-        df_main = pd.DataFrame(main_rows)
-
-        # (2) Für jedes Paper ein eigenes Blatt mit allen Info
-        #     => In "FullData" haben wir die Originalfelder + Abstract
-        #     => Wir schreiben das jeweils in ein DataFrame mit nur 1 Zeile
+        # 2) Excel-Schreibvorgang starten
         timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        # Codewörter ersetzen für Dateinamen
+        # (WICHTIG) Codewörter "entschärfen", um Dateinamenprobleme zu verhindern
         safe_codewords = codewords_str.strip().replace(" ", "_").replace(",", "_").replace("/", "_")
         filename = f"{safe_codewords}_{timestamp_str}.xlsx"
 
         with pd.ExcelWriter(filename, engine="openpyxl") as writer:
-            # Hauptblatt
+            # Schreibe Main-Sheet als "Main"
             df_main.to_excel(writer, sheet_name="Main", index=False)
 
-            # Pro Paper ein eigenes Sheet
-            for paper in results_all:
-                # Falls wir keine "FullData" haben, leeres DF
-                full_dict = paper.get("FullData", {})
-                # Wir fügen "Title", "PubMed ID" etc. hinzu, damit man direkt erkennt,
-                # um welches Paper es geht:
-                full_dict["Title"] = paper.get("Title", "n/a")
-                full_dict["PubMed_ID"] = paper.get("PubMed ID", "n/a")
-                full_dict["DOI"] = paper.get("DOI", "n/a")
-                full_dict["Year"] = paper.get("Year", "n/a")
-                full_dict["Publisher"] = paper.get("Publisher", "n/a")
-                full_dict["Population"] = paper.get("Population", "n/a")
+            # Pro API ein Sheet
+            for api_source, papers in source_dict.items():
+                # "api_source" könnte z. B. "PubMed" oder "Google Scholar" sein
+                # Wir flatten FullData und packen sie in einen DataFrame
+                flattened_rows = []
+                for paper in papers:
+                    fd = paper.get("FullData", {})
+                    flat_fd = flatten_dict(fd)  # => dict mit flachen Keys
 
-                detail_df = pd.DataFrame([full_dict])
+                    # Einige Basisfelder zusätzlich
+                    flat_fd["Title"] = paper.get("Title", "n/a")
+                    flat_fd["PubMed_ID"] = paper.get("PubMed ID", "n/a")
+                    flat_fd["Year"] = paper.get("Year", "n/a")
+                    flat_fd["Publisher"] = paper.get("Publisher", "n/a")
+                    flat_fd["Population"] = paper.get("Population", "n/a")
+                    # usw. falls du mehr hinzufügen möchtest
 
-                # Sheet-Name wird PMID (sofern vorhanden), sonst "PaperX"
-                pmid = paper.get("PubMed ID", "n/a")
-                # Verbotene Zeichen entfernen und ggf. limitieren auf <=31 Zeichen
-                sheet_name = f"PMID_{pmid}" if pmid != "n/a" else "Paper"
-                # Sheet-Namen darf max. 31 Zeichen haben:
-                if len(sheet_name) > 31:
-                    sheet_name = sheet_name[:31]
+                    flattened_rows.append(flat_fd)
 
-                detail_df.to_excel(writer, sheet_name=sheet_name, index=False)
+                if flattened_rows:
+                    df_api = pd.DataFrame(flattened_rows)
+                else:
+                    # Falls keine Daten, leeres DF
+                    df_api = pd.DataFrame()
 
-        st.success(f"Excel mit Hauptblatt und pro Paper extra Sheet wurde erstellt: {filename}")
+                # Sheetname darf max. 31 Zeichen haben
+                sheet_name = api_source[:31]  # kürzen, falls nötig
+                if not sheet_name:
+                    sheet_name = "API"  # fallback
 
-        # Optionaler Download-Button:
+                df_api.to_excel(writer, sheet_name=sheet_name, index=False)
+
+        st.success(f"Excel-Datei erstellt: {filename}")
+
+        # (C) Download-Button
         with open(filename, "rb") as f:
             st.download_button(
                 label="Excel-Datei herunterladen",
@@ -470,9 +478,8 @@ def module_codewords_pubmed():
             )
 
     st.write("---")
-    st.info("Dieses Modul nutzt das ausgewählte Profil, um Codewörter (mit AND/OR-Verknüpfung) "
-            "auf alle aktivierten APIs anzuwenden und gibt alle Paper-Informationen aus (Quelle, "
-            "Titel, PubMed ID, DOI, Jahr, Abstract, Population).")
+    st.info("Dieses Modul sucht in allen aktivierten APIs und erzeugt ein Excel mit "
+            "einem Main-Sheet (wichtige Felder) + pro API ein Sheet mit allen Details.")
 
 
 # Falls dieses Modul als Hauptskript ausgeführt wird:
