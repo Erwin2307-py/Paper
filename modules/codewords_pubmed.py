@@ -7,17 +7,27 @@ import xml.etree.ElementTree as ET
 from scholarly import scholarly
 from datetime import datetime
 from collections import defaultdict
+import re
+import base64
+
+# ------------------------------------------
+# Nur nötig, wenn du Headless Chrome verwendest:
+# from selenium import webdriver
+# from selenium.webdriver.chrome.options import Options
+# from selenium.webdriver.support.ui import WebDriverWait
+# from selenium.common.exceptions import TimeoutException
+# from selenium.webdriver.common.by import By
+# ------------------------------------------
+try:
+    import fitz  # PyMuPDF
+    from fpdf import FPDF
+except ImportError:
+    st.error("Bitte installiere 'fitz' (PyMuPDF) und 'fpdf', z.B.: 'pip install pymupdf fpdf'.")
 
 ##############################
 # Dict-Flattening
 ##############################
 def flatten_dict(d, parent_key="", sep="__"):
-    """
-    Wandelt ein verschachteltes Dictionary in ein flaches Dictionary um.
-    Beispiel:
-      {"a": 1, "b": {"x": 10, "y": 20}}
-    => {"a": 1, "b__x": 10, "b__y": 20}
-    """
     items = []
     for k, v in d.items():
         new_key = f"{parent_key}{sep}{k}" if parent_key else k
@@ -28,7 +38,7 @@ def flatten_dict(d, parent_key="", sep="__"):
     return dict(items)
 
 ##############################
-# PubMed-Funktionen (ESearch + ESummary + EFetch)
+# PubMed-Funktionen
 ##############################
 def esearch_pubmed(query: str, max_results=100, timeout=10):
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
@@ -149,6 +159,7 @@ def search_europe_pmc(query: str, max_results=100, timeout=30, retries=3, delay=
             for item in data.get("resultList", {}).get("result", []):
                 pub_year = str(item.get("pubYear", "n/a"))
                 abstract_text = item.get("abstractText", "n/a")
+
                 publisher = "n/a"
                 jinfo = item.get("journalInfo", {})
                 if isinstance(jinfo, dict):
@@ -217,13 +228,13 @@ def search_semantic_scholar(query: str, max_results=100, retries=3, delay=5):
         "fields": "title,authors,year,abstract"
     }
     attempt = 0
+    results = []
     while attempt < retries:
         try:
             r = requests.get(base_url, params=params, timeout=10)
             r.raise_for_status()
             data = r.json()
             papers = data.get("data", [])
-            results = []
             for paper in papers:
                 year_ = str(paper.get("year", "n/a"))
                 abstract_ = paper.get("abstract", "n/a")
@@ -253,7 +264,7 @@ def search_semantic_scholar(query: str, max_results=100, retries=3, delay=5):
             st.error(f"Fehler bei der Semantic Scholar-Suche: {e}")
             return []
     st.error("Semantic Scholar: Rate limit überschritten.")
-    return []
+    return results
 
 ##############################
 # OpenAlex
@@ -299,9 +310,7 @@ def search_openalex(query: str, max_results=100):
 ##############################
 def search_core(query: str, max_results=100):
     """
-    Real-Implementierung (wenn vorhanden).
-    Hier ggf. an CORE-API anbinden, oder Daten parsen.
-    Wir lassen es mal so stehen.
+    Hier ggf. an CORE-API anbinden o.Ä.
     """
     return [{
         "Source": "CORE",
@@ -314,6 +323,81 @@ def search_core(query: str, max_results=100):
         "Population": "n/a",
         "FullData": {"demo_core": "CORE dummy data."}
     }]
+
+##############################
+# Download/Export-Funktionen
+##############################
+def create_abstract_pdf(paper, output_file):
+    """
+    Erstellt ein PDF mit dem Abstract und Metadaten des Papers.
+    Nutzt FPDF.
+    """
+    try:
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_auto_page_break(auto=True, margin=15)
+        pdf.set_font("Arial", size=12)
+
+        def wrap_text(t, max_len=100):
+            chunks = []
+            words = t.split()
+            for w in words:
+                while len(w) > max_len:
+                    chunks.append(w[:max_len])
+                    w = w[max_len:]
+                chunks.append(w)
+            return " ".join(chunks)
+
+        page_width = pdf.w - pdf.l_margin - pdf.r_margin
+
+        pdf.cell(0, 10, f"Paper: {paper.get('Title','n/a')}", ln=1)
+        pdf.ln(2)
+        pdf.multi_cell(page_width, 8, wrap_text(f"** Abstract **\n\n{paper.get('Abstract','n/a')}"))
+        pdf.ln(2)
+        pdf.multi_cell(page_width, 8, wrap_text(f"** Source: {paper.get('Source','n/a')}"))
+        pdf.multi_cell(page_width, 8, wrap_text(f"** PubMed ID: {paper.get('PubMed ID','n/a')}"))
+        pdf.multi_cell(page_width, 8, wrap_text(f"** DOI: {paper.get('DOI','n/a')}"))
+        pdf.multi_cell(page_width, 8, wrap_text(f"** Year: {paper.get('Year','n/a')}"))
+        pdf.multi_cell(page_width, 8, wrap_text(f"** Publisher: {paper.get('Publisher','n/a')}"))
+
+        pdf.output(output_file)
+        return True
+    except Exception as e:
+        st.error(f"Fehler beim Erstellen des PDF: {e}")
+        return False
+
+def extract_doi_links_from_pdf(pdf_path):
+    """
+    Extrahiert potentielle DOI-Links aus einem PDF (via PyMuPDF).
+    """
+    dois = []
+    try:
+        doc = fitz.open(pdf_path)
+        for page in doc:
+            text = page.get_text()
+            # Evtl. Regex, das https://doi.org/... sucht
+            found = re.findall(r'(https?://(?:dx\.)?doi\.org/\S+)', text)
+            for f in found:
+                if f not in dois:
+                    dois.append(f.strip())
+        doc.close()
+    except Exception as e:
+        st.error(f"Fehler PyMuPDF: {e}")
+    return dois
+
+def download_pdf(url, output_path):
+    """
+    Lädt eine PDF-Datei via Requests herunter.
+    """
+    try:
+        r = requests.get(url, timeout=15)
+        r.raise_for_status()
+        with open(output_path, "wb") as f:
+            f.write(r.content)
+        return True
+    except Exception as e:
+        st.error(f"Fehler beim PDF-Download: {e}")
+        return False
 
 ##############################
 # Profil-Verwaltung
@@ -329,9 +413,9 @@ def load_settings(profile_name: str):
 # Haupt-Modul
 ##############################
 def module_codewords_pubmed():
-    st.title("Codewörter & Multi-API-Suche: Abstract direkt in der Liste (mit erweiterter Filter-Checkbox)")
+    st.title("Codewörter & Multi-API-Suche: Abstract direkt in der Liste (mit erweiterter Filter-Checkbox und Paper-Download)")
 
-    # 1) Profil-Auswahl
+    # Profil-Auswahl
     if "profiles" not in st.session_state or not st.session_state["profiles"]:
         st.warning("Keine Profile vorhanden. Bitte zuerst ein Profil speichern.")
         return
@@ -345,7 +429,7 @@ def module_codewords_pubmed():
     st.subheader("Profil-Einstellungen")
     st.json(profile_data)
 
-    # 2) Codewörter & Logik
+    # Codewörter & Logik
     st.subheader("Codewörter & Logik")
     codewords_str = st.text_input("Codewörter (kommasepariert oder Leerzeichen):", "")
     st.write("Beispiel: genotyp, SNP, phänotyp")
@@ -363,7 +447,6 @@ def module_codewords_pubmed():
 
         results_all = []
 
-        # APIs laut Profil
         if profile_data.get("use_pubmed", False):
             st.write("### PubMed")
             pubmed_res = search_pubmed(query_str, max_results=100)
@@ -404,15 +487,13 @@ def module_codewords_pubmed():
             st.info("Keine Ergebnisse gefunden.")
             return
 
-        # => Speichere im Session State => Filter/Anzeige
         st.session_state["search_results"] = results_all
 
     # Anzeige / Filter
     if "search_results" in st.session_state and st.session_state["search_results"]:
         results_all = st.session_state["search_results"]
-        st.write("## Gesamtergebnis aller aktivierten APIs (aus session_state)")
+        st.write("## Gesamtergebnis (aus session_state)")
 
-        # DataFrame
         df_main = pd.DataFrame([
             {
                 "Title": p.get("Title", "n/a"),
@@ -431,21 +512,20 @@ def module_codewords_pubmed():
         if adv_filter:
             left_col, right_col = st.columns(2)
             with left_col:
-                st.subheader("Originale Liste (ungefiltert)")
+                st.subheader("Original-Liste (ungefiltert)")
                 st.dataframe(df_main)
 
             with right_col:
                 st.subheader("Gefilterte Liste (rechts)")
 
-                # Filter 1: Suchbegriff in Title/Publisher
+                # Filter: text (Title/Publisher)
                 text_filter = st.text_input("Suchbegriff (Title/Publisher):", "")
-                # Filter 2: Jahr 1900-2025
+                # Jahr: 1900-2025
                 year_list = ["Alle"] + [str(y) for y in range(1900, 2026)]
                 year_choice = st.selectbox("Erscheinungsjahr (1900-2025):", year_list)
 
                 df_filtered = df_main.copy()
 
-                # => text_filter
                 if text_filter.strip():
                     tf = text_filter.lower()
                     def match_filter(row):
@@ -454,7 +534,6 @@ def module_codewords_pubmed():
                         return (tf in t) or (tf in p)
                     df_filtered = df_filtered[df_filtered.apply(match_filter, axis=1)]
 
-                # => year_choice
                 if year_choice != "Alle":
                     df_filtered = df_filtered[df_filtered["Year"] == year_choice]
 
@@ -462,10 +541,17 @@ def module_codewords_pubmed():
         else:
             st.dataframe(df_main)
 
+        # Button: Paper herunterladen & PDF erstellen
+        if st.button("Paper herunterladen & PDF erstellen"):
+            # Du kannst hier filtern, ob du ALLE nimmst oder nur die gefilterten
+            # z.B. ALLE:
+            papers_to_download = results_all
+            # -> Oder nur Filter:
+            #  papers_to_download = df_filtered.to_dict("records")  # falls man nur gefilterte will
+
+            _download_all_papers_and_make_pdfs(papers_to_download)
+
         # Excel-Export
-        codewords_str = ""  # Falls du den originalen Codewörter-String brauchst
-        # Du könntest codewords_str in st.session_state["codewords_str"] speichern.
-        # Hier ersatzweise:
         codewords_str = "Suchbegriffe"
         timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         safe_codewords = codewords_str.replace(" ", "_").replace(",", "_").replace("/", "_")
@@ -478,11 +564,11 @@ def module_codewords_pubmed():
         with pd.ExcelWriter(filename, engine="openpyxl") as writer:
             df_main_excel.to_excel(writer, sheet_name="Main", index=False)
 
-            # => pro API
             from collections import defaultdict
             source_groups = defaultdict(list)
             for paper in results_all:
-                source_groups[paper.get("Source", "n/a")].append(paper)
+                src = paper.get("Source", "n/a")
+                source_groups[src].append(paper)
 
             for s_name, plist in source_groups.items():
                 rows = []
@@ -516,7 +602,48 @@ def module_codewords_pubmed():
         st.info("Noch keine Suchergebnisse - bitte Suche starten.")
 
 
-# Falls dieses Skript direkt gestartet wird:
+##############################################
+# Hilfsfunktion: Sammel-Download
+##############################################
+def _download_all_papers_and_make_pdfs(papers):
+    """
+    Beispielhafter Download-Workflow:
+    1) Erstelle Ordner in st.session_state oder so
+    2) Erzeuge pro Paper ein PDF mit create_abstract_pdf
+    3) Ggf. extrahiere DOIs, lad mehr PDFs
+    """
+
+    if not papers:
+        st.warning("Keine Paper zum Download.")
+        return
+
+    # Zieldir:
+    out_dir = os.path.join(os.getcwd(), f"paper_download_{int(time.time())}")
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
+
+    st.write(f"Erstelle Ordner: `{out_dir}` (lokal)")
+
+    for i, paper in enumerate(papers, start=1):
+        st.write(f"{i}/{len(papers)}: **{paper.get('Title','n/a')}**")
+        # PDF-Name
+        pdf_name = re.sub(r"[^a-zA-Z0-9_]+", "_", paper.get("Title","unnamed"))[:50] + ".pdf"
+        pdf_path = os.path.join(out_dir, pdf_name)
+        success = create_abstract_pdf(paper, pdf_path)
+        if success:
+            st.write(f"-> Abstract-PDF erstellt: `{pdf_name}`")
+
+        # Falls man Headless Chrome-Logik integrieren will, hier
+        # (in Streamlit-Cloud geht das meist nicht):
+        # doi_links = extract_doi_links_from_pdf(pdf_path)
+        # st.write(f"Gefundene DOI-Links in PDF: {doi_links}")
+
+    st.success("Download und PDF-Erstellung abgeschlossen.")
+
+
+##############################
+# Falls Direktstart
+##############################
 if __name__ == "__main__":
     st.set_page_config(layout="wide")
     module_codewords_pubmed()
