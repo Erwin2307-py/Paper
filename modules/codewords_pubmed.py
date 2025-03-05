@@ -11,7 +11,6 @@ from collections import defaultdict
 ##############################
 # Dict-Flattening
 ##############################
-
 def flatten_dict(d, parent_key="", sep="__"):
     """
     Wandelt ein verschachteltes Dictionary in ein flaches Dictionary um.
@@ -29,12 +28,11 @@ def flatten_dict(d, parent_key="", sep="__"):
     return dict(items)
 
 ##############################
-# PubMed-Funktionen (ESearch + ESummary + EFetch)
+# PubMed-Funktionen
 ##############################
-
 def esearch_pubmed(query: str, max_results=100, timeout=10):
     """
-    Holt über ESearch eine Liste von PMID für einen Suchbegriff.
+    Führt eine PubMed-Suche via E-Utilities durch und gibt eine Liste von PMID zurück.
     """
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {
@@ -69,8 +67,8 @@ def parse_efetch_response(xml_text: str) -> dict:
 
 def fetch_pubmed_abstracts(pmids, timeout=10):
     """
-    EFetch-Aufruf, um für jeden PMID den Abstract zu bekommen.
-    Gibt Dict { pmid -> abstract } zurück.
+    EFetch-Aufruf: Holt für jede PMID den Abstract.
+    Gibt Dict {pmid -> abstract} zurück.
     """
     if not pmids:
         return {}
@@ -90,8 +88,8 @@ def fetch_pubmed_abstracts(pmids, timeout=10):
 
 def get_pubmed_details(pmids: list):
     """
-    Nutzt ESummary (Titel, Jahr, DOI etc.) und EFetch (Abstract),
-    baut daraus das finale Dict pro Paper zusammen.
+    Ruft via ESummary die Metadaten ab und via EFetch den Abstract.
+    Erstellt pro PMID ein Dictionary mit allen relevanten Feldern.
     """
     if not pmids:
         return []
@@ -109,7 +107,7 @@ def get_pubmed_details(pmids: list):
         st.error(f"Fehler beim Abrufen von PubMed-Daten (ESummary): {e}")
         return []
 
-    # Abstracts via EFetch
+    # EFetch für Abstract
     abstracts_map = fetch_pubmed_abstracts(pmids, timeout=10)
 
     results = []
@@ -143,9 +141,7 @@ def get_pubmed_details(pmids: list):
 
 def search_pubmed(query: str, max_results=100):
     """
-    Vollständige PubMed-Suche:
-    1) ESearch => PMIDs
-    2) ESummary + EFetch => Titel, Jahr, DOI, Journal, Abstract ...
+    Vollständige PubMed-Suche (ESearch + ESummary + EFetch).
     """
     pmids = esearch_pubmed(query, max_results=max_results)
     if not pmids:
@@ -155,8 +151,10 @@ def search_pubmed(query: str, max_results=100):
 ##############################
 # Europe PMC
 ##############################
-
 def search_europe_pmc(query: str, max_results=100, timeout=30, retries=3, delay=5):
+    """
+    Führt eine Europe PMC-Suche aus und gibt eine Liste von Paper-Daten zurück.
+    """
     url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {
         "query": query,
@@ -172,8 +170,6 @@ def search_europe_pmc(query: str, max_results=100, timeout=30, retries=3, delay=
             for item in data.get("resultList", {}).get("result", []):
                 pub_year = str(item.get("pubYear", "n/a"))
                 abstract_text = item.get("abstractText", "n/a")
-
-                # Publisher über "journalInfo" -> "journal"
                 publisher = "n/a"
                 jinfo = item.get("journalInfo", {})
                 if isinstance(jinfo, dict):
@@ -203,11 +199,12 @@ def search_europe_pmc(query: str, max_results=100, timeout=30, retries=3, delay=
 ##############################
 # Google Scholar
 ##############################
-
 def search_google_scholar(query: str, max_results=100):
+    """
+    Realer Aufruf via scholarly (inoffizielle API).
+    """
     results = []
     try:
-        # Scholarly-Aufruf
         search_results = scholarly.search_pubs(query)
         for _ in range(max_results):
             publication = next(search_results, None)
@@ -236,8 +233,10 @@ def search_google_scholar(query: str, max_results=100):
 ##############################
 # Semantic Scholar
 ##############################
-
 def search_semantic_scholar(query: str, max_results=100, retries=3, delay=5):
+    """
+    Führt eine Suche in der Semantic Scholar API durch und gibt eine Liste von Paper-Daten zurück.
+    """
     base_url = "https://api.semanticscholar.org/graph/v1/paper/search"
     params = {
         "query": query,
@@ -284,10 +283,12 @@ def search_semantic_scholar(query: str, max_results=100, retries=3, delay=5):
     return []
 
 ##############################
-# OpenAlex / CORE
+# OpenAlex
 ##############################
-
 def search_openalex(query: str, max_results=100):
+    """
+    Führt eine Suche in der OpenAlex-API durch und gibt eine Liste im gleichen Format zurück.
+    """
     base_url = "https://api.openalex.org/works"
     params = {
         "search": query,
@@ -323,7 +324,13 @@ def search_openalex(query: str, max_results=100):
         st.error(f"Fehler bei der OpenAlex-Suche: {e}")
         return []
 
+##############################
+# CORE
+##############################
 def search_core(query: str, max_results=100):
+    """
+    Führt (theoretisch) eine CORE-Suche durch – hier nur ein Platzhalter.
+    """
     return [{
         "Source": "CORE",
         "Title": "Dummy Title from CORE",
@@ -339,7 +346,6 @@ def search_core(query: str, max_results=100):
 ##############################
 # Profil-Verwaltung
 ##############################
-
 def load_settings(profile_name: str):
     if "profiles" in st.session_state:
         profiles = st.session_state["profiles"]
@@ -350,9 +356,8 @@ def load_settings(profile_name: str):
 ##############################
 # Haupt-Modul
 ##############################
-
 def module_codewords_pubmed():
-    st.title("Codewörter & Multi-API-Suche: Abstract direkt in der Liste")
+    st.title("Codewörter & Multi-API-Suche (mit allen Funktionen)")
 
     # 1) Profil-Auswahl
     if "profiles" not in st.session_state or not st.session_state["profiles"]:
@@ -382,41 +387,47 @@ def module_codewords_pubmed():
             return
 
         query_str = " AND ".join(raw_list) if logic_option == "AND" else " OR ".join(raw_list)
-        st.write("Finale Suchanfrage:", query_str)
+        st.write(f"Finale Suchanfrage: {query_str}")
 
         results_all = []
 
-        # Aktivierte APIs laut Profil
+        # APIs laut Profil
+        # == PubMed ==
         if profile_data.get("use_pubmed", False):
             st.write("### PubMed")
             pubmed_res = search_pubmed(query_str, max_results=100)
             st.write(f"Anzahl PubMed-Ergebnisse: {len(pubmed_res)}")
             results_all.extend(pubmed_res)
 
+        # == Europe PMC ==
         if profile_data.get("use_epmc", False):
             st.write("### Europe PMC")
             epmc_res = search_europe_pmc(query_str, max_results=100)
             st.write(f"Anzahl Europe PMC-Ergebnisse: {len(epmc_res)}")
             results_all.extend(epmc_res)
 
+        # == Google Scholar ==
         if profile_data.get("use_google", False):
             st.write("### Google Scholar")
             google_res = search_google_scholar(query_str, max_results=100)
             st.write(f"Anzahl Google Scholar-Ergebnisse: {len(google_res)}")
             results_all.extend(google_res)
 
+        # == Semantic Scholar ==
         if profile_data.get("use_semantic", False):
             st.write("### Semantic Scholar")
             sem_res = search_semantic_scholar(query_str, max_results=100)
             st.write(f"Anzahl Semantic Scholar-Ergebnisse: {len(sem_res)}")
             results_all.extend(sem_res)
 
+        # == OpenAlex ==
         if profile_data.get("use_openalex", False):
             st.write("### OpenAlex")
             oa_res = search_openalex(query_str, max_results=100)
             st.write(f"Anzahl OpenAlex-Ergebnisse: {len(oa_res)}")
             results_all.extend(oa_res)
 
+        # == CORE ==
         if profile_data.get("use_core", False):
             st.write("### CORE")
             core_res = search_core(query_str, max_results=100)
@@ -429,8 +440,7 @@ def module_codewords_pubmed():
 
         st.write("## Gesamtergebnis aus allen aktivierten APIs")
 
-        # 4) DataFrame MIT Spalte "Abstract"
-        #    => Keine separate "Abstract (Link)" mehr
+        # DataFrame mit Spalte "Abstract"
         df_main = pd.DataFrame([
             {
                 "Title": p.get("Title", "n/a"),
@@ -439,41 +449,69 @@ def module_codewords_pubmed():
                 "Publisher": p.get("Publisher", "n/a"),
                 "Population": p.get("Population", "n/a"),
                 "Source": p.get("Source", "n/a"),
-                "Abstract": p.get("Abstract", "n/a")   # <--- Abstract direkt
+                "Abstract": p.get("Abstract", "n/a")
             }
             for p in results_all
         ])
 
-        # 5) DataFrame zeigen => Abstract sichtbar
-        st.dataframe(df_main)
+        # Checkbox => erweiterte Filter
+        if st.checkbox("Erweiterte Filter-Funktion aktivieren?"):
+            col_left, col_right = st.columns(2)
 
-        # 6) Excel-Export
+            with col_left:
+                st.subheader("Original-Liste (Links)")
+                st.dataframe(df_main)
+
+            with col_right:
+                st.subheader("Gefilterte Liste (Rechts)")
+
+                # Filter 1: Suchbegriff (Title / Publisher)
+                text_filter = st.text_input("Suchbegriff (Titel/Publisher)", "")
+                # Filter 2: Jahr (1900 - 2025)
+                year_options = ["Alle"] + [str(y) for y in range(1900, 2026)]
+                year_choice = st.selectbox("Erscheinungsjahr (1900 - 2025):", year_options)
+
+                df_filtered = df_main.copy()
+
+                if text_filter.strip():
+                    # Filtern in Title oder Publisher
+                    tf_lower = text_filter.lower()
+                    def match_filter(row):
+                        title = (row["Title"] or "").lower()
+                        pub = (row["Publisher"] or "").lower()
+                        return (tf_lower in title) or (tf_lower in pub)
+                    df_filtered = df_filtered[df_filtered.apply(match_filter, axis=1)]
+
+                if year_choice != "Alle":
+                    df_filtered = df_filtered[df_filtered["Year"] == year_choice]
+
+                st.dataframe(df_filtered)
+        else:
+            # Normale Ansicht
+            st.dataframe(df_main)
+
+        # Excel-Export
         timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        safe_codewords = codewords_str.strip().replace(" ", "_").replace(",", "_").replace("/", "_")
+        safe_codewords = (codewords_str.strip()
+                                         .replace(" ", "_")
+                                         .replace(",", "_")
+                                         .replace("/", "_"))
         filename = f"{safe_codewords}_{timestamp_str}.xlsx"
 
-        # Main-Sheet inkl. Abstract
-        df_main_excel = pd.DataFrame([
-            {
-                "Title": p.get("Title", "n/a"),
-                "PubMed ID": p.get("PubMed ID", "n/a"),
-                "Abstract": p.get("Abstract", "n/a"),
-                "Year": p.get("Year", "n/a"),
-                "Publisher": p.get("Publisher", "n/a"),
-                "Population": p.get("Population", "n/a"),
-                "Source": p.get("Source", "n/a"),
-            }
-            for p in results_all
-        ])
+        # Main
+        df_main_excel = df_main[[
+            "Title", "PubMed ID", "Abstract", "Year", "Publisher", "Population", "Source"
+        ]]
 
-        # => pro API eigenes Sheet
-        source_groups = defaultdict(list)
-        for paper in results_all:
-            src = paper.get("Source", "n/a")
-            source_groups[src].append(paper)
-
+        # Pro API je ein Sheet
         with pd.ExcelWriter(filename, engine="openpyxl") as writer:
             df_main_excel.to_excel(writer, sheet_name="Main", index=False)
+
+            # Wir greifen wieder auf "results_all" zu, weil wir für "FullData" brauchen.
+            source_groups = defaultdict(list)
+            for paper in results_all:
+                src = paper.get("Source", "n/a")
+                source_groups[src].append(paper)
 
             for s_name, paper_list in source_groups.items():
                 rows = []
@@ -502,9 +540,9 @@ def module_codewords_pubmed():
             )
 
     st.write("---")
-    st.info("Der Abstract wird jetzt direkt in der Liste angezeigt – kein separater Klick nötig.")
+    st.info("Mit aktivierter Checkbox kannst du links/rechts Original- und Gefilterte Liste vergleichen.")
 
-
-# Falls dieses Modul als Hauptskript ausgeführt wird:
+# Falls als Hauptskript ausgeführt:
 if __name__ == "__main__":
+    st.set_page_config(layout="wide")
     module_codewords_pubmed()
