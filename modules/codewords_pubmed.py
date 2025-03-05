@@ -3,10 +3,10 @@
 """
 codewords_pubmed.py
 -------------------
-Dieses Modul importiert online_api_filter.py und startet die Anwendung.
+Dieses Modul importiert das Modul online_api_filter (relativ) und startet die Anwendung.
 """
 
-import online_api_filter
+from .online_api_filter import module_online_api_filter
 
 if __name__ == "__main__":
-    online_api_filter.module_online_api_filter()
+    module_online_api_filter()
