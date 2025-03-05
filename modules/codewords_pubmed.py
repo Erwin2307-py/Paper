@@ -28,12 +28,9 @@ except ImportError:
 # A) ChatGPT: Paper erstellen & lokal speichern
 ###############################################################################
 def generate_paper_via_chatgpt(prompt_text, model="gpt-3.5-turbo"):
-    """
-    Ruft die ChatGPT-API auf und erzeugt ein Paper (Text).
-    Holt den API-Key aus st.secrets["OPENAI_API_KEY"].
-    """
+    """Ruft die ChatGPT-API auf und erzeugt ein Paper (Text)."""
     try:
-        openai.api_key = st.secrets["OPENAI_API_KEY"]
+        openai.api_key = st.secrets["OPENAI_API_KEY"]  # Holt KEY aus secrets
         response = openai.ChatCompletion.create(
             model=model,
             messages=[{"role": "user", "content": prompt_text}],
@@ -44,15 +41,13 @@ def generate_paper_via_chatgpt(prompt_text, model="gpt-3.5-turbo"):
     except Exception as e:
         st.error(
             "Fehler bei ChatGPT-API: "
-            f"'{e}'.\nHast du den Key 'OPENAI_API_KEY' in secrets.toml eingetragen?"
+            f"'{e}'.\nPrüfe, ob 'OPENAI_API_KEY' in secrets.toml hinterlegt ist!"
         )
         return ""
 
 
 def save_text_as_pdf(text, pdf_path, title="Paper"):
-    """
-    Speichert den gegebenen Text in ein PDF (lokal).
-    """
+    """Speichert den gegebenen Text in ein PDF (lokal)."""
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -129,6 +124,7 @@ def download_arxiv_pdf(pdf_url, local_filepath):
 # C) Multi-API-Suche
 ###############################################################################
 def flatten_dict(d, parent_key="", sep="__"):
+    """Wandelt ein verschachteltes Dict in ein flaches Dict um."""
     items = []
     for k, v in d.items():
         new_key = f"{parent_key}{sep}{k}" if parent_key else k
@@ -139,7 +135,7 @@ def flatten_dict(d, parent_key="", sep="__"):
     return dict(items)
 
 
-# -- PubMed --
+# --- PubMed-Funktionen ---
 def esearch_pubmed(query: str, max_results=100, timeout=10):
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {
@@ -172,6 +168,7 @@ def parse_efetch_response(xml_text: str) -> dict:
 
 
 def fetch_pubmed_abstracts(pmids, timeout=10):
+    """Holt Abstracts per efetch."""
     if not pmids:
         return {}
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
@@ -235,7 +232,7 @@ def search_pubmed(query: str, max_results=100):
     return get_pubmed_details(pmids)
 
 
-# -- Europe PMC --
+# --- Europe PMC ---
 def search_europe_pmc(query: str, max_results=100, timeout=10):
     url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {"query": query, "format": "json", "pageSize": max_results}
@@ -266,7 +263,7 @@ def search_europe_pmc(query: str, max_results=100, timeout=10):
         return []
 
 
-# -- Google Scholar --
+# --- Google Scholar ---
 def search_google_scholar(query: str, max_results=100):
     results = []
     try:
@@ -294,17 +291,16 @@ def search_google_scholar(query: str, max_results=100):
         return []
 
 
-# -- Semantic Scholar --
+# --- Semantic Scholar ---
 def search_semantic_scholar(query: str, max_results=100):
     url = "https://api.semanticscholar.org/graph/v1/paper/search"
     params = {"query": query, "limit": max_results, "fields": "title,authors,year,abstract"}
+    results = []
     try:
         r = requests.get(url, params=params, timeout=10)
         r.raise_for_status()
         data = r.json()
-        papers = data.get("data", [])
-        results = []
-        for p in papers:
+        for p in data.get("data", []):
             year_ = str(p.get("year", "n/a"))
             abstract_ = p.get("abstract", "n/a")
             results.append({
@@ -322,9 +318,10 @@ def search_semantic_scholar(query: str, max_results=100):
     except Exception as e:
         st.error(f"Semantic Scholar-Suche fehlgeschlagen: {e}")
         return []
+    return results
 
 
-# -- OpenAlex --
+# --- OpenAlex ---
 def search_openalex(query: str, max_results=100):
     url = "https://api.openalex.org/works"
     params = {"search": query, "per-page": max_results}
@@ -337,7 +334,7 @@ def search_openalex(query: str, max_results=100):
             title = w.get("display_name", "n/a")
             year_ = str(w.get("publication_year", "n/a"))
             doi = w.get("doi", "n/a")
-            abstract_ = "n/a"  # OpenAlex-Abstract hier nicht standardmäßig
+            abstract_ = "n/a"
             results.append({
                 "Source": "OpenAlex",
                 "Title": title,
@@ -378,7 +375,7 @@ def create_gpt_paper_pdf(gpt_text, output_stream, title="ChatGPT-Paper"):
 
 
 ###############################################################################
-# E) "Profiles" laden
+# E) "Profiles" laden (optional)
 ###############################################################################
 def load_settings(profile_name: str):
     if "profiles" in st.session_state:
@@ -388,7 +385,7 @@ def load_settings(profile_name: str):
 
 
 ###############################################################################
-# F) Helper für Excel
+# F) Helper
 ###############################################################################
 def safe_excel_value(value):
     if value is None:
@@ -401,13 +398,11 @@ def safe_excel_value(value):
 
 
 ###############################################################################
-# G) ChatGPT-Online-Suche: Neue Funktion
+# G) ChatGPT-Scoring in extra Fenster
 ###############################################################################
 def chatgpt_online_search(papers, codewords, top_k=100):
     """
-    Nimmt eine Liste von Paper-Dictionaries (mit 'Title' und 'Abstract')
-    und nutzt ChatGPT, um pro Paper eine 'Relevanz' (0-100) zu erfragen.
-    Gibt dann die top_k Paper zurück.
+    Schleife über Papers mit eigener 'Fortschritt'-Anzeige in Expander.
     """
     if not papers:
         return []
@@ -417,32 +412,32 @@ def chatgpt_online_search(papers, codewords, top_k=100):
         st.error("Kein 'OPENAI_API_KEY' in st.secrets! Abbruch.")
         return []
 
-    # Schleife über Papers
+    # Separates Fenster für Fortschritt:
+    progress_area = st.expander("Fortschritt (aktuelles Paper)", expanded=True)
+    paper_status = progress_area.empty()
+
     results_scored = []
     total = len(papers)
     for idx, paper in enumerate(papers, start=1):
-        st.write(f"Verarbeite Paper {idx}/{total}: {paper.get('Title','(n/a)')}")
-        st.progress(idx/total)
+        # Updaten wir NUR diese Zeile => immer das aktuelle Paper
+        paper_status.write(f"Paper {idx}/{total}: **{paper.get('Title','(n/a)')}**")
 
-        # Prompt an ChatGPT
+        # Prompt:
         prompt_text = (
-            f"Du bist ein System, das Relevanz einschätzt.\n"
-            f"Codewords: {codewords}\n\n"
+            f"Codewörter: {codewords}\n\n"
             f"Paper:\n"
             f"Titel: {paper.get('Title','n/a')}\n"
             f"Abstract:\n{paper.get('Abstract','(kein Abstract)')}\n\n"
-            "Gib mir bitte eine Zahl zwischen 0 und 100, wie relevant dieses Paper "
-            "in Bezug auf die Codewords ist. Nur die Zahl, keine Erklärung."
+            "Gib mir eine Zahl von 0 bis 100 (Relevanz)."
         )
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
-                messages=[{"role":"user", "content": prompt_text}],
+                messages=[{"role": "user", "content": prompt_text}],
                 max_tokens=20,
                 temperature=0
             )
             raw_text = response.choices[0].message.content.strip()
-            # Versuchen, die Zahl zu extrahieren
             match = re.search(r'(\d+)', raw_text)
             if match:
                 score = int(match.group(1))
@@ -452,7 +447,6 @@ def chatgpt_online_search(papers, codewords, top_k=100):
             st.error(f"Fehler bei ChatGPT-Scoring: {e}")
             score = 0
 
-        # Score in Paper integrieren
         new_p = dict(paper)
         new_p["Relevance"] = score
         results_scored.append(new_p)
@@ -466,9 +460,9 @@ def chatgpt_online_search(papers, codewords, top_k=100):
 # H) Multi-API-Suche + ChatGPT
 ###############################################################################
 def module_codewords_pubmed():
-    st.title("Multi-API-Suche (PubMed, Europe PMC, Google Scholar, ...)")
+    st.title("Multi-API-Suche (PubMed, Europe PMC, Google Scholar, ...) + ChatGPT Online Suche")
 
-    # Profile (optional)
+    # Profile
     if "profiles" not in st.session_state or not st.session_state["profiles"]:
         st.warning("Keine Profile (optional).")
         return
@@ -496,34 +490,31 @@ def module_codewords_pubmed():
         results_all = []
 
         if profile_data.get("use_pubmed", False):
-            pm = search_pubmed(query_str, max_results=100)
+            pm = search_pubmed(query_str, max_results=200)
             st.write(f"PubMed: {len(pm)}")
             results_all.extend(pm)
 
         if profile_data.get("use_epmc", False):
-            ep = search_europe_pmc(query_str, max_results=100)
+            ep = search_europe_pmc(query_str, max_results=200)
             st.write(f"Europe PMC: {len(ep)}")
             results_all.extend(ep)
 
         if profile_data.get("use_google", False):
-            gg = search_google_scholar(query_str, max_results=100)
+            gg = search_google_scholar(query_str, max_results=200)
             st.write(f"Google Scholar: {len(gg)}")
             results_all.extend(gg)
 
         if profile_data.get("use_semantic", False):
-            se = search_semantic_scholar(query_str, max_results=100)
+            se = search_semantic_scholar(query_str, max_results=200)
             st.write(f"Semantic Scholar: {len(se)}")
             results_all.extend(se)
 
         if profile_data.get("use_openalex", False):
-            oa = search_openalex(query_str, max_results=100)
+            oa = search_openalex(query_str, max_results=200)
             st.write(f"OpenAlex: {len(oa)}")
             results_all.extend(oa)
 
-        # Neuer Sammelpunkt: Wir speichern max. 1000
-        # (Oder wenn < 1000 => alle)
-        # Dein Code, falls du pro API 200 ziehst, kann schnell 1000+ sein,
-        # wir limitieren manuell:
+        # Max 1000
         if len(results_all) > 1000:
             results_all = results_all[:1000]
 
@@ -531,35 +522,29 @@ def module_codewords_pubmed():
             st.info("Nichts gefunden.")
             return
 
-        # Zwischenspeichern
         st.session_state["search_results"] = results_all
+        st.write(f"Gefundene Papers insgesamt: {len(results_all)}")
 
-    # Anzeige
     if "search_results" in st.session_state and st.session_state["search_results"]:
-        st.write(f"Gefundene Papers: {len(st.session_state['search_results'])}")
         df_main = pd.DataFrame(st.session_state["search_results"])
         st.dataframe(df_main)
 
-        # Neu: Button "ChatGPT-Online-Suche (1000 Paper)"
-        if st.button("ChatGPT-Online-Suche (1000 Paper)"):
-            # Wir rufen chatgpt_online_search auf:
+        # Button: ChatGPT-Online-Suche
+        st.write("---")
+        if st.button("ChatGPT-Online-Suche (max. 1000 Papers)"):
             if not codewords_str.strip():
                 st.warning("Bitte Codewörter eingeben, um Relevanz zu bestimmen!")
             else:
-                st.write("Starte ChatGPT-Scoring...")
-                # Man kann hier den codewords_str als Kontext geben:
+                st.write("Starte ChatGPT-Scoring...\n")
                 top_results = chatgpt_online_search(
                     st.session_state["search_results"],
                     codewords=codewords_str,
                     top_k=100
                 )
-                # Anzeige Top 100
                 if top_results:
                     st.subheader("Top 100 Paper (nach ChatGPT-Relevanz)")
                     df_top = pd.DataFrame(top_results)
                     st.dataframe(df_top)
-                else:
-                    st.info("Keine Resultate oder Fehler bei ChatGPT.")
 
 
 ###############################################################################
@@ -568,7 +553,7 @@ def module_codewords_pubmed():
 def main():
     st.title("Kombinierte App: ChatGPT-Paper, arXiv-Suche, Multi-API-Suche")
 
-    # Beispiel-Profile
+    # Beispiel: Profile definieren (falls nicht existieren)
     if "profiles" not in st.session_state:
         st.session_state["profiles"] = {
             "DefaultProfile": {
