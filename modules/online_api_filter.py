@@ -6,7 +6,7 @@ import os
 import time
 
 ##############################################################################
-# 1) Verbindungstest-Funktionen für diverse APIs (unverändert)
+# 1) Verbindungstest-Funktionen für diverse APIs
 ##############################################################################
 
 def check_pubmed_connection(timeout=5):
@@ -297,29 +297,69 @@ def search_core(query: str, max_results=100):
         return []
 
 ##############################################################################
-# 3) Gene-Loader
+# 3) Gene-Loader: Liest ab C3 eines gegebenen Sheets
 ##############################################################################
 
 def load_genes_from_excel(sheet_name: str) -> list:
-    """
-    Liest ab Spalte C, Zeile 3 (Index [2, 2]) die Gene aus 'genes.xlsx' und gibt sie als Liste zurück.
-    """
     excel_path = os.path.join("modules", "genes.xlsx")
     try:
         df = pd.read_excel(excel_path, sheet_name=sheet_name, header=None)
-        gene_series = df.iloc[2:, 2]  # ab Zeile 3, Spalte C
+        gene_series = df.iloc[2:, 2]  # Ab Zeile 3, Spalte C
         return gene_series.dropna().astype(str).tolist()
     except Exception as e:
         st.error(f"Fehler beim Laden der Excel-Datei: {e}")
         return []
 
 ##############################################################################
-# 4) Profile
+# 4) ChatGPT-Funktion zum Filtern
+##############################################################################
+
+def check_genes_in_text_with_chatgpt(text: str, genes: list, model="gpt-3.5-turbo") -> dict:
+    openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
+    if not openai.api_key:
+        st.warning("Kein OPENAI_API_KEY in st.secrets['OPENAI_API_KEY'] hinterlegt!")
+        return {}
+    if not text.strip():
+        st.warning("Kein Text eingegeben.")
+        return {}
+    if not genes:
+        st.info("Keine Gene in der Liste (Sheet leer?).")
+        return {}
+    joined_genes = ", ".join(genes)
+    prompt = (
+        f"Hier ist ein Text:\n\n{text}\n\n"
+        f"Hier eine Liste von Genen: {joined_genes}\n"
+        f"Gib für jedes Gen an, ob es im Text vorkommt (Yes) oder nicht (No).\n"
+        f"Antworte in der Form:\n"
+        f"GENE: Yes\nGENE2: No\n"
+    )
+    try:
+        response = openai.ChatCompletion.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=300,
+            temperature=0
+        )
+        answer = response.choices[0].message.content.strip()
+        result_map = {}
+        for line in answer.split("\n"):
+            if ":" in line:
+                parts = line.split(":", 1)
+                gene_name = parts[0].strip()
+                yes_no = parts[1].strip().lower()
+                result_map[gene_name] = ("yes" in yes_no)
+        return result_map
+    except Exception as e:
+        st.error(f"ChatGPT Fehler: {e}")
+        return {}
+
+##############################################################################
+# 5) Einstellungen speichern/laden (Profile)
 ##############################################################################
 
 def save_current_settings(profile_name: str, use_pubmed: bool, use_epmc: bool, use_google: bool,
                           use_semantic: bool, use_openalex: bool, use_core: bool, use_chatgpt: bool,
-                          sheet_choice: str, codewords: str):
+                          sheet_choice: str, text_input: str):
     if "profiles" not in st.session_state:
         st.session_state["profiles"] = {}
     st.session_state["profiles"][profile_name] = {
@@ -331,7 +371,7 @@ def save_current_settings(profile_name: str, use_pubmed: bool, use_epmc: bool, u
         "use_core": use_core,
         "use_chatgpt": use_chatgpt,
         "sheet_choice": sheet_choice,
-        "codewords": codewords
+        "text_input": text_input
     }
     st.success(f"Profil '{profile_name}' erfolgreich gespeichert.")
 
@@ -342,11 +382,11 @@ def load_settings(profile_name: str):
     return None
 
 ##############################################################################
-# 5) Haupt-Modul: Genes per DropDown (erster Buchstabe) + MultiSelect
+# 6) Haupt-Modul: Online API Filter & Gene-Filter
 ##############################################################################
 
 def module_online_api_filter():
-    st.title("Multi-API-Suche: Codewords + Gene aus Excel (buchstabenweise)")
+    st.title("API-Auswahl & Gene-Filter mit Profile-Speicherung + ChatGPT-Synonym-Fenster")
 
     # Profilverwaltung
     st.subheader("Profilverwaltung")
@@ -365,7 +405,6 @@ def module_online_api_filter():
         else:
             st.info("Kein Profil zum Laden ausgewählt.")
 
-    # Default-Settings
     if "current_settings" not in st.session_state:
         st.session_state["current_settings"] = {
             "use_pubmed": True,
@@ -376,12 +415,12 @@ def module_online_api_filter():
             "use_core": False,
             "use_chatgpt": False,
             "sheet_choice": "",
-            "codewords": ""
+            "text_input": ""
         }
     current = st.session_state["current_settings"]
 
-    # A) API-Auswahl + Verbindungstest
-    st.subheader("A) API-Auswahl + Verbindungstest")
+    # API-Auswahl & Verbindungstest
+    st.subheader("A) API-Auswahl (Checkboxen) + Verbindungstest")
     col1, col2 = st.columns(2)
     with col1:
         use_pubmed = st.checkbox("PubMed", value=current["use_pubmed"])
@@ -391,11 +430,13 @@ def module_online_api_filter():
     with col2:
         use_openalex = st.checkbox("OpenAlex", value=current["use_openalex"])
         use_core = st.checkbox("CORE", value=current["use_core"])
-        use_chatgpt = st.checkbox("ChatGPT (optional)", value=current["use_chatgpt"])
+        use_chatgpt = st.checkbox("ChatGPT", value=current["use_chatgpt"])
 
     if st.button("Verbindung prüfen"):
-        def green_dot(): return "<span style='color: limegreen; font-size: 20px;'>&#9679;</span>"
-        def red_dot(): return "<span style='color: red; font-size: 20px;'>&#9679;</span>"
+        def green_dot():
+            return "<span style='color: limegreen; font-size: 20px;'>&#9679;</span>"
+        def red_dot():
+            return "<span style='color: red; font-size: 20px;'>&#9679;</span>"
         dots_list = []
         if use_pubmed:
             dots_list.append(f"{green_dot() if check_pubmed_connection() else red_dot()} <strong>PubMed</strong>")
@@ -414,21 +455,48 @@ def module_online_api_filter():
             dots_list.append(f"{green_dot() if check_chatgpt_connection() else red_dot()} <strong>ChatGPT</strong>")
         st.markdown(" &nbsp;&nbsp;&nbsp; ".join(dots_list), unsafe_allow_html=True)
 
-    # B) Codewords-Eingabe
-    st.write("---")
-    st.subheader("B) Codewords eingeben")
-    codewords_text = st.text_area("Codewörter (kommasepariert, OR-Suche):", value=current["codewords"], height=80)
+    # ChatGPT-Synonym-Fenster
+    if "synonyms_selected" not in st.session_state:
+        st.session_state["synonyms_selected"] = {"genotype": False, "phenotype": False, "snp": False, "inc_dec": False}
+    synonyms_local = st.session_state["synonyms_selected"]
+    if use_chatgpt:
+        with st.expander("ChatGPT: Begriffe & Synonyme auswählen"):
+            st.markdown("""
+**Genotyp**  
+Deutsch: Erbbild, genetische Ausstattung, genetisches Profil  
+Englisch: genotype, genetic makeup, genetic constitution  
+Verwandte Begriffe: Allel, Genom, DNA-Sequenz
+""")
+            genotype_check = st.checkbox("Genotyp (inkl. Synonyme)", value=synonyms_local["genotype"])
+            st.markdown("""
+**Phänotyp**  
+Deutsch: Erscheinungsbild, äußeres Merkmal, Merkmalsausprägung  
+Englisch: phenotype, observable traits, physical appearance  
+Verwandte Begriffe: Morphologie, physiologische Eigenschaften, Verhalten
+""")
+            phenotype_check = st.checkbox("Phänotyp (inkl. Synonyme)", value=synonyms_local["phenotype"])
+            st.markdown("""
+**Single Nucleotide Polymorphism (SNP)**  
+Deutsch: Einzelnukleotid-Polymorphismus, Punktmutation  
+Englisch: Single Nucleotide Polymorphism (SNP), point mutation  
+Verwandte Begriffe: genetische Variation, DNA-Polymorphismus
+""")
+            snp_check = st.checkbox("SNP (inkl. Synonyme)", value=synonyms_local["snp"])
+            inc_dec_check = st.checkbox("Increase/Decrease (auch das Gegenteil suchen?)", value=synonyms_local["inc_dec"])
+            synonyms_local.update({"genotype": genotype_check, "phenotype": phenotype_check, "snp": snp_check, "inc_dec": inc_dec_check})
 
-    # C) Gene-liste buchstabenweise
+    # Gene-Filter-Bereich
     st.write("---")
-    st.subheader("C) Gene aus Excel (Spalte C, ab Zeile 3) buchstabenweise auswählen")
-
-    use_gene_list = st.checkbox("Gene aus Excel einbeziehen?", value=True)
-    chosen_genes = []  # Diese Genes werden am Ende an die Codewords angehängt
+    st.subheader("B) Gene-Filter via ChatGPT (ab C3)")
+    st.write("Wähle ein Sheet aus `modules/genes.xlsx` (ab Spalte C, Zeile 3) und entscheide per Häkchen, ob die Gene aus der Excel-Liste verwendet werden sollen.")
+    
+    use_gene_list = st.checkbox("Gene aus Excel verwenden", value=True)
+    genes = []
+    sheet_choice = ""
     if use_gene_list:
         excel_path = os.path.join("modules", "genes.xlsx")
         if not os.path.exists(excel_path):
-            st.error("Die Datei 'genes.xlsx' wurde nicht in 'modules/' gefunden.")
+            st.error("Die Datei 'genes.xlsx' wurde nicht in 'modules/' gefunden!")
             return
         try:
             xls = pd.ExcelFile(excel_path)
@@ -439,84 +507,167 @@ def module_online_api_filter():
         if not sheet_names:
             st.error("Keine Sheets in genes.xlsx gefunden.")
             return
-
         current_sheet = current.get("sheet_choice", sheet_names[0])
         if current_sheet not in sheet_names:
             current_sheet = sheet_names[0]
-        sheet_choice = st.selectbox("Wähle ein Sheet für Genes:", sheet_names, index=sheet_names.index(current_sheet))
+        sheet_choice = st.selectbox("Wähle ein Sheet in genes.xlsx:", sheet_names, index=sheet_names.index(current_sheet))
+        genes = load_genes_from_excel(sheet_choice)
+    else:
+        st.info("Gene werden nicht aus Excel geladen.")
 
-        # Genes laden
-        all_genes = load_genes_from_excel(sheet_choice)
-        if not all_genes:
-            st.info("Keine Gene geladen oder Excel-Sheet leer.")
-        else:
-            # Nach Buchstabe gruppieren
-            # 1) Alle großen Buchstaben, die als Initiale vorkommen
-            letters = sorted(set(g[0].upper() for g in all_genes if g))
-            letter_choice = st.selectbox("Wähle Anfangsbuchstaben:", options=["(Kein)"] + letters)
-            filtered_genes = []
-            if letter_choice != "(Kein)":
-                # Nur Gene, die mit letter_choice starten
-                filtered_genes = [g for g in all_genes if g and g[0].upper() == letter_choice]
+    show_genes = st.checkbox("Gene-Liste anzeigen?", value=False)
+    if show_genes and genes:
+        st.markdown("**Gelistete Gene** (ab C3):")
+        st.write(genes)
 
-            # MultiSelect, damit man mehrere Gene wählen kann
-            chosen_genes = st.multiselect("Wähle Gene, die für die Suche verwendet werden sollen:", filtered_genes)
-
-    # D) Button: Multi-API-Suche
     st.write("---")
-    st.subheader("D) Multi-API-Suche starten (Codewords + ausgewählte Gene)")
-    if st.button("Suche starten"):
-        # 1) Codewords aus TextArea
-        raw_codewords = [w.strip() for w in codewords_text.replace(",", " ").split() if w.strip()]
-
-        # 2) Ggf. Genes dran
-        if use_gene_list and chosen_genes:
-            raw_codewords.extend(chosen_genes)
-
-        if not raw_codewords:
-            st.warning("Keine Codewörter oder Gene vorhanden.")
-            return
-
-        final_query = " OR ".join(raw_codewords)
-        st.write(f"Finale Suchanfrage: **{final_query}**")
-
-        all_results = []
-
-        if use_pubmed:
-            pubmed_res = search_pubmed(final_query)
-            st.write(f"PubMed: {len(pubmed_res)} Treffer")
-            all_results.extend(pubmed_res)
-        if use_epmc:
-            epmc_res = search_europe_pmc(final_query)
-            st.write(f"Europe PMC: {len(epmc_res)} Treffer")
-            all_results.extend(epmc_res)
-        if use_google:
-            gs_res = search_google_scholar(final_query)
-            st.write(f"Google Scholar: {len(gs_res)} Treffer")
-            all_results.extend(gs_res)
-        if use_semantic:
-            sem_res = search_semantic_scholar(final_query)
-            st.write(f"Semantic Scholar: {len(sem_res)} Treffer")
-            all_results.extend(sem_res)
-        if use_openalex:
-            oa_res = search_openalex(final_query)
-            st.write(f"OpenAlex: {len(oa_res)} Treffer")
-            all_results.extend(oa_res)
-        if use_core:
-            core_res = search_core(final_query)
-            st.write(f"CORE: {len(core_res)} Treffer")
-            all_results.extend(core_res)
-
-        # Results anzeigen
-        if not all_results:
-            st.info("Keine Treffer in den ausgewählten APIs.")
+    st.subheader("Text eingeben (z. B. Abstract)")
+    text_input = st.text_area("Füge hier deinen Abstract / Text ein:", height=200, value=current.get("text_input", ""))
+    
+    if st.button("Gene filtern mit ChatGPT"):
+        if use_gene_list and not genes:
+            st.warning("Keine Gene geladen oder das Sheet ist leer.")
+        elif not text_input.strip():
+            st.warning("Bitte einen Text eingeben.")
         else:
-            df_res = pd.DataFrame(all_results)
-            st.dataframe(df_res)
+            extended_genes = list(genes) if use_gene_list else []
+            if synonyms_local["genotype"]:
+                extended_genes += ["genetic makeup", "genetic constitution", "AllEl", "DNA sequence"]
+            if synonyms_local["phenotype"]:
+                extended_genes += ["observable traits", "physical appearance", "morphology"]
+            if synonyms_local["snp"]:
+                extended_genes += ["point mutation", "genetic variation", "DNA polymorphism"]
+            if synonyms_local["inc_dec"]:
+                extended_genes += ["increase", "decrease"]
+            if not extended_genes:
+                st.info("Keine Gene zum Filtern vorhanden.")
+            else:
+                result_map = check_genes_in_text_with_chatgpt(text_input, extended_genes)
+                if not result_map:
+                    st.info("Keine Ergebnisse oder Fehler aufgetreten.")
+                else:
+                    st.markdown("### Ergebnis (inkl. Synonyme):")
+                    for gene in extended_genes:
+                        st.write(f"**{gene}**: {'YES' if result_map.get(gene, False) else 'No'}")
 
-    # E) Session-Settings speichern
+    # F) Semantic Scholar Suche
+    if use_semantic:
+        st.write("---")
+        st.subheader("F) Semantic Scholar Suche")
+        sem_query = st.text_input("Semantic Scholar Suchbegriff:", key="sem_query")
+        sem_limit = st.number_input("Anzahl Ergebnisse", min_value=1, max_value=20, value=5, step=1, key="sem_limit")
+        if st.button("Semantic Scholar durchsuchen"):
+            if not sem_query.strip():
+                st.warning("Bitte einen Suchbegriff eingeben.")
+            else:
+                sem_results = search_semantic_scholar(sem_query, max_results=sem_limit)
+                if not sem_results:
+                    st.info("Keine Ergebnisse gefunden oder Fehler bei der Anfrage.")
+                else:
+                    st.markdown(f"### Ergebnisse für '{sem_query}':")
+                    for paper in sem_results:
+                        title = paper.get("title", "Kein Titel verfügbar")
+                        authors = paper.get("authors", [])
+                        author_names = ", ".join(author.get("name", "") for author in authors)
+                        year = paper.get("year", "Kein Jahr verfügbar")
+                        abstract = paper.get("abstract", "Kein Abstract verfügbar")
+                        st.markdown(f"**Titel:** {title}")
+                        st.markdown(f"**Autoren:** {author_names}")
+                        st.markdown(f"**Jahr:** {year}")
+                        st.markdown(f"**Abstract:** {abstract}")
+                        st.write("---")
+
+    # G) Google Scholar Suche
+    if use_google:
+        st.write("---")
+        st.subheader("G) Google Scholar Suche")
+        gs_query = st.text_input("Google Scholar Suchbegriff:", key="gs_query")
+        gs_limit = st.number_input("Anzahl Ergebnisse", min_value=1, max_value=20, value=5, step=1, key="gs_limit")
+        if st.button("Google Scholar durchsuchen"):
+            if not gs_query.strip():
+                st.warning("Bitte einen Suchbegriff eingeben.")
+            else:
+                gs_results = search_google_scholar(gs_query, max_results=gs_limit)
+                if not gs_results:
+                    st.info("Keine Ergebnisse gefunden oder Fehler bei der Anfrage.")
+                else:
+                    st.markdown(f"### Ergebnisse für '{gs_query}':")
+                    for paper in gs_results:
+                        title = paper.get("Title", "Kein Titel verfügbar")
+                        year = paper.get("Year", "Kein Jahr verfügbar")
+                        st.markdown(f"**Titel:** {title}")
+                        st.markdown(f"**Jahr:** {year}")
+                        st.write("---")
+
+    # H) OpenAlex Suche
+    if use_openalex:
+        st.write("---")
+        st.subheader("H) OpenAlex Suche")
+        oa_query = st.text_input("OpenAlex Suchbegriff:", key="oa_query")
+        oa_limit = st.number_input("Anzahl Ergebnisse", min_value=1, max_value=20, value=5, step=1, key="oa_limit")
+        if st.button("OpenAlex durchsuchen"):
+            if not oa_query.strip():
+                st.warning("Bitte einen Suchbegriff eingeben.")
+            else:
+                oa_results = search_openalex(oa_query, max_results=oa_limit)
+                if not oa_results:
+                    st.info("Keine Ergebnisse gefunden oder Fehler bei der Anfrage.")
+                else:
+                    st.markdown(f"### Ergebnisse für '{oa_query}':")
+                    for paper in oa_results:
+                        title = paper.get("Title", "Kein Titel verfügbar")
+                        doi = paper.get("DOI", "n/a")
+                        year = paper.get("Year", "Kein Jahr verfügbar")
+                        st.markdown(f"**Titel:** {title}")
+                        st.markdown(f"**DOI:** {doi}")
+                        st.markdown(f"**Jahr:** {year}")
+                        st.write("---")
+
+    # I) CORE Aggregate Suche
+    if use_core:
+        st.write("---")
+        st.subheader("I) CORE Aggregate Suche")
+        core_query = st.text_input("CORE Suchbegriff:", key="core_query")
+        core_limit = st.number_input("Anzahl Ergebnisse", min_value=1, max_value=20, value=5, step=1, key="core_limit")
+        if st.button("CORE durchsuchen"):
+            if not core_query.strip():
+                st.warning("Bitte einen Suchbegriff eingeben.")
+            else:
+                core_results = search_core(core_query, max_results=core_limit)
+                if not core_results:
+                    st.info("Keine Ergebnisse gefunden oder Fehler bei der CORE Anfrage.")
+                else:
+                    st.markdown(f"### Ergebnisse für '{core_query}':")
+                    for paper in core_results:
+                        title = paper.get("Title", "Kein Titel verfügbar")
+                        doi = paper.get("DOI", "n/a")
+                        year = paper.get("Year", "Kein Jahr verfügbar")
+                        st.markdown(f"**Titel:** {title}")
+                        st.markdown(f"**DOI:** {doi}")
+                        st.markdown(f"**Jahr:** {year}")
+                        st.write("---")
+
     st.write("---")
-    st.info("Einstellungen als Profil speichern (optional).")
+    st.info(
+        "Fertig. Du kannst oben die APIs auswählen und testen sowie Profile speichern/laden. "
+        "Die Gene werden ab C3 eingelesen (sofern ausgewählt) und optional angezeigt. "
+        "Mit ChatGPT können Gene im eingegebenen Text gefiltert werden."
+    )
+    
+    # Einstellungen in Session speichern
+    st.session_state["current_settings"] = {
+        "use_pubmed": use_pubmed,
+        "use_epmc": use_epmc,
+        "use_google": use_google,
+        "use_semantic": use_semantic,
+        "use_openalex": use_openalex,
+        "use_core": use_core,
+        "use_chatgpt": use_chatgpt,
+        "sheet_choice": sheet_choice if use_gene_list else "",
+        "text_input": text_input
+    }
+    
+    # Profil speichern-Button
     if st.button("Aktuelle Einstellungen speichern"):
         pname = profile_name_input.strip()
         if not pname:
@@ -532,28 +683,8 @@ def module_online_api_filter():
                 use_core,
                 use_chatgpt,
                 sheet_choice if use_gene_list else "",
-                codewords_text
+                text_input
             )
 
-    # In Session State sichern
-    st.session_state["current_settings"] = {
-        "use_pubmed": use_pubmed,
-        "use_epmc": use_epmc,
-        "use_google": use_google,
-        "use_semantic": use_semantic,
-        "use_openalex": use_openalex,
-        "use_core": use_core,
-        "use_chatgpt": use_chatgpt,
-        "sheet_choice": sheet_choice if use_gene_list else "",
-        "codewords": codewords_text
-    }
-
-def main():
-    st.title("Online API Filter mit Genes aus Excel (buchstabenweiser DropDown)")
-    if "profiles" not in st.session_state:
-        st.session_state["profiles"] = {}
-    module_online_api_filter()
-
 if __name__ == "__main__":
-    st.set_page_config(layout="wide")
-    main()
+    module_online_api_filter()
