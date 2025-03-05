@@ -63,6 +63,9 @@ def check_openalex_connection(timeout=5):
         return False
 
 def check_core_connection(api_key="", timeout=5):
+    """
+    CORE-API-Key wird über st.secrets["CORE_API_KEY"] bezogen.
+    """
     if not api_key:
         return False
     url = "https://api.core.ac.uk/v3/search/works"
@@ -77,6 +80,9 @@ def check_core_connection(api_key="", timeout=5):
         return False
 
 def check_chatgpt_connection():
+    """
+    OpenAI-API-Key wird über st.secrets["OPENAI_API_KEY"] bezogen.
+    """
     openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
     if not openai.api_key:
         return False
@@ -272,9 +278,12 @@ class CoreAPI:
         return r.json()
 
 def search_core(query: str, max_results=100):
+    """
+    CORE-API-Key wird über st.secrets["CORE_API_KEY"] geholt.
+    """
     core_api_key = st.secrets.get("CORE_API_KEY", "")
     if not core_api_key:
-        st.error("CORE API Key fehlt!")
+        st.error("CORE API Key fehlt! Bitte in den Secrets hinterlegen.")
         return []
     core_api = CoreAPI(core_api_key)
     try:
@@ -315,6 +324,10 @@ def load_genes_from_excel(sheet_name: str) -> list:
 ##############################################################################
 
 def check_genes_in_text_with_chatgpt(text: str, genes: list, model="gpt-3.5-turbo") -> dict:
+    """
+    Holt den OpenAI-Key aus st.secrets["OPENAI_API_KEY"] und 
+    fragt ChatGPT, ob ein bestimmtes Gen im Text vorkommt.
+    """
     openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
     if not openai.api_key:
         st.warning("Kein OPENAI_API_KEY in st.secrets['OPENAI_API_KEY'] hinterlegt!")
@@ -331,7 +344,7 @@ def check_genes_in_text_with_chatgpt(text: str, genes: list, model="gpt-3.5-turb
         f"Hier eine Liste von Genen: {joined_genes}\n"
         f"Gib für jedes Gen an, ob es im Text vorkommt (Yes) oder nicht (No).\n"
         f"Antworte in der Form:\n"
-        f"GENE: Yes\nGENE2: No\n"
+        f\"\"\"GEN1: Yes\nGEN2: No\nGEN3: Yes\"\"\n"
     )
     try:
         response = openai.ChatCompletion.create(
