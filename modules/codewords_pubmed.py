@@ -284,20 +284,14 @@ def search_openalex(query: str, max_results=100):
         r = requests.get(base_url, params=params, timeout=10)
         r.raise_for_status()
         data = r.json()
-        works = data.get("results", [])  # "results" enthält eine Liste von Papers
+        works = data.get("results", [])
         results = []
         for work in works:
-            # "display_name" ist in OpenAlex normalerweise der Titel
             title = work.get("display_name", "n/a")
             publication_year = str(work.get("publication_year", "n/a"))
             doi = work.get("doi", "n/a")
-            # openalex liefert standardmäßig keinen Abstract-Text.
             abstract = "n/a"
-            # Publisher-Feld kann man evtl. aus "host_venue" ziehen:
-            #   host_venue -> "display_name", etc.
-            #   Hier nur "n/a":
             publisher = "n/a"
-            # FullData: komplette Work-Daten
             full_data = dict(work)
 
             results.append({
