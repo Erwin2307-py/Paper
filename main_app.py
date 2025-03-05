@@ -107,7 +107,7 @@ def search_pubmed_simple(query):
         idlist = data.get("esearchresult", {}).get("idlist", [])
         if not idlist:
             return out
-
+        
         esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
         sum_params = {"db": "pubmed", "id": ",".join(idlist), "retmode": "json"}
         r2 = requests.get(esummary_url, params=sum_params, timeout=10)
@@ -208,7 +208,6 @@ def search_europe_pmc_simple(query):
 
 BASE_URL = "https://api.openalex.org"
 
-
 def fetch_openalex_data(entity_type, entity_id=None, params=None):
     url = f"{BASE_URL}/{entity_type}"
     if entity_id:
@@ -223,7 +222,6 @@ def fetch_openalex_data(entity_type, entity_id=None, params=None):
         st.error(f"Fehler: {response.status_code} - {response.text}")
         return None
 
-
 def search_openalex_simple(query):
     """Kurze Version: Liest die rohen Daten, prüft nur, ob was zurückkommt."""
     search_params = {"search": query}
@@ -235,7 +233,6 @@ def search_openalex_simple(query):
 ################################################################################
 
 from scholarly import scholarly
-
 
 class GoogleScholarSearch:
     def __init__(self):
@@ -701,8 +698,9 @@ def page_home():
     st.title("Welcome to the Main Menu")
     st.write("Choose a module in the sidebar to proceed.")
 
-    # Zeige ein lokales Video namens video1.mp4 unterhalb des Willkommenstexts an
-    st.video("video1.mp4")
+    # Anstelle von use_column_width=True nun use_container_width=False
+    # und width=600, damit das Bild nur so breit wie gewünscht angezeigt wird
+    st.image("Bild1.jpg", caption="Willkommen!", use_container_width=False, width=600)
 
 
 def page_codewords_pubmed():
