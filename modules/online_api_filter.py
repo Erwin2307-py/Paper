@@ -77,6 +77,7 @@ def check_core_connection(api_key="", timeout=5):
         return False
 
 def check_chatgpt_connection():
+    """Beispiel-Funktion, um ChatGPT zu testen (optional)."""
     openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
     if not openai.api_key:
         return False
@@ -92,8 +93,7 @@ def check_chatgpt_connection():
         return False
 
 ##############################################################################
-# 2) API-Suchfunktionen (PubMed, Europe PMC, Google Scholar, usw.)
-#    Code bleibt wie bisher.
+# 2) API-Suchfunktionen
 ##############################################################################
 
 def esearch_pubmed(query: str, max_results=100, timeout=10):
@@ -298,107 +298,30 @@ def search_core(query: str, max_results=100):
         return []
 
 ##############################################################################
-# 3) Gene-Loader: Liest ab C3 eines gegebenen Sheets
+# 3) Gene-Loader
 ##############################################################################
 
 def load_genes_from_excel(sheet_name: str) -> list:
+    """
+    Liest ab Spalte C, Zeile 3 (Index [2, 2]) die Gene aus 'genes.xlsx' in 'modules' ein
+    und gibt sie als Liste zurück.
+    """
     excel_path = os.path.join("modules", "genes.xlsx")
     try:
         df = pd.read_excel(excel_path, sheet_name=sheet_name, header=None)
-        gene_series = df.iloc[2:, 2]  # Ab Zeile 3, Spalte C
+        gene_series = df.iloc[2:, 2]  # ab Zeile 3, Spalte C
         return gene_series.dropna().astype(str).tolist()
     except Exception as e:
         st.error(f"Fehler beim Laden der Excel-Datei: {e}")
         return []
 
 ##############################################################################
-# 4) ChatGPT-Funktion zum Filtern: NEU mit Chunking
-##############################################################################
-
-def chunk_text(text: str, chunk_size=3000):
-    """
-    Teilt den Text in Chunks der Länge 'chunk_size' auf.
-    """
-    chunks = []
-    start = 0
-    while start < len(text):
-        end = start + chunk_size
-        chunks.append(text[start:end])
-        start = end
-    return chunks
-
-def check_genes_in_text_with_chatgpt_in_chunks(text: str, genes: list, model="gpt-3.5-turbo") -> dict:
-    """
-    Zerlegt den Text in Chunks und ruft ChatGPT pro Chunk auf.
-    Falls ein Gen in mindestens einem Chunk "Yes" ist, gilt es insgesamt als Yes.
-    """
-    openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
-    if not openai.api_key:
-        st.warning("Kein OPENAI_API_KEY in st.secrets['OPENAI_API_KEY'] hinterlegt!")
-        return {}
-
-    if not text.strip():
-        st.warning("Kein Text eingegeben.")
-        return {}
-    if not genes:
-        st.info("Keine Gene in der Liste (Sheet leer?).")
-        return {}
-
-    # Text in Chunks aufteilen, um Token-Limit zu vermeiden
-    text_chunks = chunk_text(text, chunk_size=3000)
-
-    overall_result = {}
-    for gene in genes:
-        overall_result[gene] = False  # Default: No
-
-    for idx, chunk in enumerate(text_chunks, start=1):
-        st.write(f"Verarbeite Chunk {idx}/{len(text_chunks)} ... (Länge={len(chunk)})")
-        # Prompt vorbereiten
-        joined_genes = ", ".join(genes)
-        prompt = (
-            f"Hier ist ein Ausschnitt des Textes:\n\n{chunk}\n\n"
-            f"Hier eine Liste von Genen: {joined_genes}\n"
-            f"Gib für jedes Gen an, ob es in diesem Ausschnitt vorkommt (Yes) oder nicht (No).\n"
-            f"Antworte in der Form:\n"
-            f"GENE: Yes\nGENE2: No\n"
-        )
-
-        try:
-            response = openai.ChatCompletion.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=300,
-                temperature=0
-            )
-            answer = response.choices[0].message.content.strip()
-            # Auswertung
-            partial_map = {}
-            for line in answer.split("\n"):
-                if ":" in line:
-                    parts = line.split(":", 1)
-                    gene_name = parts[0].strip()
-                    yes_no = parts[1].strip().lower()
-                    partial_map[gene_name] = ("yes" in yes_no)
-
-            # Genes zusammenführen (wenn in einem Chunk "Yes", dann overall Yes)
-            for g in genes:
-                if g in partial_map and partial_map[g]:
-                    overall_result[g] = True
-
-        except Exception as e:
-            st.error(f"ChatGPT Fehler im Chunk {idx}: {e}")
-            # Bei Error: wir brechen ab oder machen weiter - hier: wir machen weiter
-            continue
-
-    return overall_result
-
-##############################################################################
-# 5) Einstellungen speichern/laden (Profile)
+# 4) Profile (Speichern & Laden)
 ##############################################################################
 
 def save_current_settings(profile_name: str, use_pubmed: bool, use_epmc: bool, use_google: bool,
                           use_semantic: bool, use_openalex: bool, use_core: bool, use_chatgpt: bool,
-                          sheet_choice: str, text_input: str):
+                          sheet_choice: str, codewords: str):
     if "profiles" not in st.session_state:
         st.session_state["profiles"] = {}
     st.session_state["profiles"][profile_name] = {
@@ -410,7 +333,7 @@ def save_current_settings(profile_name: str, use_pubmed: bool, use_epmc: bool, u
         "use_core": use_core,
         "use_chatgpt": use_chatgpt,
         "sheet_choice": sheet_choice,
-        "text_input": text_input
+        "codewords": codewords
     }
     st.success(f"Profil '{profile_name}' erfolgreich gespeichert.")
 
@@ -421,11 +344,11 @@ def load_settings(profile_name: str):
     return None
 
 ##############################################################################
-# 6) Haupt-Modul: Online API Filter & Gene-Filter
+# 5) Haupt-Funktion: Online API Filter + Genes => Multi-API-Suche
 ##############################################################################
 
 def module_online_api_filter():
-    st.title("API-Auswahl & Gene-Filter (mit Chunking)")
+    st.title("Online API Filter: Codewords + Gene aus Excel als zusätzliche Suchwörter")
 
     # Profilverwaltung
     st.subheader("Profilverwaltung")
@@ -444,7 +367,7 @@ def module_online_api_filter():
         else:
             st.info("Kein Profil zum Laden ausgewählt.")
 
-    # Default-Einstellungen, falls noch nicht vorhanden
+    # Default-Einstellungen, falls noch nicht in Session:
     if "current_settings" not in st.session_state:
         st.session_state["current_settings"] = {
             "use_pubmed": True,
@@ -455,12 +378,12 @@ def module_online_api_filter():
             "use_core": False,
             "use_chatgpt": False,
             "sheet_choice": "",
-            "text_input": ""
+            "codewords": ""
         }
     current = st.session_state["current_settings"]
 
     # A) API-Auswahl & Verbindungstest
-    st.subheader("A) API-Auswahl (Checkboxen) + Verbindungstest")
+    st.subheader("A) API-Auswahl + Verbindungstest")
     col1, col2 = st.columns(2)
     with col1:
         use_pubmed = st.checkbox("PubMed", value=current["use_pubmed"])
@@ -470,13 +393,11 @@ def module_online_api_filter():
     with col2:
         use_openalex = st.checkbox("OpenAlex", value=current["use_openalex"])
         use_core = st.checkbox("CORE", value=current["use_core"])
-        use_chatgpt = st.checkbox("ChatGPT", value=current["use_chatgpt"])
+        use_chatgpt = st.checkbox("ChatGPT (nur zur Kontrolle)", value=current["use_chatgpt"])
 
     if st.button("Verbindung prüfen"):
-        def green_dot():
-            return "<span style='color: limegreen; font-size: 20px;'>&#9679;</span>"
-        def red_dot():
-            return "<span style='color: red; font-size: 20px;'>&#9679;</span>"
+        def green_dot(): return "<span style='color: limegreen; font-size: 20px;'>&#9679;</span>"
+        def red_dot(): return "<span style='color: red; font-size: 20px;'>&#9679;</span>"
         dots_list = []
         if use_pubmed:
             dots_list.append(f"{green_dot() if check_pubmed_connection() else red_dot()} <strong>PubMed</strong>")
@@ -495,16 +416,17 @@ def module_online_api_filter():
             dots_list.append(f"{green_dot() if check_chatgpt_connection() else red_dot()} <strong>ChatGPT</strong>")
         st.markdown(" &nbsp;&nbsp;&nbsp; ".join(dots_list), unsafe_allow_html=True)
 
-    # B) Gene-Filter-Bereich
+    # B) Codewords-Eingabe
     st.write("---")
-    st.subheader("B) Gene-Filter via ChatGPT (ab C3)")
-    st.write("Wähle ein Sheet aus `modules/genes.xlsx` (ab Spalte C, Zeile 3) und entscheide per Häkchen, ob die Gene aus der Excel-Liste verwendet werden sollen.")
+    st.subheader("B) Codewords eingeben + Gene aus Excel einbeziehen")
 
-    use_gene_list = st.checkbox("Gene aus Excel verwenden?", value=True)
+    codewords_text = st.text_area("Codewörter (kommasepariert, OR-Suche):", value=current["codewords"], height=80)
+
+    use_gene_list = st.checkbox("Gene aus Excel zusätzlich verwenden?", value=True)
     genes = []
     sheet_choice = ""
-
     if use_gene_list:
+        st.write("**Excel-Tabellenblätter**:")
         excel_path = os.path.join("modules", "genes.xlsx")
         if not os.path.exists(excel_path):
             st.error("Die Datei 'genes.xlsx' wurde nicht in 'modules/' gefunden!")
@@ -523,36 +445,80 @@ def module_online_api_filter():
         if current_sheet not in sheet_names:
             current_sheet = sheet_names[0]
         sheet_choice = st.selectbox("Wähle ein Sheet:", sheet_names, index=sheet_names.index(current_sheet))
+        # Laden
         genes = load_genes_from_excel(sheet_choice)
-    else:
-        st.info("Gene werden nicht aus Excel geladen.")
+        show_genes = st.checkbox("Geladene Gene anzeigen?", value=False)
+        if show_genes and genes:
+            st.write("**Gene**:", genes)
 
-    show_genes = st.checkbox("Gene-Liste anzeigen?", value=False)
-    if show_genes and genes:
-        st.write("**Gelistete Gene**:", genes)
+    # C) Button: Multi-API-Suche ausführen
+    st.write("---")
+    st.subheader("C) Suche in ausgewählten APIs starten")
 
-    st.write("Text/Abstract eingeben:")
-    text_input = st.text_area("Füge hier deinen Abstract / Text ein:", height=150, value=current.get("text_input", ""))
+    if st.button("Multi-API Suche ausführen"):
+        # 1) Codewords verarbeiten
+        raw_codewords = [w.strip() for w in codewords_text.replace(",", " ").split() if w.strip()]
+        # 2) Optional Genes dazunehmen
+        if use_gene_list and genes:
+            raw_codewords.extend(genes)
 
-    if st.button("Gene filtern mit ChatGPT"):
-        if use_gene_list and not genes:
-            st.warning("Keine Gene geladen oder das Sheet ist leer.")
-        elif not text_input.strip():
-            st.warning("Bitte einen Text eingeben.")
+        if not raw_codewords:
+            st.warning("Keine Codewörter oder Gene vorhanden.")
+            return
+
+        # Baue finalen Suchquery -> 'OR'-verknüpft
+        # z. B. "vitamin D" + "BRCA1" => "vitamin D OR BRCA1"
+        query_combined = " OR ".join(raw_codewords)
+
+        st.write("Finale Suchanfrage:", query_combined)
+        all_results = []
+
+        # PubMed
+        if use_pubmed:
+            pubmed_res = search_pubmed(query_combined)
+            st.write(f"PubMed: {len(pubmed_res)} Treffer")
+            all_results.extend(pubmed_res)
+
+        # Europe PMC
+        if use_epmc:
+            epmc_res = search_europe_pmc(query_combined)
+            st.write(f"Europe PMC: {len(epmc_res)} Treffer")
+            all_results.extend(epmc_res)
+
+        # Google Scholar
+        if use_google:
+            gs_res = search_google_scholar(query_combined)
+            st.write(f"Google Scholar: {len(gs_res)} Treffer")
+            all_results.extend(gs_res)
+
+        # Semantic Scholar
+        if use_semantic:
+            sem_res = search_semantic_scholar(query_combined)
+            st.write(f"Semantic Scholar: {len(sem_res)} Treffer")
+            all_results.extend(sem_res)
+
+        # OpenAlex
+        if use_openalex:
+            oa_res = search_openalex(query_combined)
+            st.write(f"OpenAlex: {len(oa_res)} Treffer")
+            all_results.extend(oa_res)
+
+        # CORE
+        if use_core:
+            core_res = search_core(query_combined)
+            st.write(f"CORE: {len(core_res)} Treffer")
+            all_results.extend(core_res)
+
+        if not all_results:
+            st.info("Keine Treffer in den ausgewählten APIs.")
         else:
-            # Hier rufen wir unsere Chunking-Funktion auf
-            result_map = check_genes_in_text_with_chatgpt_in_chunks(text_input, genes)
-            if not result_map:
-                st.info("Keine Ergebnisse oder Fehler aufgetreten.")
-            else:
-                st.markdown("### Ergebnis (pro Gen):")
-                for gene in genes:
-                    st.write(f"**{gene}**: {'YES' if result_map.get(gene, False) else 'No'}")
+            df_res = pd.DataFrame(all_results)
+            st.dataframe(df_res)
 
     st.write("---")
-    st.info("Fertig. Du kannst oben die APIs auswählen und testen sowie Profile speichern/laden. Außerdem Gene via ChatGPT filtern (Chunking).")
+    st.info("Tipp: Speichere deine Einstellungen als Profil, um sie später wiederzuladen.")
 
-    # Einstellungen in Session speichern
+    # Einstellungen in Session State schreiben
     st.session_state["current_settings"] = {
         "use_pubmed": use_pubmed,
         "use_epmc": use_epmc,
@@ -562,11 +528,10 @@ def module_online_api_filter():
         "use_core": use_core,
         "use_chatgpt": use_chatgpt,
         "sheet_choice": sheet_choice if use_gene_list else "",
-        "text_input": text_input
+        "codewords": codewords_text
     }
 
-    # Profil speichern
-    if st.button("Aktuelle Einstellungen speichern"):
+    if st.button("Einstellungen speichern"):
         pname = profile_name_input.strip()
         if not pname:
             st.warning("Bitte einen Profilnamen eingeben.")
@@ -581,11 +546,11 @@ def module_online_api_filter():
                 use_core,
                 use_chatgpt,
                 sheet_choice if use_gene_list else "",
-                text_input
+                codewords_text
             )
 
 def main():
-    st.title("Online API Filter & Gene-Filter (mit ChatGPT, inkl. Chunking)")
+    st.title("Online API Filter: Codewords + Genes as Additional Search Terms")
 
     if "profiles" not in st.session_state:
         st.session_state["profiles"] = {}
