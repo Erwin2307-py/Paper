@@ -1,13 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-online_api_filter.py
---------------------
-Dieses Modul stellt alle API-Funktionen, Verbindungstests, den Gene-Loader, den ChatGPT-Filter 
-sowie die Profilverwaltung bereit. Es enthält die Hauptfunktion module_online_api_filter(), 
-die die Auswahl der APIs, Gene-Filter und Suchanfragen ermöglicht.
-"""
-
 import streamlit as st
 import requests
 import openai
@@ -105,8 +95,7 @@ def check_chatgpt_connection():
 # 2) API-Suchfunktionen
 ##############################################################################
 
-# PubMed
-def esearch_pubmed_api(query: str, max_results=100, timeout=10):
+def esearch_pubmed(query: str, max_results=100, timeout=10):
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": max_results}
     try:
@@ -143,12 +132,11 @@ def get_pubmed_details(pmids: list):
         return []
 
 def search_pubmed(query: str, max_results=100):
-    pmids = esearch_pubmed_api(query, max_results=max_results)
+    pmids = esearch_pubmed(query, max_results=max_results)
     if not pmids:
         return []
     return get_pubmed_details(pmids)
 
-# Europe PMC
 def search_europe_pmc(query: str, max_results=100):
     url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {"query": query, "format": "json", "pageSize": max_results}
@@ -172,7 +160,6 @@ def search_europe_pmc(query: str, max_results=100):
         st.error(f"Europe PMC-Suche fehlgeschlagen: {e}")
         return []
 
-# Google Scholar (echt, via scholarly)
 def search_google_scholar(query: str, max_results=100):
     try:
         from scholarly import scholarly
@@ -200,7 +187,6 @@ def search_google_scholar(query: str, max_results=100):
         st.error(f"Fehler bei der Google Scholar Suche: {e}")
         return []
 
-# Semantic Scholar
 def search_semantic_scholar(query: str, max_results=100, retries=3, delay=5):
     base_url = "https://api.semanticscholar.org/graph/v1/paper/search"
     params = {"query": query, "limit": max_results, "fields": "title,authors,year,abstract"}
@@ -238,7 +224,6 @@ def search_semantic_scholar(query: str, max_results=100, retries=3, delay=5):
     st.error("Semantic Scholar API: Rate limit überschritten. Bitte später erneut versuchen.")
     return []
 
-# OpenAlex (echt)
 def search_openalex(query: str, max_results=100):
     url = "https://api.openalex.org/works"
     params = {"search": query, "per_page": max_results}
@@ -267,7 +252,6 @@ def search_openalex(query: str, max_results=100):
         st.error(f"OpenAlex-Suche fehlgeschlagen: {e}")
         return []
 
-# CORE Aggregate (echt)
 class CoreAPI:
     def __init__(self, api_key):
         self.base_url = "https://api.core.ac.uk/v3/"
