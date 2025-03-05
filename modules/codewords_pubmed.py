@@ -305,13 +305,61 @@ def load_settings(profile_name: str):
     return None
 
 ##############################
+# Hilfs-Funktion: Abstract in neuem Tab anzeigen
+##############################
+
+def show_abstract_window(abstract_idx):
+    """
+    Zeigt nur den Abstract in einem "separaten Fenster / Tab" an.
+    Wird aufgerufen, wenn ?abstract_id=X in der URL steht.
+    """
+    if "search_results" not in st.session_state:
+        st.error("Keine Suchergebnisse vorhanden. Bitte zuerst suchen und erneut klicken.")
+        return
+
+    try:
+        idx = int(abstract_idx)
+    except ValueError:
+        st.error("Ungültiger Index für Abstract.")
+        return
+
+    results = st.session_state["search_results"]
+    if idx < 0 or idx >= len(results):
+        st.error("Index außerhalb des gültigen Bereichs.")
+        return
+
+    paper = results[idx]
+    st.title("Abstract in separatem Tab")
+    st.write(f"**Titel**: {paper.get('Title', 'n/a')}")
+    st.write(f"**PubMed ID**: {paper.get('PubMed ID', 'n/a')}")
+    st.write(f"**DOI**: {paper.get('DOI', 'n/a')}")
+    st.write(f"**Year**: {paper.get('Year', 'n/a')}")
+    st.write(f"**Publisher**: {paper.get('Publisher', 'n/a')}")
+    st.write(f"**Population**: {paper.get('Population', 'n/a')}")
+    st.write(f"**Source**: {paper.get('Source', 'n/a')}")
+    st.markdown("---")
+    st.subheader("Abstract")
+    st.write(paper.get("Abstract", "n/a"))
+    st.markdown("---")
+    st.info("Mit [Tab schließen] oder [zurück], um zur Haupt-Ansicht zu wechseln.")
+
+##############################
 # Haupt-Modul
 ##############################
 
 def module_codewords_pubmed():
+    # 1) Prüfen, ob wir im "Abstract-Modus" sind (also ?abstract_id=XXX in der URL)
+    query_params = st.experimental_get_query_params()
+    abstract_id = query_params.get("abstract_id", [None])[0]
+
+    # Wenn abstract_id gesetzt ist, zeigen wir nur das Abstract-Fenster:
+    if abstract_id is not None:
+        show_abstract_window(abstract_id)
+        return  # WICHTIG: restliches Skript dann abbrechen
+
     st.title("Codewörter & Multi-API-Suche (mind. 100 Paper pro API)")
 
-    # 1) Profil-Auswahl
+    # 2) Profil-Auswahl wie gehabt:
     if "profiles" not in st.session_state or not st.session_state["profiles"]:
         st.warning("Keine Profile vorhanden. Bitte zuerst ein Profil speichern.")
         return
@@ -325,13 +373,13 @@ def module_codewords_pubmed():
     st.subheader("Profil-Einstellungen")
     st.json(profile_data)
 
-    # 2) Codewörter + Logik
+    # 3) Codewörter + Logik
     st.subheader("Codewörter & Logik")
     codewords_str = st.text_input("Codewörter (kommasepariert oder Leerzeichen):", "")
     st.write("Beispiel: genotyp, SNP, phänotyp")
     logic_option = st.radio("Logik:", options=["AND", "OR"], index=1)
 
-    # 3) Suche
+    # 4) Suche
     if st.button("Suche starten"):
         raw_list = [w.strip() for w in codewords_str.replace(",", " ").split() if w.strip()]
         if not raw_list:
@@ -386,8 +434,44 @@ def module_codewords_pubmed():
 
         st.write("## Gesamtergebnis aus allen aktivierten APIs")
 
-        # (A) MAIN-Sheet: mit genau den Spalten Title, PubMed ID, Abstract, Year, Publisher, Population, Source
+        # (A) MAIN-Sheet: mit genau den Spalten Title, PubMed ID, Year, Publisher, Population, Source
+        # (Abstract wird in eigenem Tab gezeigt)
         df_main = pd.DataFrame([
+            {
+                "Title": p.get("Title", "n/a"),
+                "PubMed ID": p.get("PubMed ID", "n/a"),
+                "Year": p.get("Year", "n/a"),
+                "Publisher": p.get("Publisher", "n/a"),
+                "Population": p.get("Population", "n/a"),
+                "Source": p.get("Source", "n/a"),
+            }
+            for p in results_all
+        ])
+
+        # Wir speichern "results_all" im Session State, damit das Abstract-Fenster später darauf zugreifen kann.
+        st.session_state["search_results"] = results_all
+
+        # 1) Erzeuge "Abstract (Link)"-Spalte, die auf "?abstract_id=<index>" verweist:
+        abstract_links = []
+        for idx in range(len(results_all)):
+            # Link mit target="_blank" => neues Browser-Tab
+            link_html = f'<a href="?abstract_id={idx}" target="_blank">[Abstract anzeigen]</a>'
+            abstract_links.append(link_html)
+
+        df_main["Abstract (Link)"] = abstract_links
+
+        # Zeige Main in Streamlit (ohne "Abstract" Spalte, nur Link)
+        st.dataframe(df_main)
+
+        # (B) Excel-Export: wie gehabt (Main-Sheet + pro API ein Sheet)
+        timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        safe_codewords = codewords_str.strip().replace(" ", "_").replace(",", "_").replace("/", "_")
+        filename = f"{safe_codewords}_{timestamp_str}.xlsx"
+
+        # Hauptblatt: z.B. die 7 Standardspalten + "Abstract"
+        # Hier gehen wir mal davon aus, du willst in "Main" JETZT DOCH den Abstract aufbewahren.
+        # => Machen wir es analog zu vorher. Du kannst es bei Bedarf entfernen.
+        df_main_excel = pd.DataFrame([
             {
                 "Title": p.get("Title", "n/a"),
                 "PubMed ID": p.get("PubMed ID", "n/a"),
@@ -400,43 +484,23 @@ def module_codewords_pubmed():
             for p in results_all
         ])
 
-        # Zeige Main in Streamlit
-        st.dataframe(df_main)
-
-        # Expander für Abstract
-        st.write("### Klicke auf einen Titel, um das Abstract anzuzeigen:")
-        for idx, row in df_main.iterrows():
-            with st.expander(f"{row['Title']} (Quelle: {row['Source']})"):
-                st.write(f"**PubMed ID**: {row.get('PubMed ID', 'n/a')}")
-                st.write(f"**Jahr**: {row.get('Year', 'n/a')}")
-                st.write(f"**Publisher**: {row.get('Publisher', 'n/a')}")
-                st.write(f"**Population**: {row.get('Population', 'n/a')}")
-                st.markdown("---")
-                st.write(f"**Abstract**:\n\n{row.get('Abstract', 'n/a')}")
-
-        # (B) Pro API ein Tabellenblatt
-        timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        # Codewörter für Dateiname "säubern"
-        safe_codewords = codewords_str.strip().replace(" ", "_").replace(",", "_").replace("/", "_")
-        filename = f"{safe_codewords}_{timestamp_str}.xlsx"
-
-        source_groups = defaultdict(list)
+        # Gruppieren nach Source => je API ein Sheet
+        from openpyxl import Workbook  # Nur um sicherzugehen, dass wir openpyxl haben
+        source_dict = defaultdict(list)
         for p in results_all:
-            src = p.get("Source", "n/a")
-            source_groups[src].append(p)
+            source_dict[p.get("Source", "n/a")].append(p)
 
         with pd.ExcelWriter(filename, engine="openpyxl") as writer:
-            # Sheet "Main": Exakt die 7 Spalten
-            df_main.to_excel(writer, sheet_name="Main", index=False)
+            # Sheet "Main"
+            df_main_excel.to_excel(writer, sheet_name="Main", index=False)
 
-            # Pro API ein Sheet, "flatten FullData" + die 7 Pflichtspalten
-            for source_name, papers_list in source_groups.items():
+            # Pro API ein eigenes Sheet mit flatten FullData + 7 Pflichtspalten
+            for src_name, paper_list in source_dict.items():
                 rows = []
-                for paper in papers_list:
-                    # 1) "flatten" FullData
-                    fd = paper.get("FullData", {})
-                    flat_fd = flatten_dict(fd)
-                    # 2) 7 Pflichtspalten
+                for paper in paper_list:
+                    flat_fd = flatten_dict(paper.get("FullData", {}))
+
+                    # + 7 Spalten "von Hand"
                     flat_fd["Title"] = paper.get("Title", "n/a")
                     flat_fd["PubMed ID"] = paper.get("PubMed ID", "n/a")
                     flat_fd["Abstract"] = paper.get("Abstract", "n/a")
@@ -447,18 +511,12 @@ def module_codewords_pubmed():
 
                     rows.append(flat_fd)
 
-                if rows:
-                    df_api = pd.DataFrame(rows)
-                else:
-                    df_api = pd.DataFrame()
-
-                # Sheetname (max. 31 Zeichen)
-                short_name = source_name[:31] if source_name else "API"
-                df_api.to_excel(writer, sheet_name=short_name, index=False)
+                df_api = pd.DataFrame(rows) if rows else pd.DataFrame()
+                sheet_name = src_name[:31] if src_name else "API"
+                df_api.to_excel(writer, sheet_name=sheet_name, index=False)
 
         st.success(f"Excel-Datei erstellt: {filename}")
 
-        # Download-Button
         with open(filename, "rb") as f:
             st.download_button(
                 label="Excel-Datei herunterladen",
@@ -468,9 +526,8 @@ def module_codewords_pubmed():
             )
 
     st.write("---")
-    st.info("Dieses Modul sucht in allen aktivierten APIs und erzeugt ein Excel mit:\n"
-            "- Einem 'Main'-Sheet (genau 7 Spalten: Title, PubMed ID, Abstract, Year, Publisher, Population, Source)\n"
-            "- Für jede API ein eigenes Sheet (ebenfalls mind. diese 7 Spalten plus alle 'geflatteten' Originalfelder).")
+    st.info("Dieses Modul sucht in allen aktivierten APIs und zeigt die Abstracts in einem neuen Tab. "
+            "Zudem wird ein Excel mit Main-Sheet und pro API ein Blatt erstellt.")
 
 
 # Falls dieses Modul als Hauptskript ausgeführt wird:
