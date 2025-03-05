@@ -264,21 +264,57 @@ def search_semantic_scholar(query: str, max_results=100, retries=3, delay=5):
     return []
 
 ##############################
-# OpenAlex / CORE
+# OpenAlex / CORE (NEU: Echte OpenAlex-Suche)
 ##############################
 
 def search_openalex(query: str, max_results=100):
-    return [{
-        "Source": "OpenAlex",
-        "Title": "Dummy Title from OpenAlex",
-        "PubMed ID": "n/a",
-        "Abstract": "Dies ist ein Dummy-Abstract von OpenAlex.",
-        "DOI": "n/a",
-        "Year": "2023",
-        "Publisher": "n/a",
-        "Population": "n/a",
-        "FullData": {"demo_openalex": "Hier stünden Originaldaten."}
-    }]
+    """
+    Führt eine Suche in der OpenAlex-API durch, analog zu 'search_pubmed',
+    und gibt eine Liste mit demselben Felder-Layout zurück:
+      ["Source", "Title", "PubMed ID", "Abstract", "DOI", "Year",
+       "Publisher", "Population", "FullData"].
+    """
+    base_url = "https://api.openalex.org/works"
+    # Bei OpenAlex heißt es "per-page", wir verwenden "max_results"
+    params = {
+        "search": query,
+        "per-page": max_results
+    }
+    try:
+        r = requests.get(base_url, params=params, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        works = data.get("results", [])  # "results" enthält eine Liste von Papers
+        results = []
+        for work in works:
+            # "display_name" ist in OpenAlex normalerweise der Titel
+            title = work.get("display_name", "n/a")
+            publication_year = str(work.get("publication_year", "n/a"))
+            doi = work.get("doi", "n/a")
+            # openalex liefert standardmäßig keinen Abstract-Text.
+            abstract = "n/a"
+            # Publisher-Feld kann man evtl. aus "host_venue" ziehen:
+            #   host_venue -> "display_name", etc.
+            #   Hier nur "n/a":
+            publisher = "n/a"
+            # FullData: komplette Work-Daten
+            full_data = dict(work)
+
+            results.append({
+                "Source": "OpenAlex",
+                "Title": title,
+                "PubMed ID": "n/a",
+                "Abstract": abstract,
+                "DOI": doi,
+                "Year": publication_year,
+                "Publisher": publisher,
+                "Population": "n/a",
+                "FullData": full_data
+            })
+        return results
+    except Exception as e:
+        st.error(f"Fehler bei der OpenAlex-Suche: {e}")
+        return []
 
 def search_core(query: str, max_results=100):
     return [{
@@ -305,14 +341,10 @@ def load_settings(profile_name: str):
     return None
 
 ##############################
-# Hilfs-Funktion: Abstract in neuem Tab anzeigen
+# Hilfs-Funktion: Abstract in neuem Tab
 ##############################
 
 def show_abstract_window(abstract_idx):
-    """
-    Zeigt nur den Abstract in einem "separaten Fenster / Tab" an.
-    Wird aufgerufen, wenn ?abstract_id=X in der URL steht.
-    """
     if "search_results" not in st.session_state:
         st.error("Keine Suchergebnisse vorhanden. Bitte zuerst suchen und erneut klicken.")
         return
@@ -353,18 +385,19 @@ def module_codewords_pubmed():
     ob wir im 'Abstract-Fenster' sind (abstract_id vorhanden)
     oder im normalen Suchinterface.
     """
-    # Wichtig: Hier ersetzen wir st.experimental_get_query_params durch st.query_params
+    # Anstelle von st.experimental_get_query_params:
     query_params = st.query_params
     abstract_id = query_params.get("abstract_id", [None])[0]
 
-    # Wenn abstract_id gesetzt ist, zeigen wir NUR das Abstract-Fenster:
+    # 1) Falls abstract_id gesetzt => nur Abstract in separatem Fenster
     if abstract_id is not None:
         show_abstract_window(abstract_id)
-        return  # restliches Skript abbrechen
+        return
 
+    # 2) Normaler Modus:
     st.title("Codewörter & Multi-API-Suche (mind. 100 Paper pro API)")
 
-    # Profil-Auswahl
+    # Profil wählen
     if "profiles" not in st.session_state or not st.session_state["profiles"]:
         st.warning("Keine Profile vorhanden. Bitte zuerst ein Profil speichern.")
         return
@@ -384,7 +417,7 @@ def module_codewords_pubmed():
     st.write("Beispiel: genotyp, SNP, phänotyp")
     logic_option = st.radio("Logik:", options=["AND", "OR"], index=1)
 
-    # Suche
+    # 3) Suche starten
     if st.button("Suche starten"):
         raw_list = [w.strip() for w in codewords_str.replace(",", " ").split() if w.strip()]
         if not raw_list:
@@ -439,7 +472,7 @@ def module_codewords_pubmed():
 
         st.write("## Gesamtergebnis aus allen aktivierten APIs")
 
-        # DataFrame ohne "Abstract"-Spalte (dafür Link):
+        # 4) DataFrame mit Spalten: Title, PubMed ID, Year, Publisher, Population, Source
         df_main = pd.DataFrame([
             {
                 "Title": p.get("Title", "n/a"),
@@ -452,24 +485,25 @@ def module_codewords_pubmed():
             for p in results_all
         ])
 
-        # Speichere results_all im Session State
+        # 5) Speichere die Rohdaten in st.session_state, damit wir den Abstract anzeigen können
         st.session_state["search_results"] = results_all
 
-        # Neue Spalte "Abstract (Link)": Klick => neues Tab mit ?abstract_id=<index>
-        links = []
+        # 6) Füge die Spalte "Abstract (Link)" hinzu, die im Browser ?abstract_id=X setzt
+        abstract_links = []
         for idx in range(len(results_all)):
             link_html = f'<a href="?abstract_id={idx}" target="_blank">[Abstract anzeigen]</a>'
-            links.append(link_html)
+            abstract_links.append(link_html)
 
-        df_main["Abstract (Link)"] = links
+        df_main["Abstract (Link)"] = abstract_links
+
+        # 7) DataFrame in Streamlit anzeigen
         st.dataframe(df_main)
 
-        # Excel-Export
+        # 8) Excel-Export:
         timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         safe_codewords = codewords_str.strip().replace(" ", "_").replace(",", "_").replace("/", "_")
         filename = f"{safe_codewords}_{timestamp_str}.xlsx"
 
-        # Für "Main"-Sheet zusätzlich Abstract
         df_main_excel = pd.DataFrame([
             {
                 "Title": p.get("Title", "n/a"),
@@ -483,35 +517,39 @@ def module_codewords_pubmed():
             for p in results_all
         ])
 
+        # Pro API ein eigenes Sheet
         source_groups = defaultdict(list)
-        for p in results_all:
-            source_groups[p.get("Source", "n/a")].append(p)
+        for paper in results_all:
+            src = paper.get("Source", "n/a")
+            source_groups[src].append(paper)
 
         with pd.ExcelWriter(filename, engine="openpyxl") as writer:
-            # Main-Sheet
+            # Main-Sheet (inkl. Abstract)
             df_main_excel.to_excel(writer, sheet_name="Main", index=False)
 
-            # Pro API ein eigenes Sheet (flatten FullData + 7 Spalten)
-            for s_name, plist in source_groups.items():
+            # Pro API => "flatten" FullData + die 7 Felder
+            for s_name, paper_list in source_groups.items():
                 rows = []
-                for paper in plist:
-                    fd_flat = flatten_dict(paper.get("FullData", {}))
-                    fd_flat["Title"] = paper.get("Title", "n/a")
-                    fd_flat["PubMed ID"] = paper.get("PubMed ID", "n/a")
-                    fd_flat["Abstract"] = paper.get("Abstract", "n/a")
-                    fd_flat["Year"] = paper.get("Year", "n/a")
-                    fd_flat["Publisher"] = paper.get("Publisher", "n/a")
-                    fd_flat["Population"] = paper.get("Population", "n/a")
-                    fd_flat["Source"] = paper.get("Source", "n/a")
-                    rows.append(fd_flat)
+                for paper in paper_list:
+                    flat_fd = flatten_dict(paper.get("FullData", {}))
+                    flat_fd["Title"] = paper.get("Title", "n/a")
+                    flat_fd["PubMed ID"] = paper.get("PubMed ID", "n/a")
+                    flat_fd["Abstract"] = paper.get("Abstract", "n/a")
+                    flat_fd["Year"] = paper.get("Year", "n/a")
+                    flat_fd["Publisher"] = paper.get("Publisher", "n/a")
+                    flat_fd["Population"] = paper.get("Population", "n/a")
+                    flat_fd["Source"] = paper.get("Source", "n/a")
+                    rows.append(flat_fd)
 
-                df_api = pd.DataFrame(rows) if rows else pd.DataFrame()
+                if rows:
+                    df_api = pd.DataFrame(rows)
+                else:
+                    df_api = pd.DataFrame()
+
                 sheet_name = s_name[:31] if s_name else "API"
                 df_api.to_excel(writer, sheet_name=sheet_name, index=False)
 
         st.success(f"Excel-Datei erstellt: {filename}")
-
-        # Download-Button
         with open(filename, "rb") as f:
             st.download_button(
                 label="Excel-Datei herunterladen",
@@ -521,8 +559,7 @@ def module_codewords_pubmed():
             )
 
     st.write("---")
-    st.info("Dieses Modul nutzt nun st.query_params statt st.experimental_get_query_params.\n"
-            "Abstracts werden über einen separaten Tab angezeigt. Außerdem erstellen wir ein Excel-File.")
+    st.info("Abstracts werden über einen separaten Tab angezeigt; OpenAlex nun mit echter Suche.")
 
 
 # Falls dieses Modul als Hauptskript ausgeführt wird:
