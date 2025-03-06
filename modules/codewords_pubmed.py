@@ -53,7 +53,7 @@ def save_text_as_pdf(text, pdf_path, title="Paper"):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    # Unicode-fähige Schrift einbinden (DejaVuSansCondensed.ttf befindet sich in modules/)
+    # Unicode-fähige Schrift einbinden (Die Datei befindet sich in modules/)
     font_path = os.path.join("modules", "DejaVuSansCondensed.ttf")
     if not os.path.exists(font_path):
         st.error(f"TTF Font file not found: {font_path}")
@@ -321,7 +321,7 @@ def search_openalex(query: str, max_results=100):
 def create_papers_info_pdf(papers):
     pdf = FPDF()
     pdf.add_page()
-    # Unicode-Schrift einbinden (DejaVuSansCondensed.ttf befindet sich in modules/)
+    # Unicode-Schrift einbinden (DejaVuSansCondensed.ttf aus modules/)
     font_path = os.path.join("modules", "DejaVuSansCondensed.ttf")
     if not os.path.exists(font_path):
         st.error(f"Font file not found: {font_path}")
@@ -419,18 +419,21 @@ def paperqa_section(top_results):
     st.write("---")
     st.subheader("Paper-QA (paper-qa) Integration")
     approach = st.radio("Paper-QA Modus:", ["Online mit Abstracts", "Offline mit PDFs"])
+    
     if "paperqa_docs" not in st.session_state:
         st.session_state["paperqa_docs"] = None
         st.session_state["paperqa_approach"] = None
     if st.session_state["paperqa_approach"] != approach:
         st.session_state["paperqa_docs"] = None
         st.session_state["paperqa_approach"] = approach
-    # Hier den Import von Docs innerhalb der Funktion erzwingen
+
+    # Erneuter Import von Docs (um sicherzugehen)
     try:
         from paperqa import Docs
     except ImportError as e:
         st.error("paper-qa konnte nicht importiert werden. Bitte installiere es via pip install paper-qa")
         return
+
     docs_obj = st.session_state["paperqa_docs"]
     if docs_obj is None:
         if approach == "Online mit Abstracts":
@@ -457,6 +460,7 @@ def paperqa_section(top_results):
                 st.session_state["paperqa_docs"] = docs
                 st.success(f"{len(uploaded_pdfs)} PDF(s) in PaperQA geladen (Offline).")
         docs_obj = st.session_state["paperqa_docs"]
+
     if docs_obj:
         st.write("---")
         question = st.text_input("Frage an PaperQA:", "")
@@ -620,7 +624,7 @@ def module_codewords_pubmed():
                         file_name="paper_info.pdf",
                         mime="application/pdf"
                     )
-                    # PaperQA-Abschnitt
+                    # PaperQA-Abschnitt aufrufen
                     paperqa_section(top_results)
 
 
