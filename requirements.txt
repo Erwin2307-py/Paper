@@ -10,9 +10,7 @@ urllib3
 xlsxwriter
 pandas
 transformers
-selenium
 webdriver-manager
-selenium
 pandas
 xlsxwriter
 feedparser
