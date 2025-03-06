@@ -17,13 +17,13 @@ import base64
 try:
     from scholarly import scholarly
 except ImportError:
-    st.warning("Bitte installiere 'scholarly', z.B. via: pip install scholarly")
+    st.warning("Bitte installiere 'scholarly' via: pip install scholarly")
 
 import openai
 try:
     from fpdf import FPDF
 except ImportError:
-    st.error("Bitte installiere 'fpdf', z.B. mit: pip install fpdf")
+    st.error("Bitte installiere 'fpdf', z.B. via: pip install fpdf")
 
 ##############################
 # paper-qa
@@ -40,7 +40,7 @@ except ImportError:
 def generate_paper_via_chatgpt(prompt_text, model="gpt-3.5-turbo"):
     """Ruft die ChatGPT-API auf und erzeugt ein Paper (Text)."""
     try:
-        openai.api_key = st.secrets["OPENAI_API_KEY"]  # Holt KEY aus secrets
+        openai.api_key = st.secrets["OPENAI_API_KEY"]
         response = openai.ChatCompletion.create(
             model=model,
             messages=[{"role": "user", "content": prompt_text}],
@@ -54,7 +54,6 @@ def generate_paper_via_chatgpt(prompt_text, model="gpt-3.5-turbo"):
 
 
 def save_text_as_pdf(text, pdf_path, title="Paper"):
-    """Speichert den gegebenen Text in ein PDF (lokal)."""
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -65,6 +64,7 @@ def save_text_as_pdf(text, pdf_path, title="Paper"):
 
     lines = text.split("\n")
     for line in lines:
+        # ACHTUNG: FPDF in ASCII/Latin-1 => bei Sonderzeichen kann es knallen
         pdf.multi_cell(0, 8, line)
         pdf.ln(2)
 
@@ -85,7 +85,7 @@ def search_arxiv_papers(query, max_results=5):
         response = requests.get(base_url, params=params, timeout=10)
         response.raise_for_status()
     except Exception as e:
-        st.error(f"Fehler beim Abrufen der Daten von arXiv: {e}")
+        st.error(f"Fehler bei arXiv: {e}")
         return []
     
     feed = feedparser.parse(response.text)
@@ -111,7 +111,6 @@ def search_arxiv_papers(query, max_results=5):
 
 
 def sanitize_filename(fname):
-    """Ersetzt unerlaubte Zeichen durch Unterstriche."""
     return re.sub(r"[^a-zA-Z0-9_\-]+", "_", fname)
 
 
@@ -123,21 +122,16 @@ def download_arxiv_pdf(pdf_url, local_filepath):
             f.write(r.content)
         return True
     except Exception as e:
-        st.error(f"Fehler beim Herunterladen der PDF: {e}")
+        st.error(f"Fehler beim Download PDF: {e}")
         return False
 
 
 ###############################################################################
-# C) Multi-API-Suche (PubMed, Europe PMC, Google Scholar, Semantic Scholar, OpenAlex)
+# C) Multi-API-Suche 
 ###############################################################################
 def esearch_pubmed(query: str, max_results=100, timeout=10):
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-    params = {
-        "db": "pubmed",
-        "term": query,
-        "retmode": "json",
-        "retmax": max_results
-    }
+    params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": max_results}
     try:
         r = requests.get(url, params=params, timeout=timeout)
         r.raise_for_status()
@@ -171,7 +165,7 @@ def fetch_pubmed_abstracts(pmids, timeout=10):
         r.raise_for_status()
         return parse_efetch_response(r.text)
     except Exception as e:
-        st.error(f"Fehler beim Abrufen der Abstracts via EFetch: {e}")
+        st.error(f"Fehler bei fetch abstracts: {e}")
         return {}
 
 
@@ -185,11 +179,10 @@ def get_pubmed_details(pmids: list):
         r_sum.raise_for_status()
         data_summary = r_sum.json()
     except Exception as e:
-        st.error(f"Fehler bei der PubMed-ESummary-Anfrage: {e}")
+        st.error(f"PubMed-ESummary: {e}")
         return []
 
     abstracts_map = fetch_pubmed_abstracts(pmids)
-
     results = []
     for pmid in pmids:
         info = data_summary.get("result", {}).get(pmid, {})
@@ -228,11 +221,11 @@ def search_pubmed(query: str, max_results=100):
 def search_europe_pmc(query: str, max_results=100, timeout=10):
     url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {"query": query, "format": "json", "pageSize": max_results}
+    results = []
     try:
         r = requests.get(url, params=params, timeout=timeout)
         r.raise_for_status()
         data = r.json()
-        results = []
         for item in data.get("resultList", {}).get("result", []):
             pub_year = str(item.get("pubYear", "n/a"))
             abstract_text = item.get("abstractText", "n/a")
@@ -251,7 +244,7 @@ def search_europe_pmc(query: str, max_results=100, timeout=10):
         return results
     except Exception as e:
         st.error(f"Europe PMC-Suche fehlgeschlagen: {e}")
-        return []
+        return results
 
 
 def search_google_scholar(query: str, max_results=100):
@@ -276,7 +269,7 @@ def search_google_scholar(query: str, max_results=100):
             })
         return results
     except Exception as e:
-        st.error(f"Google Scholar-Suche fehlgeschlagen: {e}")
+        st.error(f"Google Scholar-Suche: {e}")
         return []
 
 
@@ -303,9 +296,8 @@ def search_semantic_scholar(query: str, max_results=100):
             })
         return results
     except Exception as e:
-        st.error(f"Semantic Scholar-Suche fehlgeschlagen: {e}")
+        st.error(f"Semantic Scholar: {e}")
         return []
-    return results
 
 
 def search_openalex(query: str, max_results=100):
@@ -333,12 +325,12 @@ def search_openalex(query: str, max_results=100):
             })
         return results
     except Exception as e:
-        st.error(f"OpenAlex-Suche fehlgeschlagen: {e}")
-        return []
+        st.error(f"OpenAlex: {e}")
+        return results
 
 
 ###############################################################################
-# D) PDF-Helferfunktion: Papers in PDF
+# D) PDF-Helferfunktion
 ###############################################################################
 def create_papers_info_pdf(papers):
     pdf = FPDF()
@@ -362,16 +354,16 @@ def create_papers_info_pdf(papers):
         pdf.multi_cell(0, 6, f"   Abstract: {abstr}")
         pdf.ln(8)
 
+    # ACHTUNG: kann bei Unicode-Zeichen crashen. => fpdf2 oder cleanup
     return pdf.output(dest="S").encode("latin-1", "replace")
 
 
 ###############################################################################
-# E) "Profiles" laden
+# E) "Profiles"
 ###############################################################################
 def load_settings(profile_name: str):
     if "profiles" in st.session_state:
-        profiles = st.session_state["profiles"]
-        return profiles.get(profile_name, None)
+        return st.session_state["profiles"].get(profile_name, None)
     return None
 
 
@@ -434,17 +426,34 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
 
 
 ###############################################################################
-# H) PAPER-QA-ABSCHNITT
+# PaperQA + Q&A-History -> Excel
+###############################################################################
+def export_qa_to_excel(qa_history):
+    """
+    Nimmt eine Liste von Dicts (z. B. [{"Frage":..., "Antwort":..., "Kontext":..., "Modus":...}, ...])
+    und schreibt sie in ein Excel (BytesIO).
+    """
+    df_qa = pd.DataFrame(qa_history)
+    excel_buf = io.BytesIO()
+    with pd.ExcelWriter(excel_buf, engine="xlsxwriter") as writer:
+        df_qa.to_excel(writer, sheet_name="PaperQA_Results", index=False)
+    excel_data = excel_buf.getvalue()
+    return excel_data
+
+
+###############################################################################
+# PAPER-QA-ABSCHNITT
 ###############################################################################
 def paperqa_section(top_results):
-    """
-    Ein einheitliches Suchfeld ("Frage an PaperQA") und eine Radiobutton-Auswahl,
-    ob man die Abstracts der Top-100 online nutzen will oder eigene PDFs hochladen.
-    """
     st.write("---")
     st.subheader("Paper-QA (paper-qa) Integration")
 
+    # Radiobutton: Online Abstracts / Offline PDFs
     approach = st.radio("Paper-QA Modus:", ["Online mit Abstracts", "Offline mit PDFs"])
+
+    # Falls wir eine Q&A-History brauchen:
+    if "paperqa_history" not in st.session_state:
+        st.session_state["paperqa_history"] = []
 
     if "paperqa_docs" not in st.session_state:
         st.session_state["paperqa_docs"] = None
@@ -456,22 +465,23 @@ def paperqa_section(top_results):
 
     docs_obj = st.session_state["paperqa_docs"]
 
-    # Wenn noch keine Docs angelegt, legen wir sie an
+    # --- Docs erzeugen, falls noch nicht ---
     if docs_obj is None:
         if approach == "Online mit Abstracts":
+            # Abstracts der Top-100 in paperqa
             docs = Docs()
             for i, paper in enumerate(top_results, start=1):
-                title = paper.get("Title","(kein Titel)")
-                abstract = paper.get("Abstract","(kein Abstract)")
+                title = paper.get("Title", "(kein Titel)")
+                abstract = paper.get("Abstract", "(kein Abstract)")
                 doc_text = f"Paper: {title}\nAbstract:\n{abstract}"
                 docs.add(doc_text, f"Paper_{i}")
-
             st.session_state["paperqa_docs"] = docs
-            st.success("Top-100 Paper (nur Abstract) wurden in PaperQA geladen (Online).")
+            st.success("Top-100 (Abstracts) in PaperQA geladen (Online).")
 
         else:
-            st.info("Bitte lade PDF-Dateien hoch, die du mit PaperQA analysieren möchtest.")
-            uploaded_pdfs = st.file_uploader("PDFs hochladen", type=["pdf"], accept_multiple_files=True)
+            # Offline PDFs hochladen
+            st.info("Bitte PDFs hochladen (Offline-Modus).")
+            uploaded_pdfs = st.file_uploader("Mehrere PDFs hochladen", type=["pdf"], accept_multiple_files=True)
             if uploaded_pdfs:
                 docs = Docs()
                 for upf in uploaded_pdfs:
@@ -479,30 +489,52 @@ def paperqa_section(top_results):
                     try:
                         docs.add(pdf_bytes, metadata=upf.name)
                     except Exception as e:
-                        st.error(f"Fehler beim Einlesen von {upf.name}: {e}")
+                        st.error(f"Fehler beim Einlesen {upf.name}: {e}")
                         return
                 st.session_state["paperqa_docs"] = docs
-                st.success(f"{len(uploaded_pdfs)} PDF(s) wurden in PaperQA eingelesen (Offline).")
-
+                st.success(f"{len(uploaded_pdfs)} PDF(s) wurden in PaperQA eingelesen.")
         docs_obj = st.session_state["paperqa_docs"]
 
-    # Falls wir docs haben, kann man Fragen stellen
+    # --- Wenn docs vorhanden => Q&A stellen ---
     if docs_obj:
         st.write("---")
         question = st.text_input("Frage an PaperQA:", "")
         if st.button("Frage stellen"):
             try:
                 answer = docs_obj.query(question)
-                st.write("### Antwort (paper-qa):")
+                st.write("### Antwort:")
                 st.write(answer.answer)
-                with st.expander("Kontext / Belegstellen"):
+                with st.expander("Kontext"):
                     st.write(answer.context)
+
+                # Speichern wir Q&A in st.session_state["paperqa_history"]
+                qentry = {
+                    "Modus": approach,
+                    "Frage": question,
+                    "Antwort": answer.answer,
+                    "Kontext": answer.context[:500],  # evtl. abkürzen
+                    "Zeit": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+                st.session_state["paperqa_history"].append(qentry)
+
             except Exception as e:
-                st.error(f"Fehler bei PaperQA-Abfrage: {e}")
+                st.error(f"Fehler bei PaperQA: {e}")
+
+        # Export-Button (Q&A-History)
+        if st.session_state["paperqa_history"]:
+            st.write("---")
+            st.subheader("PaperQA Q&A-History als Excel herunterladen")
+            excel_data = export_qa_to_excel(st.session_state["paperqa_history"])
+            st.download_button(
+                label="Download PaperQA-Fragen-Antworten als Excel",
+                data=excel_data,
+                file_name="paperqa_results.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
 
 ###############################################################################
-# Haupt-Modul: Multi-API-Suche + ChatGPT + PaperQA
+# Haupt-Modul: Multi-API-Suche + ChatGPT-Scoring + PaperQA
 ###############################################################################
 def module_codewords_pubmed():
     st.title("Multi-API-Suche + ChatGPT-Scoring + PaperQA")
@@ -523,47 +555,44 @@ def module_codewords_pubmed():
         st.warning("Profil nicht gefunden oder leer.")
         return
 
-    st.write("Profil-Daten:", profile_data)
+    st.write("Profil-Einstellungen:", profile_data)
 
-    # Codewords & Genes
-    default_codewords = profile_data.get("codewords", "")
-    codewords_str = st.text_input("Codewörter:", value=default_codewords)
+    codewords_str = st.text_input("Codewörter:", value=profile_data.get("codewords",""))
     genes_from_profile = profile_data.get("genes", [])
     st.write(f"Gene: {genes_from_profile}")
 
     logic_option = st.radio("Logik (AND/OR):", ["OR","AND"], index=0)
 
     if st.button("Suche starten"):
-        # Codewörter in Liste
         raw_words_list = [w.strip() for w in codewords_str.replace(",", " ").split() if w.strip()]
         raw_genes_list = genes_from_profile
 
         if not raw_words_list and not raw_genes_list:
-            st.warning("Keine Codewörter und keine Gene.")
+            st.warning("Keine Codewörter / Gene.")
             return
 
+        # Query bilden
         if logic_option == "OR":
-            query_codewords = " OR ".join(raw_words_list) if raw_words_list else ""
-            query_genes = " OR ".join(raw_genes_list) if raw_genes_list else ""
-            if query_codewords and query_genes:
-                final_query = f"({query_codewords}) OR ({query_genes})"
+            q_c = " OR ".join(raw_words_list) if raw_words_list else ""
+            q_g = " OR ".join(raw_genes_list) if raw_genes_list else ""
+            if q_c and q_g:
+                final_query = f"({q_c}) OR ({q_g})"
             else:
-                final_query = query_codewords or query_genes
+                final_query = q_c or q_g
         else:
             # AND
-            query_codewords = " AND ".join(raw_words_list) if raw_words_list else ""
-            query_genes = " AND ".join(raw_genes_list) if raw_genes_list else ""
-            if query_codewords and query_genes:
-                final_query = f"({query_codewords}) AND ({query_genes})"
+            q_c = " AND ".join(raw_words_list) if raw_words_list else ""
+            q_g = " AND ".join(raw_genes_list) if raw_genes_list else ""
+            if q_c and q_g:
+                final_query = f"({q_c}) AND ({q_g})"
             else:
-                final_query = query_codewords or query_genes
+                final_query = q_c or q_g
 
         st.write("**Finale Suchanfrage:**", final_query)
 
+        # APIs abrufen
         results_all = []
         active_apis = []
-
-        # APIs
         if profile_data.get("use_pubmed", False):
             pm = search_pubmed(final_query, max_results=200)
             st.write(f"PubMed: {len(pm)}")
@@ -598,24 +627,23 @@ def module_codewords_pubmed():
             st.info("Keine Ergebnisse gefunden.")
             return
 
-        # Auf 1000 limitieren
+        # Limit 1000
         if len(results_all) > 1000:
             results_all = results_all[:1000]
 
         st.session_state["search_results"] = results_all
         st.session_state["active_apis"] = active_apis
 
-        st.write(f"Gefundene Papers insgesamt: {len(results_all)}")
-        df_main = pd.DataFrame(results_all)
-        st.dataframe(df_main)
+        st.write(f"Gefundene Papers gesamt: {len(results_all)}")
+        st.dataframe(pd.DataFrame(results_all))
 
+    # --- ChatGPT-Scoring ---
     if "search_results" in st.session_state and st.session_state["search_results"]:
-        st.write("---")
-        st.subheader("ChatGPT-Scoring (Top 100)")
-
         all_papers = st.session_state["search_results"]
-        do_scoring = st.button("Starte ChatGPT-Scoring")
-        if do_scoring:
+        st.write("---")
+        st.subheader("ChatGPT-Scoring => Top 100")
+
+        if st.button("Starte ChatGPT-Scoring"):
             if not codewords_str.strip() and not genes_from_profile:
                 st.warning("Keine Codewords / Gene -> Abbruch.")
             else:
@@ -626,38 +654,26 @@ def module_codewords_pubmed():
                     top_k=100
                 )
                 if top_results:
-                    st.write("**Top 100 (Relevanz)**")
-                    df_top = pd.DataFrame({
-                        "PubMed ID": [p.get("PubMed ID","n/a") for p in top_results],
-                        "Name": [p.get("Title","n/a") for p in top_results],
-                        "DOI": [p.get("DOI","n/a") for p in top_results],
-                        "Publisher": [p.get("Publisher","n/a") for p in top_results],
-                        "Population": [p.get("Population","n/a") for p in top_results],
-                        "Abstract": [p.get("Abstract","n/a") for p in top_results],
-                    })
+                    st.write("**Top 100 Papers** (nach Relevanz)")
+                    df_top = pd.DataFrame(top_results)
                     st.dataframe(df_top)
 
-                    # Sheets je API
-                    active_apis = st.session_state["active_apis"]
+                    # Option: pro API
                     st.write("---")
                     st.subheader("Sheets pro API")
+                    active_apis = st.session_state.get("active_apis", [])
                     all_papers_df_list = {"Top_100": df_top}
                     for api in active_apis:
                         subset = [p for p in all_papers if p["Source"] == api]
-                        df_api = pd.DataFrame({
-                            "PubMed ID": [x.get("PubMed ID","n/a") for x in subset],
-                            "Name": [x.get("Title","n/a") for x in subset],
-                            "DOI": [x.get("DOI","n/a") for x in subset],
-                            "Publisher": [x.get("Publisher","n/a") for x in subset],
-                            "Population": [x.get("Population","n/a") for x in subset],
-                            "Abstract": [x.get("Abstract","n/a") for x in subset],
-                        })
-                        st.markdown(f"**{api}:**")
+                        df_api = pd.DataFrame(subset)
+                        st.write(f"**{api}**:")
                         st.dataframe(df_api)
                         all_papers_df_list[api] = df_api
 
+                    # Download Buttons
                     st.write("---")
                     st.subheader("Ergebnisse herunterladen")
+
                     excel_buffer = io.BytesIO()
                     with pd.ExcelWriter(excel_buffer, engine="xlsxwriter") as writer:
                         for sheet_name, df_ in all_papers_df_list.items():
@@ -680,7 +696,7 @@ def module_codewords_pubmed():
                         mime="application/pdf"
                     )
 
-                    # --- PaperQA-Abschnitt ---
+                    # --- PaperQA ---
                     paperqa_section(top_results)
 
 
@@ -691,6 +707,7 @@ def main():
     st.title("Kombinierte App: ChatGPT-Paper, arXiv-Suche, Multi-API-Suche + PaperQA")
 
     if "profiles" not in st.session_state:
+        # Beispiel-Profil
         st.session_state["profiles"] = {
             "DefaultProfile": {
                 "use_pubmed": True,
@@ -707,9 +724,10 @@ def main():
     choice = st.sidebar.selectbox("Navigation", menu)
 
     if choice == "ChatGPT-Paper":
-        st.subheader("1) Paper mit ChatGPT generieren & lokal speichern")
-        prompt_txt = st.text_area("Prompt", "Schreibe ein Paper über KI in der Medizin")
-        local_dir = st.text_input("Lokaler Ordner", "chatgpt_papers")
+        st.subheader("Paper mit ChatGPT generieren & speichern")
+        prompt_txt = st.text_area("Prompt:", "Schreibe ein Paper über KI...")
+        local_dir = st.text_input("Lokaler Ordner:", "chatgpt_papers")
+
         if st.button("Paper generieren"):
             text = generate_paper_via_chatgpt(prompt_txt)
             if text:
@@ -721,10 +739,11 @@ def main():
                 st.success(f"Gespeichert: {pdf_path}")
 
     elif choice == "arXiv-Suche":
-        st.subheader("2) arXiv-Suche & Download PDFs")
-        query = st.text_input("Suchbegriff", "quantum computing")
+        st.subheader("arXiv-Suche + Download PDFs")
+        query = st.text_input("Suchbegriff:", "quantum computing")
         num = st.number_input("Max Ergebnisse", 1, 50, 5)
-        local_dir_arxiv = st.text_input("Ordner (lokal)", "arxiv_papers")
+        local_dir_arxiv = st.text_input("Speicherordner:", "arxiv_papers")
+
         if st.button("arXiv-Suche starten"):
             results = search_arxiv_papers(query, max_results=num)
             if not results:
@@ -744,11 +763,11 @@ def main():
                             if ok_:
                                 st.success(f"PDF gespeichert: {path_}")
                     else:
-                        st.write("Kein PDF-Link")
+                        st.write("Kein PDF-Link.")
                     st.write("---")
 
     else:
-        st.subheader("3) Multi-API-Suche + ChatGPT-Scoring + PaperQA")
+        # Multi-API-Suche + ChatGPT + PaperQA
         module_codewords_pubmed()
 
 
