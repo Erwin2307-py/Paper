@@ -23,7 +23,6 @@ try:
 except ImportError:
     st.error("Bitte installiere 'fpdf', z.B. mit: pip install fpdf")
 
-
 ###############################################################################
 # A) ChatGPT: Paper erstellen & lokal speichern
 ###############################################################################
@@ -574,6 +573,11 @@ def module_codewords_pubmed():
         st.write("---")
         st.subheader("ChatGPT-Online-Filterung nach Relevanz (Genes + Codewords)")
 
+        ### NEU: Zeige an, welche Kriterien laut Profil verwendet werden ###
+        st.markdown(f"**Im Profil hinterlegte Kriterien:**  \n"
+                    f"- **Codewords**: {codewords_str}  \n"
+                    f"- **Gene**: {', '.join(genes_from_profile) if genes_from_profile else '(keine)'}")
+
         if st.button("Starte ChatGPT-Scoring"):
             if not codewords_str.strip() and not genes_from_profile:
                 st.warning("Keine Codewords und keine Gene vorhanden -> Abbruch.")
@@ -590,29 +594,24 @@ def module_codewords_pubmed():
                     df_top = pd.DataFrame(top_results)
                     st.dataframe(df_top)
 
-                    ### NEU: Button zum lokalen Excel-Export ###
-                    #  => Speichert die Top-100 nach "Source" gruppiert in verschiedene Sheets.
+                    # Button zum lokalen Excel-Export
                     st.write("---")
                     st.subheader("Excel-Export")
                     
-                    # Generieren wir einen automatischen Dateinamen: codewords + Zeitstempel
                     codew_for_filename = sanitize_filename(codewords_str) or "keine_codewords"
                     time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
                     excel_filename = f"papers_{codew_for_filename}_{time_str}.xlsx"
 
                     if st.button("Top 100 als Excel speichern (lokal)"):
-                        # Ordner anlegen
                         local_dir_excel = "excel_results"
                         if not os.path.exists(local_dir_excel):
                             os.makedirs(local_dir_excel)
 
                         excel_path = os.path.join(local_dir_excel, excel_filename)
 
-                        # Jetzt gruppieren wir nach "Source" und schreiben je Sheet
                         df_top_all = pd.DataFrame(top_results)
                         with pd.ExcelWriter(excel_path, engine="xlsxwriter") as writer:
                             for source_name, group_df in df_top_all.groupby("Source"):
-                                # Sheet-Name darf max. 31 Zeichen lang sein
                                 sheet_name = sanitize_filename(str(source_name))[:31]
                                 group_df.to_excel(writer, sheet_name=sheet_name, index=False)
 
