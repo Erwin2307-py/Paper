@@ -13,6 +13,7 @@ transformers
 webdriver-manager
 pandas
 feedparser
+paper-qa
 
 
 
