@@ -28,4 +28,3 @@ torch
 openpyxl
 beautifulsoup4
 python-dotenv
-scholarly
