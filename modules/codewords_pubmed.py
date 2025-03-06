@@ -23,6 +23,7 @@ try:
 except ImportError:
     st.error("Bitte installiere 'fpdf', z.B. mit: pip install fpdf")
 
+
 ###############################################################################
 # A) ChatGPT: Paper erstellen & lokal speichern
 ###############################################################################
@@ -352,25 +353,35 @@ def search_openalex(query: str, max_results=100):
 
 
 ###############################################################################
-# D) ChatGPT-Summary PDF
+# D) PDF-Helferfunktion: Papers in PDF
 ###############################################################################
-def create_gpt_paper_pdf(gpt_text, output_stream, title="ChatGPT-Paper"):
+def create_papers_info_pdf(papers):
+    """
+    Erzeugt aus einer Liste von Paper-Dicts ein PDF (in Memory),
+    mit einigen wichtigen Daten: Title, PubMed ID, DOI, Publisher, Abstract...
+    """
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
     pdf.set_font("Arial", size=12)
-
-    pdf.cell(0, 10, title, ln=1)
+    
+    pdf.cell(0, 10, "Paper-Informationen (Top 100)", ln=1)
     pdf.ln(5)
 
-    lines = gpt_text.split("\n")
-    for line in lines:
-        pdf.multi_cell(0, 8, line)
-        pdf.ln(2)
+    for idx, p in enumerate(papers, start=1):
+        title = p.get("Title", "(kein Titel)")
+        pmid = p.get("PubMed ID", "n/a")
+        doi = p.get("DOI", "n/a")
+        pub = p.get("Publisher", "n/a")
+        abstr = p.get("Abstract", "n/a")
 
-    pdf_str = pdf.output(dest='S')
-    pdf_bytes = pdf_str.encode("latin-1", "replace")
-    output_stream.write(pdf_bytes)
+        pdf.multi_cell(0, 6, f"{idx}) {title}")
+        pdf.multi_cell(0, 6, f"   PubMed ID: {pmid}")
+        pdf.multi_cell(0, 6, f"   DOI: {doi}")
+        pdf.multi_cell(0, 6, f"   Publisher: {pub}")
+        pdf.multi_cell(0, 6, f"   Abstract: {abstr}")
+        pdf.ln(8)
+
+    return pdf.output(dest="S").encode("latin-1", "replace")
 
 
 ###############################################################################
@@ -654,11 +665,12 @@ def module_codewords_pubmed():
                     st.subheader("Sheets pro API (alle gefundenen Paper pro API)")
 
                     active_apis = st.session_state.get("active_apis", [])
-                    all_papers_df_list = {}  # Zwischenspeicher für den Excel-Export
+                    all_papers_df_list = {}
 
-                    # Main sheet (Top 100) => packen wir ebenfalls in den Zwischenspeicher
+                    # Haupt-Sheet (Top 100)
                     all_papers_df_list["Top_100"] = df_top_main
 
+                    # Pro API alle Paper
                     for api in active_apis:
                         subset = [p for p in all_papers if p["Source"] == api]
                         df_api = pd.DataFrame({
@@ -671,31 +683,37 @@ def module_codewords_pubmed():
                         })
                         st.markdown(f"**{api}:**")
                         st.dataframe(df_api)
-                        # Für den Excel-Export
-                        # Sheet-Name darf max. 31 Zeichen haben
+
                         sheet_name = sanitize_filename(api)[:31] or "API"
                         all_papers_df_list[sheet_name] = df_api
 
-                    # NEU: Button => Excel erzeugen
+                    # --- Download-Buttons ---
+
                     st.write("---")
-                    st.subheader("Optional: Ergebnisse als Excel speichern")
-                    if st.button("Excel erstellen"):
-                        time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        excel_filename = f"papers_{time_str}.xlsx"
+                    st.subheader("Ergebnisse herunterladen")
 
-                        # Lokaler Ordner
-                        local_dir_excel = "excel_export"
-                        if not os.path.exists(local_dir_excel):
-                            os.makedirs(local_dir_excel)
+                    # 1) Excel herunterladen (Top_100 + pro API ein Sheet)
+                    excel_buffer = io.BytesIO()
+                    with pd.ExcelWriter(excel_buffer, engine="xlsxwriter") as writer:
+                        for sheet_name, df_ in all_papers_df_list.items():
+                            df_.to_excel(writer, sheet_name=sheet_name, index=False)
+                    excel_data = excel_buffer.getvalue()
 
-                        excel_path = os.path.join(local_dir_excel, excel_filename)
+                    st.download_button(
+                        label="Download Paper Info as Excel",
+                        data=excel_data,
+                        file_name="paper_info.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
 
-                        # Schreiben wir die DataFrames in das Excel
-                        with pd.ExcelWriter(excel_path, engine="xlsxwriter") as writer:
-                            for sheet_name, df_ in all_papers_df_list.items():
-                                df_.to_excel(writer, sheet_name=sheet_name, index=False)
-
-                        st.success(f"Excel-Datei erstellt unter: {excel_path}")
+                    # 2) PDF herunterladen (nur Top_100)
+                    pdf_bytes = create_papers_info_pdf(top_results)
+                    st.download_button(
+                        label="Download Paper Info as PDF",
+                        data=pdf_bytes,
+                        file_name="paper_info.pdf",
+                        mime="application/pdf"
+                    )
 
 
 ###############################################################################
