@@ -13,47 +13,34 @@ from collections import defaultdict
 import base64
 import sys
 
-###############################################################################
-# 1) Pfad hinzufügen: modules/paper-qa/paper-qa-main
-###############################################################################
-paperqa_local_path = os.path.join("modules", "paper-qa", "paper-qa-main")
-if not os.path.isdir(os.path.join(paperqa_local_path, "paperqa")):
-    st.error(
-        f"Fehler: Der Ordner 'paperqa' existiert nicht unter {paperqa_local_path}. "
-        "Bitte prüfe die Verzeichnisstruktur."
-    )
-    st.stop()
+# Wir fügen den Pfad zum lokalen "paper-qa" hinzu:
+# => Denn dort liegt ein Ordner "paperqa/" mit __init__.py etc.
+paperqa_local_path = os.path.join("modules", "paper-qa")
+if os.path.isdir(paperqa_local_path):
+    sys.path.insert(0, paperqa_local_path)
 
-sys.path.insert(0, paperqa_local_path)
-
-###############################################################################
-# 2) Google Scholar-Import (optional)
-###############################################################################
+# Google Scholar (optional)
 try:
     from scholarly import scholarly
 except ImportError:
     st.warning("Bitte installiere 'scholarly' via: pip install scholarly")
 
-###############################################################################
-# 3) OpenAI & FPDF
-###############################################################################
 import openai
 try:
     from fpdf import FPDF
 except ImportError:
     st.error("Bitte installiere 'fpdf' via: pip install fpdf")
 
-###############################################################################
-# 4) paperqa lokal importieren
-###############################################################################
+# paper-qa (lokal aus modules/paper-qa/paperqa)
 try:
     from paperqa import Docs
 except ImportError as e:
     st.error(
-        "Konnte 'paperqa' nicht importieren.\n"
-        "Stelle sicher, dass in 'modules/paper-qa/paper-qa-main/paperqa/' eine __init__.py liegt."
+        "Konnte 'paperqa' nicht aus 'modules/paper-qa/paperqa/' importieren.\n"
+        "Stelle sicher, dass dort eine __init__.py liegt."
     )
     st.stop()  # Stoppe das Skript, weil paperqa unverzichtbar ist.
+
 
 ###############################################################################
 # A) ChatGPT: Paper erstellen & lokal speichern
@@ -111,6 +98,7 @@ def search_arxiv_papers(query, max_results=5):
     for entry in feed.entries:
         link_pdf = None
         for link in entry.links:
+            # Manche Feeds nutzen 'related' + "pdf" in link.type, andere "application/pdf"
             if link.rel == "related" and "pdf" in link.type:
                 link_pdf = link.href
                 break
@@ -452,6 +440,7 @@ def paperqa_section(top_results):
         st.session_state["paperqa_approach"] = approach
 
     docs_obj = st.session_state["paperqa_docs"]
+    # Wir nutzen Docs aus dem lokal importierten 'paperqa'
     if docs_obj is None:
         if approach == "Online mit Abstracts":
             docs = Docs()
@@ -652,8 +641,8 @@ def module_codewords_pubmed():
 def main():
     st.set_page_config(layout="wide")
     st.title("Kombinierte App: ChatGPT-Paper, arXiv-Suche, Multi-API-Suche + PaperQA (lokale paperqa)")
-    
-    # Beispiel-Profil, falls keines vorhanden
+
+    # Beispiel-Profile, falls none vorhanden:
     if "profiles" not in st.session_state:
         st.session_state["profiles"] = {
             "DefaultProfile": {
@@ -666,7 +655,7 @@ def main():
                 "codewords": "cancer therapy"
             }
         }
-        
+
     menu = ["ChatGPT-Paper", "arXiv-Suche", "Multi-API-Suche"]
     choice = st.sidebar.selectbox("Navigation", menu)
     
@@ -683,6 +672,7 @@ def main():
                 pdf_path = os.path.join(local_dir, pdf_name)
                 save_text_as_pdf(text, pdf_path, title="ChatGPT-Paper")
                 st.success(f"Gespeichert: {pdf_path}")
+
     elif choice == "arXiv-Suche":
         st.subheader("arXiv-Suche + Download PDFs")
         query = st.text_input("Suchbegriff:", "quantum computing")
@@ -710,6 +700,7 @@ def main():
                         st.write("Kein PDF-Link.")
                     st.write("---")
     else:
+        # Multi-API-Suche + PaperQA
         st.subheader("Multi-API-Suche + ChatGPT-Scoring + PaperQA (lokale paperqa)")
         module_codewords_pubmed()
 
