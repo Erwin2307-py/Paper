@@ -528,30 +528,37 @@ def module_codewords_pubmed():
 
         results_all = []
 
+        # APIs prüfen, ob aktiviert
+        active_apis = []
         if profile_data.get("use_pubmed", False):
             pm = search_pubmed(final_query, max_results=200)
             st.write(f"PubMed: {len(pm)}")
             results_all.extend(pm)
+            active_apis.append("PubMed")
 
         if profile_data.get("use_epmc", False):
             ep = search_europe_pmc(final_query, max_results=200)
             st.write(f"Europe PMC: {len(ep)}")
             results_all.extend(ep)
+            active_apis.append("Europe PMC")
 
         if profile_data.get("use_google", False):
             gg = search_google_scholar(final_query, max_results=200)
             st.write(f"Google Scholar: {len(gg)}")
             results_all.extend(gg)
+            active_apis.append("Google Scholar")
 
         if profile_data.get("use_semantic", False):
             se = search_semantic_scholar(final_query, max_results=200)
             st.write(f"Semantic Scholar: {len(se)}")
             results_all.extend(se)
+            active_apis.append("Semantic Scholar")
 
         if profile_data.get("use_openalex", False):
             oa = search_openalex(final_query, max_results=200)
             st.write(f"OpenAlex: {len(oa)}")
             results_all.extend(oa)
+            active_apis.append("OpenAlex")
 
         if not results_all:
             st.info("Keine Treffer gefunden.")
@@ -562,6 +569,8 @@ def module_codewords_pubmed():
             results_all = results_all[:1000]
 
         st.session_state["search_results"] = results_all
+        # Speichern wir auch die Liste der aktiven APIs
+        st.session_state["active_apis"] = active_apis
         st.write(f"Gefundene Papers insgesamt: {len(results_all)}")
 
     # Falls Ergebnisse in der Session
@@ -571,12 +580,25 @@ def module_codewords_pubmed():
         st.dataframe(df_main)
 
         st.write("---")
-        st.subheader("ChatGPT-Online-Filterung nach Relevanz (Genes + Codewords)")
+        st.subheader("ChatGPT-Online-Filterung nach Relevanz")
 
-        ### NEU: Zeige an, welche Kriterien laut Profil verwendet werden ###
-        st.markdown(f"**Im Profil hinterlegte Kriterien:**  \n"
-                    f"- **Codewords**: {codewords_str}  \n"
-                    f"- **Gene**: {', '.join(genes_from_profile) if genes_from_profile else '(keine)'}")
+        ### NEU: „Kästchen“ mit ChatGPT-Auswahl/Kriterien
+        chatgpt_box = st.expander("ChatGPT Auswahl", expanded=True)
+        with chatgpt_box:
+            # Das ausgewählte Gen
+            #  (In diesem Beispiel kann es mehrere geben; wir listen sie kommasepariert)
+            gene_str = ", ".join(genes_from_profile) if genes_from_profile else "(kein Gen)"
+
+            # Welche API
+            #  (Haben wir in st.session_state["active_apis"] gespeichert)
+            chosen_apis_str = ", ".join(st.session_state.get("active_apis", ["(keine APIs)"]))
+
+            # Synonyme = Codewords
+            synonyms_str = codewords_str.strip() or "(keine Codewords)"
+
+            st.markdown(f"**Ausgewählte Gene (aus Profil/Sheet):** {gene_str}")
+            st.markdown(f"**Aktive APIs:** {chosen_apis_str}")
+            st.markdown(f"**Synonyme (Codewörter) für Online-Filterung:** {synonyms_str}")
 
         if st.button("Starte ChatGPT-Scoring"):
             if not codewords_str.strip() and not genes_from_profile:
