@@ -13,8 +13,7 @@ transformers
 webdriver-manager
 pandas
 feedparser
-paperqa2
-transformers
+
 
 
 
