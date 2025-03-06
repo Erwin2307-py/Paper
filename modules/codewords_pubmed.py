@@ -24,6 +24,15 @@ except ImportError:
     st.error("Bitte installiere 'fpdf', z.B. mit: pip install fpdf")
 
 
+##############################
+# paper-qa
+##############################
+try:
+    from paperqa import Docs
+except ImportError:
+    st.error("Bitte installiere 'paper-qa', z.B. via: pip install paper-qa")
+
+
 ###############################################################################
 # A) ChatGPT: Paper erstellen & lokal speichern
 ###############################################################################
@@ -470,6 +479,85 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
 
 
 ###############################################################################
+# H) PAPER-QA-ABSCHNITT
+###############################################################################
+def paperqa_section(top_results):
+    """
+    Erlaubt dem Nutzer, die ausgewählten Top-100 Paper mithilfe von paper-qa zu behandeln (online)
+    ODER lokal vorhandene PDFs hochzuladen und mit paper-qa zu arbeiten.
+    """
+    st.write("---")
+    st.subheader("Paper-QA (paper-qa) Integration")
+
+    approach = st.radio("Paper-QA Modus:", ["Online mit Abstracts", "Offline mit PDF-Dateien"])
+    st.markdown(
+        "- **Online mit Abstracts**: Nutze die Abstracts der Top 100 Papers direkt in paper-qa.\n"
+        "- **Offline mit PDFs**: Lade lokale PDF-Dateien hoch; diese werden in paper-qa eingelesen."
+    )
+
+    if approach == "Online mit Abstracts":
+        # 1) PaperQA (Docs) initialisieren
+        docs = Docs()
+
+        # 2) Abstracts der Top-100 Papers hinzufügen
+        for i, paper in enumerate(top_results, start=1):
+            title = paper.get("Title","(kein Titel)")
+            abstract = paper.get("Abstract","(kein Abstract)")
+            doc_text = f"Paper: {title}\nAbstract:\n{abstract}"
+            # "Name" in Docs: Paper # i
+            docs.add(doc_text, f"Paper_{i}")
+
+        st.success("Alle Top-100 Paper (nur Abstract) wurden in PaperQA geladen.")
+        st.session_state["paperqa_docs_online"] = docs
+
+        # Eingabefeld: Frage
+        user_question = st.text_input("Frage an deine Paper (online Abstracts)?", "")
+        if user_question:
+            if st.button("Frage stellen (online)"):
+                try:
+                    answer = docs.query(user_question)
+                    st.write("### Antwort (paper-qa):")
+                    st.write(answer.answer)
+                    with st.expander("Kontext / Belegstellen"):
+                        st.write(answer.context)
+                except Exception as e:
+                    st.error(f"Fehler bei PaperQA-Abfrage (online): {e}")
+
+    else:
+        # = "Offline mit PDFs"
+        st.info("Lade hier lokale PDF-Dateien hoch, die du mit PaperQA analysieren möchtest.")
+        uploaded_pdfs = st.file_uploader("PDFs hochladen", type=["pdf"], accept_multiple_files=True)
+
+        if uploaded_pdfs:
+            docs = Docs()
+            for upf in uploaded_pdfs:
+                # upf ist ein Streamlit UploadedFile
+                # Wir können es direkt an docs.add() geben, 
+                # allerdings erwartet paper-qa einen Pfad oder Bytes
+                pdf_bytes = upf.read()
+                # docs.add(content, name)
+                try:
+                    docs.add(pdf_bytes, metadata=upf.name)
+                except Exception as e:
+                    st.error(f"Fehler beim Einlesen von {upf.name}: {e}")
+                    return
+
+            st.success(f"{len(uploaded_pdfs)} PDF(s) wurden in PaperQA eingelesen.")
+            st.session_state["paperqa_docs_offline"] = docs
+
+            user_question_off = st.text_input("Frage an deine hochgeladenen PDFs?", "")
+            if user_question_off and st.button("Frage stellen (offline PDFs)"):
+                try:
+                    answer_off = docs.query(user_question_off)
+                    st.write("### Antwort (paper-qa, offline PDFs):")
+                    st.write(answer_off.answer)
+                    with st.expander("Kontext / Belegstellen"):
+                        st.write(answer_off.context)
+                except Exception as e:
+                    st.error(f"Fehler bei PaperQA-Abfrage (offline PDFs): {e}")
+
+
+###############################################################################
 # H) Multi-API-Suche (mit ChatGPT-Scoring) & Anzeige
 ###############################################################################
 def module_codewords_pubmed():
@@ -688,7 +776,6 @@ def module_codewords_pubmed():
                         all_papers_df_list[sheet_name] = df_api
 
                     # --- Download-Buttons ---
-
                     st.write("---")
                     st.subheader("Ergebnisse herunterladen")
 
@@ -714,6 +801,9 @@ def module_codewords_pubmed():
                         file_name="paper_info.pdf",
                         mime="application/pdf"
                     )
+
+                    # --- PaperQA-Funktion hier ---
+                    paperqa_section(top_results)
 
 
 ###############################################################################
@@ -747,7 +837,7 @@ def main():
                 "Navigation:\n"
                 "- ChatGPT-Paper: Erstelle ein PDF basierend auf einem Prompt.\n"
                 "- arXiv-Suche: Suche Papers in arXiv und lade PDFs herunter.\n"
-                "- Multi-API-Suche: PubMed, Europe PMC, Google Scholar etc., plus ChatGPT-Scoring."
+                "- Multi-API-Suche: PubMed, Europe PMC, Google Scholar etc., plus ChatGPT-Scoring + PaperQA."
             )
 
     if choice == "ChatGPT-Paper":
