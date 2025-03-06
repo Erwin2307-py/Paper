@@ -16,37 +16,39 @@ import openai
 import importlib
 
 # -------------------------------------------------------------
-# 1) Absoluten Pfad zum aktuellen Skript ermitteln
+# 1) Ermittele den absoluten Pfad zum aktuellen Skript (Repository-Root)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# 2) Falls sich im BASE_DIR kein Ordner "modules" befindet,
-#    prüfen wir, ob dieser in einem Unterordner "Paper" liegt.
-if not os.path.isdir(os.path.join(BASE_DIR, "modules")):
-    candidate = os.path.join(BASE_DIR, "Paper")
-    if os.path.isdir(os.path.join(candidate, "modules")):
-        BASE_DIR = candidate
-    else:
-        st.error("Konnte den Ordner 'modules' nicht finden – überprüfe deine Verzeichnisstruktur!")
-        st.stop()
-
-# 3) Den Ordner für paper-qa zusammenbauen
+# 2) Baue den Pfad zum Ordner "modules/paper-qa"
 paperqa_local_path = os.path.join(BASE_DIR, "modules", "paper-qa")
 if not os.path.isdir(paperqa_local_path):
-    st.error(f"Verzeichnis nicht gefunden: {paperqa_local_path}")
+    st.error(f"Verzeichnis 'modules/paper-qa' nicht gefunden in: {paperqa_local_path}")
     st.stop()
 
-# 4) Füge den Ordner in den sys.path ein, sodass Python den Unterordner "paperqa" findet.
+# 3) Prüfe, ob im Unterordner "paperqa" die Datei __init__.py existiert
+paperqa_package_path = os.path.join(paperqa_local_path, "paperqa")
+init_file = os.path.join(paperqa_package_path, "__init__.py")
+if not os.path.exists(init_file):
+    st.error(
+        "Konnte 'paperqa' nicht importieren.\n"
+        "Bitte prüfe, ob die Datei '__init__.py' im folgenden Ordner existiert:\n"
+        f"{paperqa_package_path}"
+    )
+    st.stop()
+
+# 4) Füge den Ordner "modules/paper-qa" in den sys.path ein, damit Python den Unterordner "paperqa" als Paket findet
 sys.path.insert(0, paperqa_local_path)
 importlib.invalidate_caches()
 
-# 5) Versuche, das Modul "paperqa" zu importieren.
+# 5) Versuche, das Modul "paperqa" zu importieren
 try:
     from paperqa import Docs
 except ImportError as e:
     st.error(
         "Konnte 'paperqa' nicht importieren.\n"
-        "Bitte prüfe, ob im folgenden Ordner die Datei '__init__.py' existiert:\n"
-        f"{os.path.join(paperqa_local_path, 'paperqa')}"
+        "Bitte prüfe, ob im folgenden Ordner 'paperqa/__init__.py' existiert:\n"
+        f"{paperqa_package_path}\n"
+        f"Fehlermeldung: {e}"
     )
     st.stop()
 
@@ -84,7 +86,7 @@ def save_text_as_pdf(text, pdf_path, title="Paper"):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    # Unicode-Schrift aus modules/DejaVuSansCondensed.ttf
+    # Verwende die Unicode-Schrift aus modules/DejaVuSansCondensed.ttf
     font_path = os.path.join(BASE_DIR, "modules", "DejaVuSansCondensed.ttf")
     if not os.path.exists(font_path):
         st.error(f"TTF Font file not found: {font_path}")
@@ -289,6 +291,7 @@ def search_google_scholar(query: str, max_results=100):
         st.error(f"Google Scholar-Suche: {e}")
         return []
 
+
 def search_semantic_scholar(query: str, max_results=100):
     url = "https://api.semanticscholar.org/graph/v1/paper/search"
     params = {"query": query, "limit": max_results, "fields": "title,authors,year,abstract"}
@@ -314,6 +317,7 @@ def search_semantic_scholar(query: str, max_results=100):
     except Exception as e:
         st.error(f"Semantic Scholar: {e}")
         return []
+
 
 def search_openalex(query: str, max_results=100):
     url = "https://api.openalex.org/works"
