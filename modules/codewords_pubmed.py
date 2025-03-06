@@ -53,8 +53,7 @@ def save_text_as_pdf(text, pdf_path, title="Paper"):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    # Unicode-fähige Schrift einbinden
-    # Hier ist der Pfad: modules/DejaVuSansCondensed.ttf
+    # Unicode-fähige Schrift einbinden (DejaVuSansCondensed.ttf befindet sich in modules/)
     font_path = os.path.join("modules", "DejaVuSansCondensed.ttf")
     if not os.path.exists(font_path):
         st.error(f"TTF Font file not found: {font_path}")
@@ -322,7 +321,7 @@ def search_openalex(query: str, max_results=100):
 def create_papers_info_pdf(papers):
     pdf = FPDF()
     pdf.add_page()
-    # Verwende die Unicode-Schrift aus modules/DejaVuSansCondensed.ttf
+    # Unicode-Schrift einbinden (DejaVuSansCondensed.ttf befindet sich in modules/)
     font_path = os.path.join("modules", "DejaVuSansCondensed.ttf")
     if not os.path.exists(font_path):
         st.error(f"Font file not found: {font_path}")
@@ -426,6 +425,12 @@ def paperqa_section(top_results):
     if st.session_state["paperqa_approach"] != approach:
         st.session_state["paperqa_docs"] = None
         st.session_state["paperqa_approach"] = approach
+    # Hier den Import von Docs innerhalb der Funktion erzwingen
+    try:
+        from paperqa import Docs
+    except ImportError as e:
+        st.error("paper-qa konnte nicht importiert werden. Bitte installiere es via pip install paper-qa")
+        return
     docs_obj = st.session_state["paperqa_docs"]
     if docs_obj is None:
         if approach == "Online mit Abstracts":
