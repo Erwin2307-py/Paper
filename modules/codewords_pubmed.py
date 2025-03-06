@@ -13,33 +13,47 @@ from collections import defaultdict
 import base64
 import sys
 
-# Wir fügen den Pfad zum lokalen "paper-qa" hinzu:
-paperqa_local_path = os.path.join("modules", "paper-qa")
-if os.path.isdir(paperqa_local_path):
-    sys.path.insert(0, paperqa_local_path)
+###############################################################################
+# 1) Pfad hinzufügen: modules/paper-qa/paper-qa-main
+###############################################################################
+paperqa_local_path = os.path.join("modules", "paper-qa", "paper-qa-main")
+if not os.path.isdir(os.path.join(paperqa_local_path, "paperqa")):
+    st.error(
+        f"Fehler: Der Ordner 'paperqa' existiert nicht unter {paperqa_local_path}. "
+        "Bitte prüfe die Verzeichnisstruktur."
+    )
+    st.stop()
 
-# Google Scholar (optional)
+sys.path.insert(0, paperqa_local_path)
+
+###############################################################################
+# 2) Google Scholar-Import (optional)
+###############################################################################
 try:
     from scholarly import scholarly
 except ImportError:
     st.warning("Bitte installiere 'scholarly' via: pip install scholarly")
 
+###############################################################################
+# 3) OpenAI & FPDF
+###############################################################################
 import openai
 try:
     from fpdf import FPDF
 except ImportError:
     st.error("Bitte installiere 'fpdf' via: pip install fpdf")
 
-# paper-qa (lokal aus modules/paper-qa/paperqa)
+###############################################################################
+# 4) paperqa lokal importieren
+###############################################################################
 try:
     from paperqa import Docs
 except ImportError as e:
     st.error(
-        "Konnte 'paperqa' nicht aus 'modules/paper-qa' importieren.\n"
-        "Stelle sicher, dass in 'modules/paper-qa/paperqa/' eine __init__.py liegt."
+        "Konnte 'paperqa' nicht importieren.\n"
+        "Stelle sicher, dass in 'modules/paper-qa/paper-qa-main/paperqa/' eine __init__.py liegt."
     )
     st.stop()  # Stoppe das Skript, weil paperqa unverzichtbar ist.
-
 
 ###############################################################################
 # A) ChatGPT: Paper erstellen & lokal speichern
@@ -438,7 +452,6 @@ def paperqa_section(top_results):
         st.session_state["paperqa_approach"] = approach
 
     docs_obj = st.session_state["paperqa_docs"]
-    # Wir nutzen Docs aus dem lokal importierten 'paperqa'
     if docs_obj is None:
         if approach == "Online mit Abstracts":
             docs = Docs()
@@ -637,7 +650,10 @@ def module_codewords_pubmed():
 # I) Haupt-App
 ###############################################################################
 def main():
+    st.set_page_config(layout="wide")
     st.title("Kombinierte App: ChatGPT-Paper, arXiv-Suche, Multi-API-Suche + PaperQA (lokale paperqa)")
+    
+    # Beispiel-Profil, falls keines vorhanden
     if "profiles" not in st.session_state:
         st.session_state["profiles"] = {
             "DefaultProfile": {
@@ -650,6 +666,7 @@ def main():
                 "codewords": "cancer therapy"
             }
         }
+        
     menu = ["ChatGPT-Paper", "arXiv-Suche", "Multi-API-Suche"]
     choice = st.sidebar.selectbox("Navigation", menu)
     
@@ -698,5 +715,4 @@ def main():
 
 
 if __name__ == "__main__":
-    st.set_page_config(layout="wide")
     main()
