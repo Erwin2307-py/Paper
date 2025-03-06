@@ -402,7 +402,7 @@ def safe_excel_value(value):
 ###############################################################################
 def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     """
-    Schleife über Papers mit eigener 'Fortschritt'-Anzeige in Expander.
+    Schleife über Papers mit einer ChatGPT-Abfrage, um eine Relevanz (0-100) zu erhalten.
     Falls 'genes' vorhanden ist, fließt das in den Prompt mit ein.
     """
     if not papers:
@@ -413,7 +413,6 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
         st.error("Kein 'OPENAI_API_KEY' in st.secrets! Abbruch.")
         return []
 
-    # Separates Fenster für Fortschritt:
     progress_area = st.expander("Fortschritt (aktuelles Paper)", expanded=True)
     paper_status = progress_area.empty()
 
@@ -421,15 +420,12 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     total = len(papers)
 
     # Gene-Liste in String fassen:
-    genes_str = ""
-    if genes:
-        genes_str = ", ".join(genes)
+    genes_str = ", ".join(genes) if genes else ""
 
     # Codewörter
     code_str = codewords if codewords else ""
 
     for idx, paper in enumerate(papers, start=1):
-        # Updaten wir NUR diese Zeile => immer das aktuelle Paper
         paper_title = paper.get('Title', '(kein Titel)')
         paper_status.write(f"Paper {idx}/{total}: **{paper_title}**")
 
@@ -463,7 +459,6 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
         new_p["Relevance"] = score
         results_scored.append(new_p)
 
-    # Sortieren nach Relevanz
     results_scored.sort(key=lambda x: x["Relevance"], reverse=True)
     return results_scored[:top_k]
 
@@ -472,7 +467,7 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
 # H) Multi-API-Suche + ChatGPT mit Genes (aus Profil)
 ###############################################################################
 def module_codewords_pubmed():
-    st.title("Multi-API-Suche (PubMed, Europe PMC, Google Scholar, ...) + ChatGPT Online Suche (Genes + Codewörter)")
+    st.title("Multi-API-Suche (PubMed, Europe PMC, Google Scholar, ...) + ChatGPT-Scoring (Genes + Codewörter)")
 
     # Prüfen, ob Profile existieren
     if "profiles" not in st.session_state or not st.session_state["profiles"]:
@@ -513,19 +508,16 @@ def module_codewords_pubmed():
             st.warning("Keine Codewörter und keine Gene -> Suche nicht möglich.")
             return
 
-        # Finale Query: wir kombinieren *alle* codewords und *alle* genes
-        # z.B. bei OR: (codeword1 OR codeword2) OR (gene1 OR gene2)
-        # bei AND: (codeword1 AND codeword2) AND (gene1 AND gene2)
+        # Finale Query bilden
         if logic_option == "OR":
             query_codewords = " OR ".join(raw_words_list) if raw_words_list else ""
             query_genes = " OR ".join(raw_genes_list) if raw_genes_list else ""
-            # Falls beides nicht leer: ( ... ) OR ( ... )
             if query_codewords and query_genes:
                 final_query = f"({query_codewords}) OR ({query_genes})"
             else:
                 final_query = query_codewords or query_genes
         else:
-            # logic_option == "AND"
+            # AND
             query_codewords = " AND ".join(raw_words_list) if raw_words_list else ""
             query_genes = " AND ".join(raw_genes_list) if raw_genes_list else ""
             if query_codewords and query_genes:
@@ -582,7 +574,7 @@ def module_codewords_pubmed():
         st.write("---")
         st.subheader("ChatGPT-Online-Filterung nach Relevanz (Genes + Codewords)")
 
-        if st.button("Starte ChatGPT-Online-Suche"):
+        if st.button("Starte ChatGPT-Scoring"):
             if not codewords_str.strip() and not genes_from_profile:
                 st.warning("Keine Codewords und keine Gene vorhanden -> Abbruch.")
             else:
@@ -591,12 +583,40 @@ def module_codewords_pubmed():
                     all_papers,
                     codewords=codewords_str,   # Aus dem Textfeld (ggf. Profil)
                     genes=genes_from_profile,  # Immer aus Profil
-                    top_k=100
+                    top_k=100                  # Nur Top 100
                 )
                 if top_results:
                     st.subheader("Top 100 Paper (nach ChatGPT-Relevanz)")
                     df_top = pd.DataFrame(top_results)
                     st.dataframe(df_top)
+
+                    ### NEU: Button zum lokalen Excel-Export ###
+                    #  => Speichert die Top-100 nach "Source" gruppiert in verschiedene Sheets.
+                    st.write("---")
+                    st.subheader("Excel-Export")
+                    
+                    # Generieren wir einen automatischen Dateinamen: codewords + Zeitstempel
+                    codew_for_filename = sanitize_filename(codewords_str) or "keine_codewords"
+                    time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    excel_filename = f"papers_{codew_for_filename}_{time_str}.xlsx"
+
+                    if st.button("Top 100 als Excel speichern (lokal)"):
+                        # Ordner anlegen
+                        local_dir_excel = "excel_results"
+                        if not os.path.exists(local_dir_excel):
+                            os.makedirs(local_dir_excel)
+
+                        excel_path = os.path.join(local_dir_excel, excel_filename)
+
+                        # Jetzt gruppieren wir nach "Source" und schreiben je Sheet
+                        df_top_all = pd.DataFrame(top_results)
+                        with pd.ExcelWriter(excel_path, engine="xlsxwriter") as writer:
+                            for source_name, group_df in df_top_all.groupby("Source"):
+                                # Sheet-Name darf max. 31 Zeichen lang sein
+                                sheet_name = sanitize_filename(str(source_name))[:31]
+                                group_df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+                        st.success(f"Excel gespeichert unter: {excel_path}")
 
 
 ###############################################################################
@@ -605,8 +625,8 @@ def module_codewords_pubmed():
 def main():
     st.title("Kombinierte App: ChatGPT-Paper, arXiv-Suche, Multi-API-Suche (Genes+Codewords)")
 
+    # Beispiel-Profil beim ersten Start
     if "profiles" not in st.session_state:
-        # Beispielhaft legen wir ein Profil an
         st.session_state["profiles"] = {
             "DefaultProfile": {
                 "use_pubmed": True,
