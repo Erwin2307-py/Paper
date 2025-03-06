@@ -15,25 +15,30 @@ import sys
 import openai
 
 # -------------------------------------------------------------
-# 1) Absoluten Pfad zum Skript ermitteln
+# Absoluten Pfad zum aktuellen Skript ermitteln
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# 2) Absoluten Pfad zum Ordner 'modules/paper-qa' zusammenbauen.
+# Versuche zuerst, den Ordner "modules/paper-qa" zu finden.
 paperqa_local_path = os.path.join(BASE_DIR, "modules", "paper-qa")
 if not os.path.isdir(paperqa_local_path):
-    st.error(f"Verzeichnis nicht gefunden: {paperqa_local_path}")
-    st.stop()
+    # Falls nicht vorhanden, als Alternative "<BASE_DIR>/paper-qa" verwenden.
+    alternative_path = os.path.join(BASE_DIR, "paper-qa")
+    if os.path.isdir(alternative_path):
+        paperqa_local_path = alternative_path
+    else:
+        st.error(f"Verzeichnis nicht gefunden: {paperqa_local_path} oder {alternative_path}")
+        st.stop()
 
-# 3) Füge diesen Pfad in sys.path ein, damit Python den Unterordner 'paperqa' findet.
+# Füge den gefundenen Pfad in sys.path ein, damit Python den Unterordner "paperqa" findet.
 sys.path.insert(0, paperqa_local_path)
 
-# 4) Versuche, das Modul 'paperqa' zu importieren.
+# Versuche, das Modul "paperqa" zu importieren.
 try:
     from paperqa import Docs
 except ImportError as e:
     st.error(
-        "Konnte 'paperqa' nicht aus 'modules/paper-qa/paperqa/' importieren.\n"
-        "Bitte prüfe, ob der Ordner 'paperqa' in folgendem Pfad existiert und eine Datei '__init__.py' enthält:\n"
+        "Konnte 'paperqa' nicht importieren.\n"
+        "Bitte prüfe, ob im folgenden Ordner 'paperqa/__init__.py' existiert:\n"
         f"{os.path.join(paperqa_local_path, 'paperqa')}"
     )
     st.stop()
