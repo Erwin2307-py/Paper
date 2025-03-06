@@ -12,31 +12,25 @@ from datetime import datetime
 from collections import defaultdict
 import base64
 
-# Google Scholar (optional)
 try:
     from scholarly import scholarly
 except ImportError:
-    st.warning("Bitte installiere 'scholarly' via: pip install scholarly")
+    st.error("Bitte installiere 'scholarly', z.B. via: pip install scholarly")
 
 import openai
 try:
     from fpdf import FPDF
 except ImportError:
-    st.error("Bitte installiere 'fpdf' via: pip install fpdf")
-
-# paper-qa
-try:
-    from paperqa import Docs
-except ImportError:
-    st.error("Bitte installiere 'paper-qa' via: pip install paper-qa")
+    st.error("Bitte installiere 'fpdf', z.B. mit: pip install fpdf")
 
 
 ###############################################################################
 # A) ChatGPT: Paper erstellen & lokal speichern
 ###############################################################################
 def generate_paper_via_chatgpt(prompt_text, model="gpt-3.5-turbo"):
+    """Ruft die ChatGPT-API auf und erzeugt ein Paper (Text)."""
     try:
-        openai.api_key = st.secrets["OPENAI_API_KEY"]
+        openai.api_key = st.secrets["OPENAI_API_KEY"]  # Holt KEY aus secrets
         response = openai.ChatCompletion.create(
             model=model,
             messages=[{"role": "user", "content": prompt_text}],
@@ -45,28 +39,28 @@ def generate_paper_via_chatgpt(prompt_text, model="gpt-3.5-turbo"):
         )
         return response.choices[0].message.content
     except Exception as e:
-        st.error(f"Fehler bei ChatGPT-API: {e}")
+        st.error(
+            "Fehler bei ChatGPT-API: "
+            f"'{e}'.\nPrüfe, ob 'OPENAI_API_KEY' in secrets.toml hinterlegt ist!"
+        )
         return ""
 
 
 def save_text_as_pdf(text, pdf_path, title="Paper"):
+    """Speichert den gegebenen Text in ein PDF (lokal)."""
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    # Unicode-fähige Schrift einbinden
-    # Hier ist der Pfad: modules/DejaVuSansCondensed.ttf
-    font_path = os.path.join("modules", "DejaVuSansCondensed.ttf")
-    if not os.path.exists(font_path):
-        st.error(f"TTF Font file not found: {font_path}")
-    else:
-        pdf.add_font("DejaVu", "", font_path, uni=True)
-    pdf.set_font("DejaVu", "", 12)
-    
+    pdf.set_font("Arial", size=12)
+
     pdf.cell(0, 10, title, ln=1)
     pdf.ln(5)
-    for line in text.split("\n"):
+
+    lines = text.split("\n")
+    for line in lines:
         pdf.multi_cell(0, 8, line)
         pdf.ln(2)
+
     pdf.output(pdf_path, "F")
 
 
@@ -75,17 +69,23 @@ def save_text_as_pdf(text, pdf_path, title="Paper"):
 ###############################################################################
 def search_arxiv_papers(query, max_results=5):
     base_url = "http://export.arxiv.org/api/query?"
-    params = {"search_query": f"all:{query}", "start": 0, "max_results": max_results}
+    params = {
+        "search_query": f"all:{query}",
+        "start": 0,
+        "max_results": max_results
+    }
     try:
         response = requests.get(base_url, params=params, timeout=10)
         response.raise_for_status()
     except Exception as e:
-        st.error(f"Fehler bei arXiv: {e}")
+        st.error(f"Fehler beim Abrufen der Daten von arXiv: {e}")
         return []
     
     feed = feedparser.parse(response.text)
     papers_info = []
     for entry in feed.entries:
+        title = entry.title
+        summary = entry.summary
         link_pdf = None
         for link in entry.links:
             if link.rel == "related" and "pdf" in link.type:
@@ -94,15 +94,17 @@ def search_arxiv_papers(query, max_results=5):
             elif link.type == "application/pdf":
                 link_pdf = link.href
                 break
+        
         papers_info.append({
-            "title": entry.title,
-            "summary": entry.summary,
+            "title": title,
+            "summary": summary,
             "pdf_url": link_pdf
         })
     return papers_info
 
 
 def sanitize_filename(fname):
+    """Ersetzt unerlaubte Zeichen durch Unterstriche."""
     return re.sub(r"[^a-zA-Z0-9_\-]+", "_", fname)
 
 
@@ -114,16 +116,34 @@ def download_arxiv_pdf(pdf_url, local_filepath):
             f.write(r.content)
         return True
     except Exception as e:
-        st.error(f"Fehler beim Download PDF: {e}")
+        st.error(f"Fehler beim Herunterladen der PDF: {e}")
         return False
 
 
 ###############################################################################
 # C) Multi-API-Suche (PubMed, Europe PMC, Google Scholar, Semantic Scholar, OpenAlex)
 ###############################################################################
+def flatten_dict(d, parent_key="", sep="__"):
+    """Wandelt ein verschachteltes Dict in ein flaches Dict um."""
+    items = []
+    for k, v in d.items():
+        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+        if isinstance(v, dict):
+            items.extend(flatten_dict(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)
+
+
+# --- PubMed-Funktionen ---
 def esearch_pubmed(query: str, max_results=100, timeout=10):
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-    params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": max_results}
+    params = {
+        "db": "pubmed",
+        "term": query,
+        "retmode": "json",
+        "retmax": max_results
+    }
     try:
         r = requests.get(url, params=params, timeout=timeout)
         r.raise_for_status()
@@ -134,7 +154,7 @@ def esearch_pubmed(query: str, max_results=100, timeout=10):
         return []
 
 
-def parse_efetch_response(xml_text: str):
+def parse_efetch_response(xml_text: str) -> dict:
     root = ET.fromstring(xml_text)
     pmid_abstract_map = {}
     for article in root.findall(".//PubmedArticle"):
@@ -148,6 +168,7 @@ def parse_efetch_response(xml_text: str):
 
 
 def fetch_pubmed_abstracts(pmids, timeout=10):
+    """Holt Abstracts per efetch."""
     if not pmids:
         return {}
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
@@ -157,7 +178,7 @@ def fetch_pubmed_abstracts(pmids, timeout=10):
         r.raise_for_status()
         return parse_efetch_response(r.text)
     except Exception as e:
-        st.error(f"Fehler bei fetch abstracts: {e}")
+        st.error(f"Fehler beim Abrufen der Abstracts via EFetch: {e}")
         return {}
 
 
@@ -171,9 +192,11 @@ def get_pubmed_details(pmids: list):
         r_sum.raise_for_status()
         data_summary = r_sum.json()
     except Exception as e:
-        st.error(f"PubMed-ESummary: {e}")
+        st.error(f"Fehler bei der PubMed-ESummary-Anfrage: {e}")
         return []
+
     abstracts_map = fetch_pubmed_abstracts(pmids)
+
     results = []
     for pmid in pmids:
         info = data_summary.get("result", {}).get(pmid, {})
@@ -185,6 +208,9 @@ def get_pubmed_details(pmids: list):
         title = info.get("title", "n/a")
         abs_text = abstracts_map.get(pmid, "n/a")
         publisher = info.get("fulljournalname") or info.get("source") or "n/a"
+
+        full_data = dict(info)
+        full_data["abstract"] = abs_text
         results.append({
             "Source": "PubMed",
             "Title": title,
@@ -193,7 +219,8 @@ def get_pubmed_details(pmids: list):
             "DOI": doi,
             "Year": pubyear,
             "Publisher": publisher,
-            "Population": "n/a"
+            "Population": "n/a",
+            "FullData": full_data
         })
     return results
 
@@ -205,14 +232,15 @@ def search_pubmed(query: str, max_results=100):
     return get_pubmed_details(pmids)
 
 
+# --- Europe PMC ---
 def search_europe_pmc(query: str, max_results=100, timeout=10):
     url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {"query": query, "format": "json", "pageSize": max_results}
-    results = []
     try:
         r = requests.get(url, params=params, timeout=timeout)
         r.raise_for_status()
         data = r.json()
+        results = []
         for item in data.get("resultList", {}).get("result", []):
             pub_year = str(item.get("pubYear", "n/a"))
             abstract_text = item.get("abstractText", "n/a")
@@ -226,14 +254,16 @@ def search_europe_pmc(query: str, max_results=100, timeout=10):
                 "DOI": item.get("doi", "n/a"),
                 "Year": pub_year,
                 "Publisher": publisher,
-                "Population": "n/a"
+                "Population": "n/a",
+                "FullData": dict(item)
             })
         return results
     except Exception as e:
         st.error(f"Europe PMC-Suche fehlgeschlagen: {e}")
-        return results
+        return []
 
 
+# --- Google Scholar ---
 def search_google_scholar(query: str, max_results=100):
     results = []
     try:
@@ -252,14 +282,16 @@ def search_google_scholar(query: str, max_results=100):
                 "DOI": "n/a",
                 "Year": str(year),
                 "Publisher": "n/a",
-                "Population": "n/a"
+                "Population": "n/a",
+                "FullData": dict(pub)
             })
         return results
     except Exception as e:
-        st.error(f"Google Scholar-Suche: {e}")
+        st.error(f"Google Scholar-Suche fehlgeschlagen: {e}")
         return []
 
 
+# --- Semantic Scholar ---
 def search_semantic_scholar(query: str, max_results=100):
     url = "https://api.semanticscholar.org/graph/v1/paper/search"
     params = {"query": query, "limit": max_results, "fields": "title,authors,year,abstract"}
@@ -279,14 +311,17 @@ def search_semantic_scholar(query: str, max_results=100):
                 "DOI": "n/a",
                 "Year": year_,
                 "Publisher": "n/a",
-                "Population": "n/a"
+                "Population": "n/a",
+                "FullData": dict(p)
             })
         return results
     except Exception as e:
-        st.error(f"Semantic Scholar: {e}")
+        st.error(f"Semantic Scholar-Suche fehlgeschlagen: {e}")
         return []
+    return results
 
 
+# --- OpenAlex ---
 def search_openalex(query: str, max_results=100):
     url = "https://api.openalex.org/works"
     params = {"search": query, "per-page": max_results}
@@ -308,79 +343,106 @@ def search_openalex(query: str, max_results=100):
                 "DOI": doi,
                 "Year": year_,
                 "Publisher": "n/a",
-                "Population": "n/a"
+                "Population": "n/a",
+                "FullData": dict(w)
             })
         return results
     except Exception as e:
-        st.error(f"OpenAlex: {e}")
-        return []
+        st.error(f"OpenAlex-Suche fehlgeschlagen: {e}")
+        return results
 
 
 ###############################################################################
-# D) PDF-Helferfunktion: Papers in PDF (Unicode-fähig)
+# D) PDF-Helferfunktion: Papers in PDF
 ###############################################################################
 def create_papers_info_pdf(papers):
+    """
+    Erzeugt aus einer Liste von Paper-Dicts ein PDF (in Memory),
+    mit einigen wichtigen Daten: Title, PubMed ID, DOI, Publisher, Abstract...
+    """
     pdf = FPDF()
     pdf.add_page()
-    # Verwende die Unicode-Schrift aus modules/DejaVuSansCondensed.ttf
-    font_path = os.path.join("modules", "DejaVuSansCondensed.ttf")
-    if not os.path.exists(font_path):
-        st.error(f"Font file not found: {font_path}")
-    else:
-        pdf.add_font("DejaVu", "", font_path, uni=True)
-    pdf.set_font("DejaVu", "", 12)
+    pdf.set_font("Arial", size=12)
     
     pdf.cell(0, 10, "Paper-Informationen (Top 100)", ln=1)
     pdf.ln(5)
+
     for idx, p in enumerate(papers, start=1):
         title = p.get("Title", "(kein Titel)")
         pmid = p.get("PubMed ID", "n/a")
         doi = p.get("DOI", "n/a")
         pub = p.get("Publisher", "n/a")
         abstr = p.get("Abstract", "n/a")
+
         pdf.multi_cell(0, 6, f"{idx}) {title}")
         pdf.multi_cell(0, 6, f"   PubMed ID: {pmid}")
         pdf.multi_cell(0, 6, f"   DOI: {doi}")
         pdf.multi_cell(0, 6, f"   Publisher: {pub}")
         pdf.multi_cell(0, 6, f"   Abstract: {abstr}")
         pdf.ln(8)
+
     return pdf.output(dest="S").encode("latin-1", "replace")
 
 
 ###############################################################################
-# E) "Profiles" laden
+# E) "Profiles" laden (optional)
 ###############################################################################
 def load_settings(profile_name: str):
     if "profiles" in st.session_state:
-        return st.session_state["profiles"].get(profile_name, None)
+        profiles = st.session_state["profiles"]
+        return profiles.get(profile_name, None)
     return None
 
 
 ###############################################################################
-# G) ChatGPT-Scoring
+# F) Helper
+###############################################################################
+def safe_excel_value(value):
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list, tuple, set)):
+        return str(value)
+    if isinstance(value, (int, float, bool, str)):
+        return value
+    return str(value)
+
+
+###############################################################################
+# G) ChatGPT-Scoring in extra Fenster + Genes-Check
 ###############################################################################
 def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
+    """
+    Schleife über Papers mit einer ChatGPT-Abfrage, um eine Relevanz (0-100) zu erhalten.
+    Falls 'genes' vorhanden ist, fließt das in den Prompt mit ein.
+    """
     if not papers:
         return []
+
     openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
     if not openai.api_key:
-        st.error("Kein 'OPENAI_API_KEY' in st.secrets!")
+        st.error("Kein 'OPENAI_API_KEY' in st.secrets! Abbruch.")
         return []
+
     progress_area = st.expander("Fortschritt (aktuelles Paper)", expanded=True)
     paper_status = progress_area.empty()
+
     results_scored = []
     total = len(papers)
+
     genes_str = ", ".join(genes) if genes else ""
     code_str = codewords if codewords else ""
+
     for idx, paper in enumerate(papers, start=1):
-        paper_title = paper.get("Title", "(kein Titel)")
+        paper_title = paper.get('Title', '(kein Titel)')
         paper_status.write(f"Paper {idx}/{total}: **{paper_title}**")
+
         prompt_text = (
             f"Codewörter: {code_str}\n"
             f"Gene: {genes_str}\n\n"
-            f"Paper:\nTitel: {paper_title}\n"
+            f"Paper:\n"
+            f"Titel: {paper_title}\n"
             f"Abstract:\n{paper.get('Abstract','(kein Abstract)')}\n\n"
-            "Gib mir eine Zahl von 0 bis 100 (Relevanz)."
+            "Gib mir eine Zahl von 0 bis 100 (Relevanz), wobei sowohl Codewörter als auch Gene berücksichtigt werden."
         )
         try:
             response = openai.ChatCompletion.create(
@@ -390,241 +452,278 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
                 temperature=0
             )
             raw_text = response.choices[0].message.content.strip()
-            match = re.search(r"(\d+)", raw_text)
-            score = int(match.group(1)) if match else 0
+            match = re.search(r'(\d+)', raw_text)
+            if match:
+                score = int(match.group(1))
+            else:
+                score = 0
         except Exception as e:
             st.error(f"Fehler bei ChatGPT-Scoring: {e}")
             score = 0
+
         new_p = dict(paper)
         new_p["Relevance"] = score
         results_scored.append(new_p)
+
     results_scored.sort(key=lambda x: x["Relevance"], reverse=True)
     return results_scored[:top_k]
 
 
 ###############################################################################
-# PaperQA + Q&A-History Export als Excel
-###############################################################################
-def export_qa_to_excel(qa_history):
-    df_qa = pd.DataFrame(qa_history)
-    excel_buf = io.BytesIO()
-    with pd.ExcelWriter(excel_buf, engine="xlsxwriter") as writer:
-        df_qa.to_excel(writer, sheet_name="PaperQA_Results", index=False)
-    return excel_buf.getvalue()
-
-
-###############################################################################
-# PAPER-QA-ABSCHNITT
-###############################################################################
-def paperqa_section(top_results):
-    st.write("---")
-    st.subheader("Paper-QA (paper-qa) Integration")
-    approach = st.radio("Paper-QA Modus:", ["Online mit Abstracts", "Offline mit PDFs"])
-    if "paperqa_docs" not in st.session_state:
-        st.session_state["paperqa_docs"] = None
-        st.session_state["paperqa_approach"] = None
-    if st.session_state["paperqa_approach"] != approach:
-        st.session_state["paperqa_docs"] = None
-        st.session_state["paperqa_approach"] = approach
-    docs_obj = st.session_state["paperqa_docs"]
-    if docs_obj is None:
-        if approach == "Online mit Abstracts":
-            docs = Docs()
-            for i, paper in enumerate(top_results, start=1):
-                title = paper.get("Title", "(kein Titel)")
-                abstract = paper.get("Abstract", "(kein Abstract)")
-                doc_text = f"Paper: {title}\nAbstract:\n{abstract}"
-                docs.add(doc_text, f"Paper_{i}")
-            st.session_state["paperqa_docs"] = docs
-            st.success("Top-100 (Abstracts) in PaperQA geladen (Online).")
-        else:
-            st.info("Bitte lade PDF-Dateien hoch (Offline-Modus).")
-            uploaded_pdfs = st.file_uploader("PDFs hochladen", type=["pdf"], accept_multiple_files=True)
-            if uploaded_pdfs:
-                docs = Docs()
-                for upf in uploaded_pdfs:
-                    pdf_bytes = upf.read()
-                    try:
-                        docs.add(pdf_bytes, metadata=upf.name)
-                    except Exception as e:
-                        st.error(f"Fehler beim Einlesen von {upf.name}: {e}")
-                        return
-                st.session_state["paperqa_docs"] = docs
-                st.success(f"{len(uploaded_pdfs)} PDF(s) in PaperQA geladen (Offline).")
-        docs_obj = st.session_state["paperqa_docs"]
-    if docs_obj:
-        st.write("---")
-        question = st.text_input("Frage an PaperQA:", "")
-        if st.button("Frage stellen"):
-            try:
-                answer = docs_obj.query(question)
-                st.write("### Antwort:")
-                st.write(answer.answer)
-                with st.expander("Kontext"):
-                    st.write(answer.context)
-                qa_entry = {
-                    "Modus": approach,
-                    "Frage": question,
-                    "Antwort": answer.answer,
-                    "Kontext": answer.context[:500],
-                    "Zeit": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }
-                if "paperqa_history" not in st.session_state:
-                    st.session_state["paperqa_history"] = []
-                st.session_state["paperqa_history"].append(qa_entry)
-            except Exception as e:
-                st.error(f"Fehler bei PaperQA: {e}")
-        if st.session_state.get("paperqa_history"):
-            st.write("---")
-            st.subheader("Q&A-History exportieren")
-            excel_data = export_qa_to_excel(st.session_state["paperqa_history"])
-            st.download_button(
-                label="Download Q&A als Excel",
-                data=excel_data,
-                file_name="paperqa_results.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-
-
-###############################################################################
-# Haupt-Modul: Multi-API-Suche + ChatGPT-Scoring + PaperQA
+# H) Multi-API-Suche (mit ChatGPT-Scoring) & Anzeige
 ###############################################################################
 def module_codewords_pubmed():
-    st.title("Multi-API-Suche + ChatGPT-Scoring + PaperQA")
-    if "profiles" not in st.session_state or not st.session_state["profiles"]:
-        st.warning("Keine Profile vorhanden. Bitte zuerst ein Profil speichern.")
-        return
+    st.title("Multi-API-Suche + ChatGPT-Scoring (Top 100)")
+
+    # --- Profilauswahl ---
     prof_names = list(st.session_state["profiles"].keys())
-    chosen_profile = st.selectbox("Wähle ein Profil:", ["(kein)"] + prof_names)
+    col_prof, col_prof_help = st.columns([0.8, 0.2])
+    with col_prof:
+        chosen_profile = st.selectbox("Wähle ein Profil:", ["(kein)"] + prof_names)
+    with col_prof_help:
+        cb_prof = st.checkbox("?", key="help_profile")
+        if cb_prof:
+            st.info(
+                "Hier wählst du dein Profil aus, das festlegt:\n"
+                "- Welche APIs genutzt werden (PubMed, Google Scholar, etc.)\n"
+                "- Welche Gene und Codewörter im Profil hinterlegt sind.\n"
+                "Wenn du '(kein)' auswählst, wird keine Suche durchgeführt."
+            )
+
     if chosen_profile == "(kein)":
-        st.info("Bitte wähle ein Profil aus.")
+        st.info("Kein Profil gewählt. -> Abbruch.")
         return
+
+    # Profil laden
     profile_data = load_settings(chosen_profile)
     if not profile_data:
         st.warning("Profil nicht gefunden oder leer.")
         return
-    st.write("Profil-Einstellungen:", profile_data)
-    codewords_str = st.text_input("Codewörter:", value=profile_data.get("codewords", ""))
+    st.write("Profil-Daten:", profile_data)
+
+    # --- Codewörter ---
+    col_cw, col_cw_help = st.columns([0.8, 0.2])
+    with col_cw:
+        default_codewords = profile_data.get("codewords", "")
+        codewords_str = st.text_input("Codewörter (werden mit Genes kombiniert):", value=default_codewords)
+    with col_cw_help:
+        cb_cw = st.checkbox("?", key="help_codewords")
+        if cb_cw:
+            st.info(
+                "Codewörter sind Suchbegriffe oder Synonyme, die zusätzlich zu den 'Gene'-Begriffen "
+                "verwendet werden. Daraus wird eine kombinierte Suchanfrage aufgebaut."
+            )
+
     genes_from_profile = profile_data.get("genes", [])
-    st.write(f"Gene: {genes_from_profile}")
-    logic_option = st.radio("Logik (AND/OR):", ["OR", "AND"], index=0)
-    if st.button("Suche starten"):
+    st.write(f"**Gene aus Profil**: {genes_from_profile}")
+
+    # --- Logik (Radio) ---
+    col_logic, col_logic_help = st.columns([0.8, 0.2])
+    with col_logic:
+        logic_option = st.radio("Logik für Codewörter + Gene in der finalen Suche:", ["OR", "AND"], index=0)
+    with col_logic_help:
+        cb_logic = st.checkbox("?", key="help_logic")
+        if cb_logic:
+            st.info(
+                "Wähle, ob du deine Codewörter und Gene per OR oder AND kombinieren willst.\n\n"
+                "Beispiel OR: (Codeword1 OR Codeword2) OR (Gene1 OR Gene2)\n"
+                "Beispiel AND: (Codeword1 AND Codeword2) AND (Gene1 AND Gene2)"
+            )
+
+    # --- Button: Suche starten ---
+    col_suche, col_suche_help = st.columns([0.8, 0.2])
+    with col_suche:
+        do_search = st.button("Suche starten")
+    with col_suche_help:
+        cb_suche = st.checkbox("?", key="help_search")
+        if cb_suche:
+            st.info(
+                "Klicke hier, um die Suche in den aktiven APIs zu starten. Die aktiven APIs "
+                "sind im gewählten Profil hinterlegt. Es werden max. 200 Ergebnisse pro API abgerufen."
+            )
+
+    if do_search:
         raw_words_list = [w.strip() for w in codewords_str.replace(",", " ").split() if w.strip()]
         raw_genes_list = genes_from_profile
+
         if not raw_words_list and not raw_genes_list:
-            st.warning("Keine Codewörter / Gene.")
+            st.warning("Keine Codewörter und keine Gene -> Suche nicht möglich.")
             return
+
+        # Finale Query
         if logic_option == "OR":
-            q_c = " OR ".join(raw_words_list) if raw_words_list else ""
-            q_g = " OR ".join(raw_genes_list) if raw_genes_list else ""
-            final_query = f"({q_c}) OR ({q_g})" if q_c and q_g else q_c or q_g
+            query_codewords = " OR ".join(raw_words_list) if raw_words_list else ""
+            query_genes = " OR ".join(raw_genes_list) if raw_genes_list else ""
+            if query_codewords and query_genes:
+                final_query = f"({query_codewords}) OR ({query_genes})"
+            else:
+                final_query = query_codewords or query_genes
         else:
-            q_c = " AND ".join(raw_words_list) if raw_words_list else ""
-            q_g = " AND ".join(raw_genes_list) if raw_genes_list else ""
-            final_query = f"({q_c}) AND ({q_g})" if q_c and q_g else q_c or q_g
+            # AND
+            query_codewords = " AND ".join(raw_words_list) if raw_words_list else ""
+            query_genes = " AND ".join(raw_genes_list) if raw_genes_list else ""
+            if query_codewords and query_genes:
+                final_query = f"({query_codewords}) AND ({query_genes})"
+            else:
+                final_query = query_codewords or query_genes
+
         st.write("**Finale Suchanfrage:**", final_query)
+
         results_all = []
         active_apis = []
+
+        # Profilgesteuert: APIs aufrufen
         if profile_data.get("use_pubmed", False):
             pm = search_pubmed(final_query, max_results=200)
             st.write(f"PubMed: {len(pm)}")
             results_all.extend(pm)
             active_apis.append("PubMed")
+
         if profile_data.get("use_epmc", False):
             ep = search_europe_pmc(final_query, max_results=200)
             st.write(f"Europe PMC: {len(ep)}")
             results_all.extend(ep)
             active_apis.append("Europe PMC")
+
         if profile_data.get("use_google", False):
             gg = search_google_scholar(final_query, max_results=200)
             st.write(f"Google Scholar: {len(gg)}")
             results_all.extend(gg)
             active_apis.append("Google Scholar")
+
         if profile_data.get("use_semantic", False):
             se = search_semantic_scholar(final_query, max_results=200)
             st.write(f"Semantic Scholar: {len(se)}")
             results_all.extend(se)
             active_apis.append("Semantic Scholar")
+
         if profile_data.get("use_openalex", False):
             oa = search_openalex(final_query, max_results=200)
             st.write(f"OpenAlex: {len(oa)}")
             results_all.extend(oa)
             active_apis.append("OpenAlex")
+
         if not results_all:
-            st.info("Keine Ergebnisse gefunden.")
+            st.info("Keine Treffer gefunden.")
             return
+
+        # Auf 1000 beschränken
         if len(results_all) > 1000:
             results_all = results_all[:1000]
+
+        # SessionState speichern
         st.session_state["search_results"] = results_all
         st.session_state["active_apis"] = active_apis
-        st.write(f"Gefundene Papers gesamt: {len(results_all)}")
-        st.dataframe(pd.DataFrame(results_all))
+
+        st.write(f"**Gefundene Papers insgesamt:** {len(results_all)}")
+        df_main = pd.DataFrame(results_all)
+        st.dataframe(df_main)
+
+    # Falls bereits Ergebnisse vorhanden
     if "search_results" in st.session_state and st.session_state["search_results"]:
-        st.write("---")
-        st.subheader("ChatGPT-Scoring => Top 100")
         all_papers = st.session_state["search_results"]
-        if st.button("Starte ChatGPT-Scoring"):
+
+        st.write("---")
+        st.subheader("ChatGPT-Online-Filterung (Top 100)")
+
+        col_scoring, col_scoring_help = st.columns([0.8, 0.2])
+        with col_scoring:
+            do_scoring = st.button("Starte ChatGPT-Scoring")
+        with col_scoring_help:
+            cb_scoring = st.checkbox("?", key="help_scoring")
+            if cb_scoring:
+                st.info(
+                    "Hier werden ChatGPT-Abfragen für jedes Paper durchgeführt, um eine Relevanz "
+                    "von 0-100 zu erhalten. Die Top 100 Papers werden als 'Main Sheet' gelistet."
+                )
+
+        if do_scoring:
+            # Prüfen, ob wir Codewords/Gene haben
             if not codewords_str.strip() and not genes_from_profile:
-                st.warning("Keine Codewörter / Gene -> Abbruch.")
+                st.warning("Keine Codewords und keine Gene vorhanden -> Abbruch.")
             else:
+                st.write("Starte ChatGPT-Scoring...\n")
                 top_results = chatgpt_online_search_with_genes(
                     all_papers,
-                    codewords=codewords_str,
+                    codewords=codewords_str,   
                     genes=genes_from_profile,
                     top_k=100
                 )
                 if top_results:
-                    st.write("**Top 100 Papers (nach Relevanz)**")
-                    df_top = pd.DataFrame({
-                        "PubMed ID": [p.get("PubMed ID", "n/a") for p in top_results],
-                        "Name": [p.get("Title", "n/a") for p in top_results],
-                        "DOI": [p.get("DOI", "n/a") for p in top_results],
-                        "Publisher": [p.get("Publisher", "n/a") for p in top_results],
-                        "Population": [p.get("Population", "n/a") for p in top_results],
-                        "Abstract": [p.get("Abstract", "n/a") for p in top_results],
+                    st.subheader("Main Sheet: Top 100 (relevanteste Papers)")
+                    df_top_main = pd.DataFrame({
+                        "PubMed ID": [p.get("PubMed ID","n/a") for p in top_results],
+                        "Name": [p.get("Title","n/a") for p in top_results],
+                        "DOI": [p.get("DOI","n/a") for p in top_results],
+                        "Publisher": [p.get("Publisher","n/a") for p in top_results],
+                        "Population": [p.get("Population","n/a") for p in top_results],
+                        "Abstract": [p.get("Abstract","n/a") for p in top_results],
                     })
-                    st.dataframe(df_top)
-                    active_apis = st.session_state.get("active_apis", [])
+                    st.dataframe(df_top_main)
+
                     st.write("---")
-                    st.subheader("Sheets pro API")
-                    all_papers_df_list = {"Top_100": df_top}
+                    st.subheader("Sheets pro API (alle gefundenen Paper pro API)")
+
+                    active_apis = st.session_state.get("active_apis", [])
+                    all_papers_df_list = {}
+
+                    # Haupt-Sheet (Top 100)
+                    all_papers_df_list["Top_100"] = df_top_main
+
+                    # Pro API alle Paper
                     for api in active_apis:
                         subset = [p for p in all_papers if p["Source"] == api]
-                        df_api = pd.DataFrame(subset)
+                        df_api = pd.DataFrame({
+                            "PubMed ID": [x.get("PubMed ID","n/a") for x in subset],
+                            "Name": [x.get("Title","n/a") for x in subset],
+                            "DOI": [x.get("DOI","n/a") for x in subset],
+                            "Publisher": [x.get("Publisher","n/a") for x in subset],
+                            "Population": [x.get("Population","n/a") for x in subset],
+                            "Abstract": [x.get("Abstract","n/a") for x in subset],
+                        })
                         st.markdown(f"**{api}:**")
                         st.dataframe(df_api)
-                        all_papers_df_list[api] = df_api
+
+                        sheet_name = sanitize_filename(api)[:31] or "API"
+                        all_papers_df_list[sheet_name] = df_api
+
+                    # --- Download-Buttons ---
+
                     st.write("---")
                     st.subheader("Ergebnisse herunterladen")
+
+                    # 1) Excel herunterladen (Top_100 + pro API ein Sheet)
                     excel_buffer = io.BytesIO()
                     with pd.ExcelWriter(excel_buffer, engine="xlsxwriter") as writer:
                         for sheet_name, df_ in all_papers_df_list.items():
-                            safe_sheet = sanitize_filename(sheet_name)[:31] or "API"
-                            df_.to_excel(writer, sheet_name=safe_sheet, index=False)
+                            df_.to_excel(writer, sheet_name=sheet_name, index=False)
                     excel_data = excel_buffer.getvalue()
+
                     st.download_button(
-                        label="Download als Excel",
+                        label="Download Paper Info as Excel",
                         data=excel_data,
                         file_name="paper_info.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
+
+                    # 2) PDF herunterladen (nur Top_100)
                     pdf_bytes = create_papers_info_pdf(top_results)
                     st.download_button(
-                        label="Download als PDF (Top 100)",
+                        label="Download Paper Info as PDF",
                         data=pdf_bytes,
                         file_name="paper_info.pdf",
                         mime="application/pdf"
                     )
-                    # PaperQA-Abschnitt
-                    paperqa_section(top_results)
 
 
 ###############################################################################
 # I) Haupt-App
 ###############################################################################
 def main():
-    st.title("Kombinierte App: ChatGPT-Paper, arXiv-Suche, Multi-API-Suche + PaperQA")
+    st.title("Kombinierte App: ChatGPT-Paper, arXiv-Suche, Multi-API-Suche (Genes+Codewords)")
+
     if "profiles" not in st.session_state:
+        # Beispiel-Profil
         st.session_state["profiles"] = {
             "DefaultProfile": {
                 "use_pubmed": True,
@@ -636,26 +735,90 @@ def main():
                 "codewords": "cancer therapy"
             }
         }
+
     menu = ["ChatGPT-Paper", "arXiv-Suche", "Multi-API-Suche"]
-    choice = st.sidebar.selectbox("Navigation", menu)
+    mcol1, mcol2 = st.columns([0.8, 0.2])
+    with mcol1:
+        choice = st.sidebar.selectbox("Navigation", menu)
+    with mcol2:
+        cb_menu = st.checkbox("?", key="help_menu")
+        if cb_menu:
+            st.info(
+                "Navigation:\n"
+                "- ChatGPT-Paper: Erstelle ein PDF basierend auf einem Prompt.\n"
+                "- arXiv-Suche: Suche Papers in arXiv und lade PDFs herunter.\n"
+                "- Multi-API-Suche: PubMed, Europe PMC, Google Scholar etc., plus ChatGPT-Scoring."
+            )
+
     if choice == "ChatGPT-Paper":
-        st.subheader("Paper mit ChatGPT generieren & speichern")
-        prompt_txt = st.text_area("Prompt:", "Schreibe ein Paper über KI in der Medizin")
-        local_dir = st.text_input("Lokaler Ordner:", "chatgpt_papers")
+        st.subheader("1) Paper mit ChatGPT generieren & lokal speichern")
+
+        col_prompt, col_prompt_help = st.columns([0.8, 0.2])
+        with col_prompt:
+            prompt_txt = st.text_area("Prompt:", "Schreibe ein Paper über KI in der Medizin.")
+        with col_prompt_help:
+            c_prompt = st.checkbox("?", key="help_prompt")
+            if c_prompt:
+                st.info(
+                    "Gib hier deinen Prompt für ChatGPT ein. Das kann ein Thema oder eine Frage sein, "
+                    "aus dem ChatGPT dann einen längeren Text (Paper) generiert."
+                )
+
+        col_dir, col_dir_help = st.columns([0.8, 0.2])
+        with col_dir:
+            local_dir = st.text_input("Zielordner lokal:", "chatgpt_papers")
+        with col_dir_help:
+            c_dir = st.checkbox("?", key="help_dir")
+            if c_dir:
+                st.info(
+                    "Hier wird festgelegt, in welchem Ordner das generierte PDF gespeichert werden soll."
+                )
+
         if st.button("Paper generieren"):
             text = generate_paper_via_chatgpt(prompt_txt)
             if text:
                 if not os.path.exists(local_dir):
                     os.makedirs(local_dir, exist_ok=True)
-                pdf_name = f"chatgpt_paper_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+                time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+                pdf_name = f"chatgpt_paper_{time_str}.pdf"
                 pdf_path = os.path.join(local_dir, pdf_name)
                 save_text_as_pdf(text, pdf_path, title="ChatGPT-Paper")
-                st.success(f"Gespeichert: {pdf_path}")
+                st.success(f"Paper gespeichert unter: {pdf_path}")
+
     elif choice == "arXiv-Suche":
-        st.subheader("arXiv-Suche + Download PDFs")
-        query = st.text_input("Suchbegriff:", "quantum computing")
-        num = st.number_input("Max Ergebnisse", 1, 50, 5)
-        local_dir_arxiv = st.text_input("Speicherordner:", "arxiv_papers")
+        st.subheader("2) arXiv-Suche & PDF-Download (lokal)")
+
+        col_arxiv_query, col_arxiv_query_help = st.columns([0.8, 0.2])
+        with col_arxiv_query:
+            query = st.text_input("arXiv Suchbegriff:", "quantum computing")
+        with col_arxiv_query_help:
+            c_arxiv_query = st.checkbox("?", key="help_arxiv_query")
+            if c_arxiv_query:
+                st.info(
+                    "Gib ein Suchwort für arXiv ein. Beispiel: 'quantum computing'. "
+                    "Es wird in Titel, Abstract etc. gesucht."
+                )
+
+        col_arxiv_num, col_arxiv_num_help = st.columns([0.8, 0.2])
+        with col_arxiv_num:
+            num = st.number_input("Anzahl", 1, 50, 5)
+        with col_arxiv_num_help:
+            c_arxiv_num = st.checkbox("?", key="help_arxiv_num")
+            if c_arxiv_num:
+                st.info(
+                    "Wähle, wie viele Ergebnisse (max.) von arXiv abgefragt werden sollen."
+                )
+
+        col_arxiv_dir, col_arxiv_dir_help = st.columns([0.8, 0.2])
+        with col_arxiv_dir:
+            local_dir_arxiv = st.text_input("Ordner für Downloads:", "arxiv_papers")
+        with col_arxiv_dir_help:
+            c_arxiv_dir = st.checkbox("?", key="help_arxiv_dir")
+            if c_arxiv_dir:
+                st.info(
+                    "Bestimmt, in welchem Ordner die heruntergeladenen PDF-Dateien gespeichert werden."
+                )
+
         if st.button("arXiv-Suche starten"):
             results = search_arxiv_papers(query, max_results=num)
             if not results:
@@ -675,10 +838,11 @@ def main():
                             if ok_:
                                 st.success(f"PDF gespeichert: {path_}")
                     else:
-                        st.write("Kein PDF-Link.")
+                        st.write("_Kein PDF-Link._")
                     st.write("---")
+
     else:
-        st.subheader("Multi-API-Suche + ChatGPT-Scoring + PaperQA")
+        st.subheader("3) Multi-API-Suche (PubMed, Europe PMC, Google Scholar, Semantic Scholar, OpenAlex)")
         module_codewords_pubmed()
 
 
