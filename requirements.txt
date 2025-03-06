@@ -23,5 +23,4 @@ paperqa2
 transformers
 torch
 openpyxl
-beautifulsoup4
 python-dotenv
