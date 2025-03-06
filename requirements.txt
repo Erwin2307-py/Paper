@@ -9,14 +9,12 @@ selenium
 urllib3
 xlsxwriter
 pandas
-openpyxl
 requests
 transformers
 selenium
 webdriver-manager
 streamlit
 selenium
-requests
 pandas
 scholarly
 xlsxwriter
