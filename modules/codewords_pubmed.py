@@ -53,8 +53,13 @@ def save_text_as_pdf(text, pdf_path, title="Paper"):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    # Unicode-fähige Schrift einbinden (DejaVuSansCondensed.ttf muss im selben Ordner liegen)
-    pdf.add_font("DejaVu", "", "DejaVuSansCondensed.ttf", uni=True)
+    # Unicode-fähige Schrift einbinden
+    # Hier ist der Pfad: modules/DejaVuSansCondensed.ttf
+    font_path = os.path.join("modules", "DejaVuSansCondensed.ttf")
+    if not os.path.exists(font_path):
+        st.error(f"TTF Font file not found: {font_path}")
+    else:
+        pdf.add_font("DejaVu", "", font_path, uni=True)
     pdf.set_font("DejaVu", "", 12)
     
     pdf.cell(0, 10, title, ln=1)
@@ -317,8 +322,12 @@ def search_openalex(query: str, max_results=100):
 def create_papers_info_pdf(papers):
     pdf = FPDF()
     pdf.add_page()
-    # Unicode-Schrift einbinden (DejaVuSansCondensed.ttf muss im gleichen Verzeichnis liegen)
-    pdf.add_font("DejaVu", "", "DejaVuSansCondensed.ttf", uni=True)
+    # Verwende die Unicode-Schrift aus modules/DejaVuSansCondensed.ttf
+    font_path = os.path.join("modules", "DejaVuSansCondensed.ttf")
+    if not os.path.exists(font_path):
+        st.error(f"Font file not found: {font_path}")
+    else:
+        pdf.add_font("DejaVu", "", font_path, uni=True)
     pdf.set_font("DejaVu", "", 12)
     
     pdf.cell(0, 10, "Paper-Informationen (Top 100)", ln=1)
@@ -453,7 +462,6 @@ def paperqa_section(top_results):
                 st.write(answer.answer)
                 with st.expander("Kontext"):
                     st.write(answer.context)
-                # Q&A in History speichern
                 qa_entry = {
                     "Modus": approach,
                     "Frage": question,
