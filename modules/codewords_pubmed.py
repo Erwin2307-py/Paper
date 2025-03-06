@@ -23,7 +23,6 @@ try:
 except ImportError:
     st.error("Bitte installiere 'fpdf', z.B. mit: pip install fpdf")
 
-
 ###############################################################################
 # A) ChatGPT: Paper erstellen & lokal speichern
 ###############################################################################
@@ -460,7 +459,7 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
 
 
 ###############################################################################
-# H) Multi-API-Suche (mit ChatGPT-Scoring) & Anzeigelogik
+# H) Multi-API-Suche (mit ChatGPT-Scoring) & Anzeige
 ###############################################################################
 def module_codewords_pubmed():
     st.title("Multi-API-Suche + ChatGPT-Scoring (Top 100)")
@@ -477,7 +476,7 @@ def module_codewords_pubmed():
                 "Hier wählst du dein Profil aus, das festlegt:\n"
                 "- Welche APIs genutzt werden (PubMed, Google Scholar, etc.)\n"
                 "- Welche Gene und Codewörter im Profil hinterlegt sind.\n"
-                "Achtung: Wenn du '(kein)' auswählst, wird keine Suche durchgeführt."
+                "Wenn du '(kein)' auswählst, wird keine Suche durchgeführt."
             )
 
     if chosen_profile == "(kein)":
@@ -500,8 +499,8 @@ def module_codewords_pubmed():
         cb_cw = st.checkbox("?", key="help_codewords")
         if cb_cw:
             st.info(
-                "Codewörter sind Synonyme oder Suchbegriffe, die zusätzlich zu den 'Gene'-Begriffen "
-                "verwendet werden. Zusammen bilden sie die finale Suchanfrage für PubMed etc."
+                "Codewörter sind Suchbegriffe oder Synonyme, die zusätzlich zu den 'Gene'-Begriffen "
+                "verwendet werden. Daraus wird eine kombinierte Suchanfrage aufgebaut."
             )
 
     genes_from_profile = profile_data.get("genes", [])
@@ -515,8 +514,9 @@ def module_codewords_pubmed():
         cb_logic = st.checkbox("?", key="help_logic")
         if cb_logic:
             st.info(
-                "Wenn du 'OR' wählst, wird in der Suchanfrage z.B. (codeword1 OR codeword2) OR (gene1 OR gene2) gebildet.\n"
-                "Bei 'AND' werden beide Gruppen kombiniert, z.B. (codeword1 AND codeword2) AND (gene1 AND gene2)."
+                "Wähle, ob du deine Codewörter und Gene per OR oder AND kombinieren willst.\n\n"
+                "Beispiel OR: (Codeword1 OR Codeword2) OR (Gene1 OR Gene2)\n"
+                "Beispiel AND: (Codeword1 AND Codeword2) AND (Gene1 AND Gene2)"
             )
 
     # --- Button: Suche starten ---
@@ -527,21 +527,19 @@ def module_codewords_pubmed():
         cb_suche = st.checkbox("?", key="help_search")
         if cb_suche:
             st.info(
-                "Klicke auf 'Suche starten', um alle im Profil aktivierten APIs abzufragen. "
-                "Die Ergebnisse werden gesammelt in der Tabelle angezeigt."
+                "Klicke hier, um die Suche in den aktiven APIs zu starten. Die aktiven APIs "
+                "sind im gewählten Profil hinterlegt. Es werden max. 200 Ergebnisse pro API abgerufen."
             )
 
     if do_search:
-        # 1) Codewörter in Liste
         raw_words_list = [w.strip() for w in codewords_str.replace(",", " ").split() if w.strip()]
-        # 2) Genes in Liste
         raw_genes_list = genes_from_profile
 
         if not raw_words_list and not raw_genes_list:
             st.warning("Keine Codewörter und keine Gene -> Suche nicht möglich.")
             return
 
-        # Finale Query bilden
+        # Finale Query
         if logic_option == "OR":
             query_codewords = " OR ".join(raw_words_list) if raw_words_list else ""
             query_genes = " OR ".join(raw_genes_list) if raw_genes_list else ""
@@ -560,11 +558,10 @@ def module_codewords_pubmed():
 
         st.write("**Finale Suchanfrage:**", final_query)
 
-        # Sammle Ergebnisse
         results_all = []
         active_apis = []
 
-        # Prüfe, welche APIs im Profil aktiviert sind
+        # Profilgesteuert: APIs aufrufen
         if profile_data.get("use_pubmed", False):
             pm = search_pubmed(final_query, max_results=200)
             st.write(f"PubMed: {len(pm)}")
@@ -603,6 +600,7 @@ def module_codewords_pubmed():
         if len(results_all) > 1000:
             results_all = results_all[:1000]
 
+        # SessionState speichern
         st.session_state["search_results"] = results_all
         st.session_state["active_apis"] = active_apis
 
@@ -610,7 +608,7 @@ def module_codewords_pubmed():
         df_main = pd.DataFrame(results_all)
         st.dataframe(df_main)
 
-    # Falls bereits Ergebnisse vorhanden sind
+    # Falls bereits Ergebnisse vorhanden
     if "search_results" in st.session_state and st.session_state["search_results"]:
         all_papers = st.session_state["search_results"]
 
@@ -624,11 +622,12 @@ def module_codewords_pubmed():
             cb_scoring = st.checkbox("?", key="help_scoring")
             if cb_scoring:
                 st.info(
-                    "Hiermit wird ChatGPT für jedes Paper (Title, Abstract) befragt und eine Relevanz "
-                    "zwischen 0 und 100 vergeben. Anschließend werden die Top 100 Papers präsentiert."
+                    "Hier werden ChatGPT-Abfragen für jedes Paper durchgeführt, um eine Relevanz "
+                    "von 0-100 zu erhalten. Die Top 100 Papers werden als 'Main Sheet' gelistet."
                 )
 
         if do_scoring:
+            # Prüfen, ob wir Codewords/Gene haben
             if not codewords_str.strip() and not genes_from_profile:
                 st.warning("Keine Codewords und keine Gene vorhanden -> Abbruch.")
             else:
@@ -640,7 +639,7 @@ def module_codewords_pubmed():
                     top_k=100
                 )
                 if top_results:
-                    st.subheader("Main sheet: Top 100 (relevanteste Papers)")
+                    st.subheader("Main Sheet: Top 100 (relevanteste Papers)")
                     df_top_main = pd.DataFrame({
                         "PubMed ID": [p.get("PubMed ID","n/a") for p in top_results],
                         "Name": [p.get("Title","n/a") for p in top_results],
@@ -655,6 +654,11 @@ def module_codewords_pubmed():
                     st.subheader("Sheets pro API (alle gefundenen Paper pro API)")
 
                     active_apis = st.session_state.get("active_apis", [])
+                    all_papers_df_list = {}  # Zwischenspeicher für den Excel-Export
+
+                    # Main sheet (Top 100) => packen wir ebenfalls in den Zwischenspeicher
+                    all_papers_df_list["Top_100"] = df_top_main
+
                     for api in active_apis:
                         subset = [p for p in all_papers if p["Source"] == api]
                         df_api = pd.DataFrame({
@@ -667,6 +671,31 @@ def module_codewords_pubmed():
                         })
                         st.markdown(f"**{api}:**")
                         st.dataframe(df_api)
+                        # Für den Excel-Export
+                        # Sheet-Name darf max. 31 Zeichen haben
+                        sheet_name = sanitize_filename(api)[:31] or "API"
+                        all_papers_df_list[sheet_name] = df_api
+
+                    # NEU: Button => Excel erzeugen
+                    st.write("---")
+                    st.subheader("Optional: Ergebnisse als Excel speichern")
+                    if st.button("Excel erstellen"):
+                        time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        excel_filename = f"papers_{time_str}.xlsx"
+
+                        # Lokaler Ordner
+                        local_dir_excel = "excel_export"
+                        if not os.path.exists(local_dir_excel):
+                            os.makedirs(local_dir_excel)
+
+                        excel_path = os.path.join(local_dir_excel, excel_filename)
+
+                        # Schreiben wir die DataFrames in das Excel
+                        with pd.ExcelWriter(excel_path, engine="xlsxwriter") as writer:
+                            for sheet_name, df_ in all_papers_df_list.items():
+                                df_.to_excel(writer, sheet_name=sheet_name, index=False)
+
+                        st.success(f"Excel-Datei erstellt unter: {excel_path}")
 
 
 ###############################################################################
@@ -675,8 +704,8 @@ def module_codewords_pubmed():
 def main():
     st.title("Kombinierte App: ChatGPT-Paper, arXiv-Suche, Multi-API-Suche (Genes+Codewords)")
 
-    # Profil(e) einmalig anlegen, falls nicht vorhanden
     if "profiles" not in st.session_state:
+        # Beispiel-Profil
         st.session_state["profiles"] = {
             "DefaultProfile": {
                 "use_pubmed": True,
@@ -697,10 +726,10 @@ def main():
         cb_menu = st.checkbox("?", key="help_menu")
         if cb_menu:
             st.info(
-                "Wähle den Bereich:\n"
-                "- 'ChatGPT-Paper': Lasse dir aus einem Prompt ein PDF generieren\n"
-                "- 'arXiv-Suche': Suche in arXiv und lade ggf. PDFs herunter\n"
-                "- 'Multi-API-Suche': Durchsuche PubMed etc. + ChatGPT-Relevanzfilter"
+                "Navigation:\n"
+                "- ChatGPT-Paper: Erstelle ein PDF basierend auf einem Prompt.\n"
+                "- arXiv-Suche: Suche Papers in arXiv und lade PDFs herunter.\n"
+                "- Multi-API-Suche: PubMed, Europe PMC, Google Scholar etc., plus ChatGPT-Scoring."
             )
 
     if choice == "ChatGPT-Paper":
@@ -713,8 +742,8 @@ def main():
             c_prompt = st.checkbox("?", key="help_prompt")
             if c_prompt:
                 st.info(
-                    "Hier gibst du deinen Prompt für ChatGPT ein. Das kann z.B. eine Frage oder ein Thema sein, "
-                    "zu dem du einen Text haben möchtest."
+                    "Gib hier deinen Prompt für ChatGPT ein. Das kann ein Thema oder eine Frage sein, "
+                    "aus dem ChatGPT dann einen längeren Text (Paper) generiert."
                 )
 
         col_dir, col_dir_help = st.columns([0.8, 0.2])
@@ -724,7 +753,7 @@ def main():
             c_dir = st.checkbox("?", key="help_dir")
             if c_dir:
                 st.info(
-                    "Hier kannst du festlegen, in welchem Ordner das generierte PDF gespeichert werden soll."
+                    "Hier wird festgelegt, in welchem Ordner das generierte PDF gespeichert werden soll."
                 )
 
         if st.button("Paper generieren"):
@@ -748,8 +777,8 @@ def main():
             c_arxiv_query = st.checkbox("?", key="help_arxiv_query")
             if c_arxiv_query:
                 st.info(
-                    "Gib hier ein Schlagwort oder Thema ein, das du bei arXiv durchsuchen willst. "
-                    "z.B. 'quantum computing'."
+                    "Gib ein Suchwort für arXiv ein. Beispiel: 'quantum computing'. "
+                    "Es wird in Titel, Abstract etc. gesucht."
                 )
 
         col_arxiv_num, col_arxiv_num_help = st.columns([0.8, 0.2])
@@ -759,7 +788,7 @@ def main():
             c_arxiv_num = st.checkbox("?", key="help_arxiv_num")
             if c_arxiv_num:
                 st.info(
-                    "Leg fest, wie viele Papers maximal von arXiv abgerufen werden sollen (1-50)."
+                    "Wähle, wie viele Ergebnisse (max.) von arXiv abgefragt werden sollen."
                 )
 
         col_arxiv_dir, col_arxiv_dir_help = st.columns([0.8, 0.2])
@@ -769,7 +798,7 @@ def main():
             c_arxiv_dir = st.checkbox("?", key="help_arxiv_dir")
             if c_arxiv_dir:
                 st.info(
-                    "Bestimmt, in welchem Ordner die PDFs der arXiv-Papers gespeichert werden."
+                    "Bestimmt, in welchem Ordner die heruntergeladenen PDF-Dateien gespeichert werden."
                 )
 
         if st.button("arXiv-Suche starten"):
@@ -795,7 +824,7 @@ def main():
                     st.write("---")
 
     else:
-        st.subheader("3) Multi-API-Suche")
+        st.subheader("3) Multi-API-Suche (PubMed, Europe PMC, Google Scholar, Semantic Scholar, OpenAlex)")
         module_codewords_pubmed()
 
 
