@@ -12,7 +12,6 @@ pandas
 transformers
 webdriver-manager
 pandas
-xlsxwriter
 feedparser
 paperqa2
 transformers
