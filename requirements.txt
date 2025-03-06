@@ -22,5 +22,5 @@ feedparser
 paperqa2
 transformers
 torch
-openpyxl
-python-dotenv
+
+
