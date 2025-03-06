@@ -36,7 +36,7 @@ if not os.path.isfile(init_file):
     )
     st.stop()
 
-# 4) Füge den Ordner "modules/paper-qa" in sys.path ein, damit Python das Paket "paperqa" findet
+# 4) Füge den Ordner "modules/paper-qa" in den sys.path ein, damit Python das Paket "paperqa" findet
 if paperqa_local_path not in sys.path:
     sys.path.insert(0, paperqa_local_path)
 importlib.invalidate_caches()
@@ -47,7 +47,7 @@ try:
 except ImportError as e:
     st.error(
         "Konnte 'paperqa' nicht importieren.\n"
-        "Bitte prüfe, ob im folgenden Ordner die Datei '__init__.py' existiert:\n"
+        "Bitte prüfe, ob im folgenden Ordner 'paperqa/__init__.py' existiert:\n"
         f"{paperqa_package_path}\n"
         f"Fehlermeldung: {e}"
     )
@@ -65,6 +65,7 @@ try:
 except ImportError:
     st.error("Bitte installiere 'fpdf' via: pip install fpdf")
 
+
 ###############################################################################
 # A) ChatGPT: Paper erstellen & lokal speichern
 ###############################################################################
@@ -81,6 +82,7 @@ def generate_paper_via_chatgpt(prompt_text, model="gpt-3.5-turbo"):
     except Exception as e:
         st.error(f"Fehler bei ChatGPT-API: {e}")
         return ""
+
 
 def save_text_as_pdf(text, pdf_path, title="Paper"):
     pdf = FPDF()
@@ -100,6 +102,7 @@ def save_text_as_pdf(text, pdf_path, title="Paper"):
         pdf.multi_cell(0, 8, line)
         pdf.ln(2)
     pdf.output(pdf_path, "F")
+
 
 ###############################################################################
 # B) arXiv-Suche & Download & lokal speichern
@@ -132,8 +135,10 @@ def search_arxiv_papers(query, max_results=5):
         })
     return papers_info
 
+
 def sanitize_filename(fname):
     return re.sub(r"[^a-zA-Z0-9_\-]+", "_", fname)
+
 
 def download_arxiv_pdf(pdf_url, local_filepath):
     try:
@@ -145,6 +150,7 @@ def download_arxiv_pdf(pdf_url, local_filepath):
     except Exception as e:
         st.error(f"Fehler beim Download PDF: {e}")
         return False
+
 
 ###############################################################################
 # C) Multi-API-Suche (PubMed, Europe PMC, Google Scholar, Semantic Scholar, OpenAlex)
@@ -161,6 +167,7 @@ def esearch_pubmed(query: str, max_results=100, timeout=10):
         st.error(f"PubMed-Suche fehlgeschlagen: {e}")
         return []
 
+
 def parse_efetch_response(xml_text: str):
     root = ET.fromstring(xml_text)
     pmid_abstract_map = {}
@@ -172,6 +179,7 @@ def parse_efetch_response(xml_text: str):
         if pmid_val:
             pmid_abstract_map[pmid_val] = abstract_text
     return pmid_abstract_map
+
 
 def fetch_pubmed_abstracts(pmids, timeout=10):
     if not pmids:
@@ -185,6 +193,7 @@ def fetch_pubmed_abstracts(pmids, timeout=10):
     except Exception as e:
         st.error(f"Fehler bei fetch abstracts: {e}")
         return {}
+
 
 def get_pubmed_details(pmids: list):
     if not pmids:
@@ -222,11 +231,13 @@ def get_pubmed_details(pmids: list):
         })
     return results
 
+
 def search_pubmed(query: str, max_results=100):
     pmids = esearch_pubmed(query, max_results=max_results)
     if not pmids:
         return []
     return get_pubmed_details(pmids)
+
 
 def search_europe_pmc(query: str, max_results=100, timeout=10):
     url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
@@ -256,6 +267,7 @@ def search_europe_pmc(query: str, max_results=100, timeout=10):
         st.error(f"Europe PMC-Suche fehlgeschlagen: {e}")
         return results
 
+
 def search_google_scholar(query: str, max_results=100):
     results = []
     try:
@@ -280,6 +292,7 @@ def search_google_scholar(query: str, max_results=100):
     except Exception as e:
         st.error(f"Google Scholar-Suche: {e}")
         return []
+
 
 def search_semantic_scholar(query: str, max_results=100):
     url = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -306,6 +319,7 @@ def search_semantic_scholar(query: str, max_results=100):
     except Exception as e:
         st.error(f"Semantic Scholar: {e}")
         return []
+
 
 def search_openalex(query: str, max_results=100):
     url = "https://api.openalex.org/works"
@@ -334,6 +348,7 @@ def search_openalex(query: str, max_results=100):
     except Exception as e:
         st.error(f"OpenAlex: {e}")
         return []
+
 
 ###############################################################################
 # D) PDF-Helferfunktion: Papers in PDF (Unicode-fähig)
@@ -364,6 +379,7 @@ def create_papers_info_pdf(papers):
         pdf.ln(8)
     return pdf.output(dest="S").encode("latin-1", "replace")
 
+
 ###############################################################################
 # E) "Profiles" laden
 ###############################################################################
@@ -371,6 +387,7 @@ def load_settings(profile_name: str):
     if "profiles" in st.session_state:
         return st.session_state["profiles"].get(profile_name, None)
     return None
+
 
 ###############################################################################
 # G) ChatGPT-Scoring
@@ -416,6 +433,7 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
         results_scored.append(new_p)
     results_scored.sort(key=lambda x: x["Relevance"], reverse=True)
     return results_scored[:top_k]
+
 
 ###############################################################################
 # PAPER-QA-ABSCHNITT
