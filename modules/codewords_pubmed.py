@@ -77,6 +77,7 @@ def save_text_as_pdf(text, pdf_path, title="Paper"):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
+    # Unicode-fähige Schrift einbinden; hier liegt der Pfad: modules/DejaVuSansCondensed.ttf
     font_path = os.path.join(BASE_DIR, "modules", "DejaVuSansCondensed.ttf")
     if not os.path.exists(font_path):
         st.error(f"TTF Font file not found: {font_path}")
@@ -519,30 +520,24 @@ def module_codewords_pubmed():
 
     prof_names = list(st.session_state["profiles"].keys())
     chosen_profile = st.selectbox("Wähle ein Profil:", ["(kein)"] + prof_names)
-
     if chosen_profile == "(kein)":
         st.info("Bitte wähle ein Profil aus.")
         return
-
     profile_data = load_settings(chosen_profile)
     if not profile_data:
         st.warning("Profil nicht gefunden oder leer.")
         return
-
     st.write("Profil-Einstellungen:", profile_data)
     codewords_str = st.text_input("Codewörter:", value=profile_data.get("codewords", ""))
     genes_from_profile = profile_data.get("genes", [])
     st.write(f"Gene: {genes_from_profile}")
-
     logic_option = st.radio("Logik (AND/OR):", ["OR", "AND"], index=0)
-
     if st.button("Suche starten"):
         raw_words_list = [w.strip() for w in codewords_str.replace(",", " ").split() if w.strip()]
         raw_genes_list = genes_from_profile
         if not raw_words_list and not raw_genes_list:
             st.warning("Keine Codewörter / Gene.")
             return
-
         if logic_option == "OR":
             q_c = " OR ".join(raw_words_list) if raw_words_list else ""
             q_g = " OR ".join(raw_genes_list) if raw_genes_list else ""
@@ -551,9 +546,7 @@ def module_codewords_pubmed():
             q_c = " AND ".join(raw_words_list) if raw_words_list else ""
             q_g = " AND ".join(raw_genes_list) if raw_genes_list else ""
             final_query = f"({q_c}) AND ({q_g})" if q_c and q_g else q_c or q_g
-
         st.write("**Finale Suchanfrage:**", final_query)
-
         results_all = []
         active_apis = []
         if profile_data.get("use_pubmed", False):
@@ -581,19 +574,15 @@ def module_codewords_pubmed():
             st.write(f"OpenAlex: {len(oa)}")
             results_all.extend(oa)
             active_apis.append("OpenAlex")
-
         if not results_all:
             st.info("Keine Ergebnisse gefunden.")
             return
-
         if len(results_all) > 1000:
             results_all = results_all[:1000]
-
         st.session_state["search_results"] = results_all
         st.session_state["active_apis"] = active_apis
         st.write(f"Gefundene Papers gesamt: {len(results_all)}")
         st.dataframe(pd.DataFrame(results_all))
-
     if "search_results" in st.session_state and st.session_state["search_results"]:
         st.write("---")
         st.subheader("ChatGPT-Scoring => Top 100")
@@ -620,11 +609,9 @@ def module_codewords_pubmed():
                         "Relevance": [p.get("Relevance", 0) for p in top_results]
                     })
                     st.dataframe(df_top)
-
                     active_apis = st.session_state.get("active_apis", [])
                     st.write("---")
                     st.subheader("Sheets pro API")
-
                     all_papers_df_list = {"Top_100": df_top}
                     for api in active_apis:
                         subset = [p for p in all_papers if p["Source"] == api]
@@ -632,7 +619,6 @@ def module_codewords_pubmed():
                         st.markdown(f"**{api}:**")
                         st.dataframe(df_api)
                         all_papers_df_list[api] = df_api
-
                     st.write("---")
                     st.subheader("Ergebnisse herunterladen")
                     excel_buffer = io.BytesIO()
@@ -647,7 +633,6 @@ def module_codewords_pubmed():
                         file_name="paper_info.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
-
                     pdf_bytes = create_papers_info_pdf(top_results)
                     st.download_button(
                         label="Download als PDF (Top 100)",
@@ -662,7 +647,6 @@ def module_codewords_pubmed():
 def main():
     st.set_page_config(layout="wide")
     st.title("Kombinierte App: ChatGPT-Paper, arXiv-Suche, Multi-API-Suche + PaperQA (lokales paperqa)")
-
     if "profiles" not in st.session_state:
         st.session_state["profiles"] = {
             "DefaultProfile": {
@@ -675,10 +659,8 @@ def main():
                 "codewords": "cancer therapy"
             }
         }
-
     menu = ["ChatGPT-Paper", "arXiv-Suche", "Multi-API-Suche"]
     choice = st.sidebar.selectbox("Navigation", menu)
-    
     if choice == "ChatGPT-Paper":
         st.subheader("Paper mit ChatGPT generieren & speichern")
         prompt_txt = st.text_area("Prompt:", "Schreibe ein Paper über KI in der Medizin")
@@ -692,7 +674,6 @@ def main():
                 pdf_path = os.path.join(local_dir, pdf_name)
                 save_text_as_pdf(text, pdf_path, title="ChatGPT-Paper")
                 st.success(f"Gespeichert: {pdf_path}")
-
     elif choice == "arXiv-Suche":
         st.subheader("arXiv-Suche + Download PDFs")
         query = st.text_input("Suchbegriff:", "quantum computing")
@@ -719,7 +700,6 @@ def main():
                     else:
                         st.write("Kein PDF-Link.")
                     st.write("---")
-
     else:
         st.subheader("Multi-API-Suche + ChatGPT-Scoring + PaperQA (lokales paperqa)")
         module_codewords_pubmed()
