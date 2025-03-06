@@ -23,6 +23,7 @@ try:
 except ImportError:
     st.error("Bitte installiere 'fpdf', z.B. mit: pip install fpdf")
 
+
 ###############################################################################
 # A) ChatGPT: Paper erstellen & lokal speichern
 ###############################################################################
@@ -458,6 +459,7 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
         new_p["Relevance"] = score
         results_scored.append(new_p)
 
+    # Sortiert nach Relevanz, absteigend
     results_scored.sort(key=lambda x: x["Relevance"], reverse=True)
     return results_scored[:top_k]
 
@@ -466,7 +468,7 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
 # H) Multi-API-Suche + ChatGPT mit Genes (aus Profil)
 ###############################################################################
 def module_codewords_pubmed():
-    st.title("Multi-API-Suche (PubMed, Europe PMC, Google Scholar, ...) + ChatGPT-Scoring (Genes + Codewörter)")
+    st.title("Multi-API-Suche (PubMed, Europe PMC, Google Scholar, Semantic Scholar, OpenAlex) + ChatGPT-Scoring")
 
     # Prüfen, ob Profile existieren
     if "profiles" not in st.session_state or not st.session_state["profiles"]:
@@ -569,7 +571,6 @@ def module_codewords_pubmed():
             results_all = results_all[:1000]
 
         st.session_state["search_results"] = results_all
-        # Speichern wir auch die Liste der aktiven APIs
         st.session_state["active_apis"] = active_apis
         st.write(f"Gefundene Papers insgesamt: {len(results_all)}")
 
@@ -580,25 +581,7 @@ def module_codewords_pubmed():
         st.dataframe(df_main)
 
         st.write("---")
-        st.subheader("ChatGPT-Online-Filterung nach Relevanz")
-
-        ### NEU: „Kästchen“ mit ChatGPT-Auswahl/Kriterien
-        chatgpt_box = st.expander("ChatGPT Auswahl", expanded=True)
-        with chatgpt_box:
-            # Das ausgewählte Gen
-            #  (In diesem Beispiel kann es mehrere geben; wir listen sie kommasepariert)
-            gene_str = ", ".join(genes_from_profile) if genes_from_profile else "(kein Gen)"
-
-            # Welche API
-            #  (Haben wir in st.session_state["active_apis"] gespeichert)
-            chosen_apis_str = ", ".join(st.session_state.get("active_apis", ["(keine APIs)"]))
-
-            # Synonyme = Codewords
-            synonyms_str = codewords_str.strip() or "(keine Codewords)"
-
-            st.markdown(f"**Ausgewählte Gene (aus Profil/Sheet):** {gene_str}")
-            st.markdown(f"**Aktive APIs:** {chosen_apis_str}")
-            st.markdown(f"**Synonyme (Codewörter) für Online-Filterung:** {synonyms_str}")
+        st.subheader("ChatGPT-Online-Filterung (Top 100)")
 
         if st.button("Starte ChatGPT-Scoring"):
             if not codewords_str.strip() and not genes_from_profile:
@@ -609,35 +592,38 @@ def module_codewords_pubmed():
                     all_papers,
                     codewords=codewords_str,   # Aus dem Textfeld (ggf. Profil)
                     genes=genes_from_profile,  # Immer aus Profil
-                    top_k=100                  # Nur Top 100
+                    top_k=100
                 )
                 if top_results:
-                    st.subheader("Top 100 Paper (nach ChatGPT-Relevanz)")
-                    df_top = pd.DataFrame(top_results)
-                    st.dataframe(df_top)
+                    st.subheader("Main sheet: Top 100 (relevanteste Papers)")
+                    # Wir bauen explizit ein "Haupt-Sheet" mit bestimmten Spalten
+                    df_top_main = pd.DataFrame({
+                        "PubMed ID": [p.get("PubMed ID","n/a") for p in top_results],
+                        "Name": [p.get("Title","n/a") for p in top_results],
+                        "DOI": [p.get("DOI","n/a") for p in top_results],
+                        "Publisher": [p.get("Publisher","n/a") for p in top_results],
+                        "Population": [p.get("Population","n/a") for p in top_results],
+                        "Abstract": [p.get("Abstract","n/a") for p in top_results],
+                    })
+                    st.dataframe(df_top_main)
 
-                    # Button zum lokalen Excel-Export
                     st.write("---")
-                    st.subheader("Excel-Export")
-                    
-                    codew_for_filename = sanitize_filename(codewords_str) or "keine_codewords"
-                    time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    excel_filename = f"papers_{codew_for_filename}_{time_str}.xlsx"
+                    st.subheader("Sheets pro API (alle gefundenen Paper pro API)")
 
-                    if st.button("Top 100 als Excel speichern (lokal)"):
-                        local_dir_excel = "excel_results"
-                        if not os.path.exists(local_dir_excel):
-                            os.makedirs(local_dir_excel)
-
-                        excel_path = os.path.join(local_dir_excel, excel_filename)
-
-                        df_top_all = pd.DataFrame(top_results)
-                        with pd.ExcelWriter(excel_path, engine="xlsxwriter") as writer:
-                            for source_name, group_df in df_top_all.groupby("Source"):
-                                sheet_name = sanitize_filename(str(source_name))[:31]
-                                group_df.to_excel(writer, sheet_name=sheet_name, index=False)
-
-                        st.success(f"Excel gespeichert unter: {excel_path}")
+                    active_apis = st.session_state.get("active_apis", [])
+                    for api in active_apis:
+                        # Alle Paper dieser API (nicht nur top100)
+                        subset = [p for p in all_papers if p["Source"] == api]
+                        df_api = pd.DataFrame({
+                            "PubMed ID": [x.get("PubMed ID","n/a") for x in subset],
+                            "Name": [x.get("Title","n/a") for x in subset],
+                            "DOI": [x.get("DOI","n/a") for x in subset],
+                            "Publisher": [x.get("Publisher","n/a") for x in subset],
+                            "Population": [x.get("Population","n/a") for x in subset],
+                            "Abstract": [x.get("Abstract","n/a") for x in subset],
+                        })
+                        st.markdown(f"**{api}:**")
+                        st.dataframe(df_api)
 
 
 ###############################################################################
@@ -714,3 +700,4 @@ def main():
 if __name__ == "__main__":
     st.set_page_config(layout="wide")
     main()
+
