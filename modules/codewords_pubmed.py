@@ -14,19 +14,27 @@ import base64
 import sys
 
 # -------------------------------------------------------------
-# 1) Pfad zu 'modules/paper-qa' hinzufügen, 
-#    da dort der Ordner 'paperqa/' liegt.
-paperqa_local_path = os.path.join("modules", "paper-qa")
-if os.path.isdir(paperqa_local_path):
-    sys.path.insert(0, paperqa_local_path)
+# 1) Absoluten Pfad zum Skript ermitteln
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# 2) paperqa importieren
+# 2) Absoluten Pfad zum Ordner 'modules/paper-qa' zusammenbauen.
+# Hier gehen wir davon aus, dass sich der Unterordner 'paperqa' direkt in 'modules/paper-qa' befindet.
+paperqa_local_path = os.path.join(BASE_DIR, "modules", "paper-qa")
+if not os.path.isdir(paperqa_local_path):
+    st.error(f"Verzeichnis nicht gefunden: {paperqa_local_path}")
+    st.stop()
+
+# 3) Füge diesen Pfad in sys.path ein, damit Python nach 'paperqa' sucht.
+sys.path.insert(0, paperqa_local_path)
+
+# 4) Versuche nun, das Modul 'paperqa' zu importieren.
 try:
     from paperqa import Docs
 except ImportError as e:
     st.error(
         "Konnte 'paperqa' nicht aus 'modules/paper-qa/paperqa/' importieren.\n"
-        "Bitte prüfen, ob 'paperqa/__init__.py' existiert."
+        "Bitte prüfe, ob der Ordner 'paperqa' in folgendem Pfad existiert und eine Datei '__init__.py' enthält:\n"
+        f"{os.path.join(paperqa_local_path, 'paperqa')}"
     )
     st.stop()
 
@@ -65,7 +73,7 @@ def save_text_as_pdf(text, pdf_path, title="Paper"):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    font_path = os.path.join("modules", "DejaVuSansCondensed.ttf")
+    font_path = os.path.join(BASE_DIR, "modules", "DejaVuSansCondensed.ttf")
     if not os.path.exists(font_path):
         st.error(f"TTF Font file not found: {font_path}")
     else:
@@ -332,7 +340,7 @@ def search_openalex(query: str, max_results=100):
 def create_papers_info_pdf(papers):
     pdf = FPDF()
     pdf.add_page()
-    font_path = os.path.join("modules", "DejaVuSansCondensed.ttf")
+    font_path = os.path.join(BASE_DIR, "modules", "DejaVuSansCondensed.ttf")
     if not os.path.exists(font_path):
         st.error(f"Font file not found: {font_path}")
     else:
@@ -495,11 +503,12 @@ def paperqa_section(top_results):
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
+
 ###############################################################################
-# Haupt-Modul
+# Haupt-Modul: Multi-API-Suche + ChatGPT-Scoring + PaperQA
 ###############################################################################
 def module_codewords_pubmed():
-    st.title("Multi-API-Suche + ChatGPT-Scoring + PaperQA (lokale paperqa)")
+    st.title("Multi-API-Suche + ChatGPT-Scoring + PaperQA (lokales paperqa)")
     if "profiles" not in st.session_state or not st.session_state["profiles"]:
         st.warning("Keine Profile vorhanden. Bitte zuerst ein Profil speichern.")
         return
@@ -709,7 +718,7 @@ def main():
                     st.write("---")
 
     else:
-        st.subheader("Multi-API-Suche + ChatGPT-Scoring + PaperQA (lokale paperqa)")
+        st.subheader("Multi-API-Suche + ChatGPT-Scoring + PaperQA (lokales paperqa)")
         module_codewords_pubmed()
 
 
