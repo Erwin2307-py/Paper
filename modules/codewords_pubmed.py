@@ -12,22 +12,22 @@ from datetime import datetime
 from collections import defaultdict
 import base64
 import sys
+import openai
 
 # -------------------------------------------------------------
 # 1) Absoluten Pfad zum Skript ermitteln
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # 2) Absoluten Pfad zum Ordner 'modules/paper-qa' zusammenbauen.
-# Hier gehen wir davon aus, dass sich der Unterordner 'paperqa' direkt in 'modules/paper-qa' befindet.
 paperqa_local_path = os.path.join(BASE_DIR, "modules", "paper-qa")
 if not os.path.isdir(paperqa_local_path):
     st.error(f"Verzeichnis nicht gefunden: {paperqa_local_path}")
     st.stop()
 
-# 3) Füge diesen Pfad in sys.path ein, damit Python nach 'paperqa' sucht.
+# 3) Füge diesen Pfad in sys.path ein, damit Python den Unterordner 'paperqa' findet.
 sys.path.insert(0, paperqa_local_path)
 
-# 4) Versuche nun, das Modul 'paperqa' zu importieren.
+# 4) Versuche, das Modul 'paperqa' zu importieren.
 try:
     from paperqa import Docs
 except ImportError as e:
@@ -44,7 +44,6 @@ try:
 except ImportError:
     st.warning("Bitte installiere 'scholarly' via: pip install scholarly")
 
-import openai
 try:
     from fpdf import FPDF
 except ImportError:
@@ -659,7 +658,6 @@ def main():
     st.set_page_config(layout="wide")
     st.title("Kombinierte App: ChatGPT-Paper, arXiv-Suche, Multi-API-Suche + PaperQA (lokales paperqa)")
 
-    # Default-Profil, falls keins angelegt:
     if "profiles" not in st.session_state:
         st.session_state["profiles"] = {
             "DefaultProfile": {
