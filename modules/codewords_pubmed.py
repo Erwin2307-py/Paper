@@ -18,10 +18,9 @@ import openai
 # Absoluten Pfad zum aktuellen Skript ermitteln
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Versuche zuerst, den Ordner "modules/paper-qa" zu finden.
+# Versuche, den Ordner "modules/paper-qa" zu finden
 paperqa_local_path = os.path.join(BASE_DIR, "modules", "paper-qa")
 if not os.path.isdir(paperqa_local_path):
-    # Falls nicht vorhanden, als Alternative "<BASE_DIR>/paper-qa" verwenden.
     alternative_path = os.path.join(BASE_DIR, "paper-qa")
     if os.path.isdir(alternative_path):
         paperqa_local_path = alternative_path
@@ -29,16 +28,16 @@ if not os.path.isdir(paperqa_local_path):
         st.error(f"Verzeichnis nicht gefunden: {paperqa_local_path} oder {alternative_path}")
         st.stop()
 
-# Füge den gefundenen Pfad in sys.path ein, damit Python den Unterordner "paperqa" findet.
+# Füge den gefundenen Pfad in sys.path ein, sodass Python im Ordner "paperqa" sucht
 sys.path.insert(0, paperqa_local_path)
 
-# Versuche, das Modul "paperqa" zu importieren.
+# Importiere das Modul "paperqa" aus dem lokalen Repository
 try:
     from paperqa import Docs
 except ImportError as e:
     st.error(
         "Konnte 'paperqa' nicht importieren.\n"
-        "Bitte prüfe, ob im folgenden Ordner 'paperqa/__init__.py' existiert:\n"
+        "Bitte prüfe, ob im folgenden Ordner die Datei 'paperqa/__init__.py' existiert:\n"
         f"{os.path.join(paperqa_local_path, 'paperqa')}"
     )
     st.stop()
@@ -77,7 +76,7 @@ def save_text_as_pdf(text, pdf_path, title="Paper"):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    # Unicode-fähige Schrift einbinden; hier liegt der Pfad: modules/DejaVuSansCondensed.ttf
+    # Unicode-Schrift aus modules/DejaVuSansCondensed.ttf
     font_path = os.path.join(BASE_DIR, "modules", "DejaVuSansCondensed.ttf")
     if not os.path.exists(font_path):
         st.error(f"TTF Font file not found: {font_path}")
@@ -644,6 +643,9 @@ def module_codewords_pubmed():
                     paperqa_section(top_results)
 
 
+###############################################################################
+# I) Haupt-App
+###############################################################################
 def main():
     st.set_page_config(layout="wide")
     st.title("Kombinierte App: ChatGPT-Paper, arXiv-Suche, Multi-API-Suche + PaperQA (lokales paperqa)")
