@@ -11,40 +11,6 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from collections import defaultdict
 import base64
-import sys
-import openai
-import importlib
-
-# -------------------------------------------------------------
-# Absoluten Pfad zum aktuellen Skript ermitteln
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# Versuche, den Ordner "modules/paper-qa" zu finden
-paperqa_local_path = os.path.join(BASE_DIR, "modules", "paper-qa")
-if not os.path.isdir(paperqa_local_path):
-    # Alternative: direkt im Ordner "paper-qa"
-    alternative_path = os.path.join(BASE_DIR, "paper-qa")
-    if os.path.isdir(alternative_path):
-        paperqa_local_path = alternative_path
-    else:
-        st.error(f"Verzeichnis nicht gefunden: {paperqa_local_path} oder {alternative_path}")
-        st.stop()
-
-# Füge den gefundenen Pfad in sys.path ein, sodass Python den Unterordner "paperqa" findet
-sys.path.insert(0, paperqa_local_path)
-# Invalidate caches, damit Änderungen in sys.path sofort gelten
-importlib.invalidate_caches()
-
-# Versuche, das Modul "paperqa" zu importieren
-try:
-    from paperqa import Docs
-except ImportError as e:
-    st.error(
-        "Konnte 'paperqa' nicht importieren.\n"
-        "Bitte prüfe, ob im folgenden Ordner die Datei '__init__.py' existiert:\n"
-        f"{os.path.join(paperqa_local_path, 'paperqa')}"
-    )
-    st.stop()
 
 # Google Scholar (optional)
 try:
@@ -52,10 +18,18 @@ try:
 except ImportError:
     st.warning("Bitte installiere 'scholarly' via: pip install scholarly")
 
+import openai
 try:
     from fpdf import FPDF
 except ImportError:
     st.error("Bitte installiere 'fpdf' via: pip install fpdf")
+
+# paper-qa
+try:
+    from paperqa import Docs
+except ImportError:
+    st.error("Bitte installiere 'paper-qa' via: pip install paper-qa")
+
 
 ###############################################################################
 # A) ChatGPT: Paper erstellen & lokal speichern
@@ -74,12 +48,14 @@ def generate_paper_via_chatgpt(prompt_text, model="gpt-3.5-turbo"):
         st.error(f"Fehler bei ChatGPT-API: {e}")
         return ""
 
+
 def save_text_as_pdf(text, pdf_path, title="Paper"):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    # Unicode-Schrift einbinden; hier liegt der Pfad: modules/DejaVuSansCondensed.ttf
-    font_path = os.path.join(BASE_DIR, "modules", "DejaVuSansCondensed.ttf")
+    # Unicode-fähige Schrift einbinden
+    # Hier ist der Pfad: modules/DejaVuSansCondensed.ttf
+    font_path = os.path.join("modules", "DejaVuSansCondensed.ttf")
     if not os.path.exists(font_path):
         st.error(f"TTF Font file not found: {font_path}")
     else:
@@ -92,6 +68,7 @@ def save_text_as_pdf(text, pdf_path, title="Paper"):
         pdf.multi_cell(0, 8, line)
         pdf.ln(2)
     pdf.output(pdf_path, "F")
+
 
 ###############################################################################
 # B) arXiv-Suche & Download & lokal speichern
@@ -124,8 +101,10 @@ def search_arxiv_papers(query, max_results=5):
         })
     return papers_info
 
+
 def sanitize_filename(fname):
     return re.sub(r"[^a-zA-Z0-9_\-]+", "_", fname)
+
 
 def download_arxiv_pdf(pdf_url, local_filepath):
     try:
@@ -137,6 +116,7 @@ def download_arxiv_pdf(pdf_url, local_filepath):
     except Exception as e:
         st.error(f"Fehler beim Download PDF: {e}")
         return False
+
 
 ###############################################################################
 # C) Multi-API-Suche (PubMed, Europe PMC, Google Scholar, Semantic Scholar, OpenAlex)
@@ -153,6 +133,7 @@ def esearch_pubmed(query: str, max_results=100, timeout=10):
         st.error(f"PubMed-Suche fehlgeschlagen: {e}")
         return []
 
+
 def parse_efetch_response(xml_text: str):
     root = ET.fromstring(xml_text)
     pmid_abstract_map = {}
@@ -164,6 +145,7 @@ def parse_efetch_response(xml_text: str):
         if pmid_val:
             pmid_abstract_map[pmid_val] = abstract_text
     return pmid_abstract_map
+
 
 def fetch_pubmed_abstracts(pmids, timeout=10):
     if not pmids:
@@ -177,6 +159,7 @@ def fetch_pubmed_abstracts(pmids, timeout=10):
     except Exception as e:
         st.error(f"Fehler bei fetch abstracts: {e}")
         return {}
+
 
 def get_pubmed_details(pmids: list):
     if not pmids:
@@ -214,11 +197,13 @@ def get_pubmed_details(pmids: list):
         })
     return results
 
+
 def search_pubmed(query: str, max_results=100):
     pmids = esearch_pubmed(query, max_results=max_results)
     if not pmids:
         return []
     return get_pubmed_details(pmids)
+
 
 def search_europe_pmc(query: str, max_results=100, timeout=10):
     url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
@@ -248,6 +233,7 @@ def search_europe_pmc(query: str, max_results=100, timeout=10):
         st.error(f"Europe PMC-Suche fehlgeschlagen: {e}")
         return results
 
+
 def search_google_scholar(query: str, max_results=100):
     results = []
     try:
@@ -272,6 +258,7 @@ def search_google_scholar(query: str, max_results=100):
     except Exception as e:
         st.error(f"Google Scholar-Suche: {e}")
         return []
+
 
 def search_semantic_scholar(query: str, max_results=100):
     url = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -298,6 +285,7 @@ def search_semantic_scholar(query: str, max_results=100):
     except Exception as e:
         st.error(f"Semantic Scholar: {e}")
         return []
+
 
 def search_openalex(query: str, max_results=100):
     url = "https://api.openalex.org/works"
@@ -327,13 +315,15 @@ def search_openalex(query: str, max_results=100):
         st.error(f"OpenAlex: {e}")
         return []
 
+
 ###############################################################################
 # D) PDF-Helferfunktion: Papers in PDF (Unicode-fähig)
 ###############################################################################
 def create_papers_info_pdf(papers):
     pdf = FPDF()
     pdf.add_page()
-    font_path = os.path.join(BASE_DIR, "modules", "DejaVuSansCondensed.ttf")
+    # Verwende die Unicode-Schrift aus modules/DejaVuSansCondensed.ttf
+    font_path = os.path.join("modules", "DejaVuSansCondensed.ttf")
     if not os.path.exists(font_path):
         st.error(f"Font file not found: {font_path}")
     else:
@@ -356,6 +346,7 @@ def create_papers_info_pdf(papers):
         pdf.ln(8)
     return pdf.output(dest="S").encode("latin-1", "replace")
 
+
 ###############################################################################
 # E) "Profiles" laden
 ###############################################################################
@@ -363,6 +354,7 @@ def load_settings(profile_name: str):
     if "profiles" in st.session_state:
         return st.session_state["profiles"].get(profile_name, None)
     return None
+
 
 ###############################################################################
 # G) ChatGPT-Scoring
@@ -409,8 +401,9 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     results_scored.sort(key=lambda x: x["Relevance"], reverse=True)
     return results_scored[:top_k]
 
+
 ###############################################################################
-# PAPER-QA-ABSCHNITT
+# PaperQA + Q&A-History Export als Excel
 ###############################################################################
 def export_qa_to_excel(qa_history):
     df_qa = pd.DataFrame(qa_history)
@@ -419,19 +412,20 @@ def export_qa_to_excel(qa_history):
         df_qa.to_excel(writer, sheet_name="PaperQA_Results", index=False)
     return excel_buf.getvalue()
 
+
+###############################################################################
+# PAPER-QA-ABSCHNITT
+###############################################################################
 def paperqa_section(top_results):
     st.write("---")
     st.subheader("Paper-QA (paper-qa) Integration")
     approach = st.radio("Paper-QA Modus:", ["Online mit Abstracts", "Offline mit PDFs"])
-    
     if "paperqa_docs" not in st.session_state:
         st.session_state["paperqa_docs"] = None
         st.session_state["paperqa_approach"] = None
-
     if st.session_state["paperqa_approach"] != approach:
         st.session_state["paperqa_docs"] = None
         st.session_state["paperqa_approach"] = approach
-
     docs_obj = st.session_state["paperqa_docs"]
     if docs_obj is None:
         if approach == "Online mit Abstracts":
@@ -458,7 +452,6 @@ def paperqa_section(top_results):
                 st.session_state["paperqa_docs"] = docs
                 st.success(f"{len(uploaded_pdfs)} PDF(s) in PaperQA geladen (Offline).")
         docs_obj = st.session_state["paperqa_docs"]
-
     if docs_obj:
         st.write("---")
         question = st.text_input("Frage an PaperQA:", "")
@@ -492,15 +485,15 @@ def paperqa_section(top_results):
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
+
 ###############################################################################
 # Haupt-Modul: Multi-API-Suche + ChatGPT-Scoring + PaperQA
 ###############################################################################
 def module_codewords_pubmed():
-    st.title("Multi-API-Suche + ChatGPT-Scoring + PaperQA (lokales paperqa)")
+    st.title("Multi-API-Suche + ChatGPT-Scoring + PaperQA")
     if "profiles" not in st.session_state or not st.session_state["profiles"]:
         st.warning("Keine Profile vorhanden. Bitte zuerst ein Profil speichern.")
         return
-
     prof_names = list(st.session_state["profiles"].keys())
     chosen_profile = st.selectbox("Wähle ein Profil:", ["(kein)"] + prof_names)
     if chosen_profile == "(kein)":
@@ -589,7 +582,6 @@ def module_codewords_pubmed():
                         "Publisher": [p.get("Publisher", "n/a") for p in top_results],
                         "Population": [p.get("Population", "n/a") for p in top_results],
                         "Abstract": [p.get("Abstract", "n/a") for p in top_results],
-                        "Relevance": [p.get("Relevance", 0) for p in top_results]
                     })
                     st.dataframe(df_top)
                     active_apis = st.session_state.get("active_apis", [])
@@ -623,15 +615,15 @@ def module_codewords_pubmed():
                         file_name="paper_info.pdf",
                         mime="application/pdf"
                     )
-                    # PaperQA-Abschnitt:
+                    # PaperQA-Abschnitt
                     paperqa_section(top_results)
+
 
 ###############################################################################
 # I) Haupt-App
 ###############################################################################
 def main():
-    st.set_page_config(layout="wide")
-    st.title("Kombinierte App: ChatGPT-Paper, arXiv-Suche, Multi-API-Suche + PaperQA (lokales paperqa)")
+    st.title("Kombinierte App: ChatGPT-Paper, arXiv-Suche, Multi-API-Suche + PaperQA")
     if "profiles" not in st.session_state:
         st.session_state["profiles"] = {
             "DefaultProfile": {
@@ -686,8 +678,9 @@ def main():
                         st.write("Kein PDF-Link.")
                     st.write("---")
     else:
-        st.subheader("Multi-API-Suche + ChatGPT-Scoring + PaperQA (lokales paperqa)")
+        st.subheader("Multi-API-Suche + ChatGPT-Scoring + PaperQA")
         module_codewords_pubmed()
+
 
 if __name__ == "__main__":
     st.set_page_config(layout="wide")
