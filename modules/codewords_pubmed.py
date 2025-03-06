@@ -121,7 +121,7 @@ def download_arxiv_pdf(pdf_url, local_filepath):
 
 
 ###############################################################################
-# C) Multi-API-Suche
+# C) Multi-API-Suche (PubMed, Europe PMC, Google Scholar, Semantic Scholar, OpenAlex)
 ###############################################################################
 def flatten_dict(d, parent_key="", sep="__"):
     """Wandelt ein verschachteltes Dict in ein flaches Dict um."""
@@ -419,17 +419,13 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     results_scored = []
     total = len(papers)
 
-    # Gene-Liste in String fassen:
     genes_str = ", ".join(genes) if genes else ""
-
-    # Codewörter
     code_str = codewords if codewords else ""
 
     for idx, paper in enumerate(papers, start=1):
         paper_title = paper.get('Title', '(kein Titel)')
         paper_status.write(f"Paper {idx}/{total}: **{paper_title}**")
 
-        # Prompt:
         prompt_text = (
             f"Codewörter: {code_str}\n"
             f"Gene: {genes_str}\n\n"
@@ -459,24 +455,31 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
         new_p["Relevance"] = score
         results_scored.append(new_p)
 
-    # Sortiert nach Relevanz, absteigend
     results_scored.sort(key=lambda x: x["Relevance"], reverse=True)
     return results_scored[:top_k]
 
 
 ###############################################################################
-# H) Multi-API-Suche + ChatGPT mit Genes (aus Profil)
+# H) Multi-API-Suche (mit ChatGPT-Scoring) & Anzeigelogik
 ###############################################################################
 def module_codewords_pubmed():
-    st.title("Multi-API-Suche (PubMed, Europe PMC, Google Scholar, Semantic Scholar, OpenAlex) + ChatGPT-Scoring")
+    st.title("Multi-API-Suche + ChatGPT-Scoring (Top 100)")
 
-    # Prüfen, ob Profile existieren
-    if "profiles" not in st.session_state or not st.session_state["profiles"]:
-        st.warning("Keine Profile hinterlegt oder SessionState leer.")
-        return
-
+    # --- Profilauswahl ---
     prof_names = list(st.session_state["profiles"].keys())
-    chosen_profile = st.selectbox("Wähle ein Profil:", ["(kein)"] + prof_names)
+    col_prof, col_prof_help = st.columns([0.8, 0.2])
+    with col_prof:
+        chosen_profile = st.selectbox("Wähle ein Profil:", ["(kein)"] + prof_names)
+    with col_prof_help:
+        cb_prof = st.checkbox("?", key="help_profile")
+        if cb_prof:
+            st.info(
+                "Hier wählst du dein Profil aus, das festlegt:\n"
+                "- Welche APIs genutzt werden (PubMed, Google Scholar, etc.)\n"
+                "- Welche Gene und Codewörter im Profil hinterlegt sind.\n"
+                "Achtung: Wenn du '(kein)' auswählst, wird keine Suche durchgeführt."
+            )
+
     if chosen_profile == "(kein)":
         st.info("Kein Profil gewählt. -> Abbruch.")
         return
@@ -486,20 +489,49 @@ def module_codewords_pubmed():
     if not profile_data:
         st.warning("Profil nicht gefunden oder leer.")
         return
-
     st.write("Profil-Daten:", profile_data)
 
-    # Codewörter aus Profil oder leer
-    default_codewords = profile_data.get("codewords", "")
-    codewords_str = st.text_input("Codewörter (werden mit Genes kombiniert):", value=default_codewords)
+    # --- Codewörter ---
+    col_cw, col_cw_help = st.columns([0.8, 0.2])
+    with col_cw:
+        default_codewords = profile_data.get("codewords", "")
+        codewords_str = st.text_input("Codewörter (werden mit Genes kombiniert):", value=default_codewords)
+    with col_cw_help:
+        cb_cw = st.checkbox("?", key="help_codewords")
+        if cb_cw:
+            st.info(
+                "Codewörter sind Synonyme oder Suchbegriffe, die zusätzlich zu den 'Gene'-Begriffen "
+                "verwendet werden. Zusammen bilden sie die finale Suchanfrage für PubMed etc."
+            )
+
     genes_from_profile = profile_data.get("genes", [])
+    st.write(f"**Gene aus Profil**: {genes_from_profile}")
 
-    st.write(f"Genes aus Profil: {genes_from_profile}")
+    # --- Logik (Radio) ---
+    col_logic, col_logic_help = st.columns([0.8, 0.2])
+    with col_logic:
+        logic_option = st.radio("Logik für Codewörter + Gene in der finalen Suche:", ["OR", "AND"], index=0)
+    with col_logic_help:
+        cb_logic = st.checkbox("?", key="help_logic")
+        if cb_logic:
+            st.info(
+                "Wenn du 'OR' wählst, wird in der Suchanfrage z.B. (codeword1 OR codeword2) OR (gene1 OR gene2) gebildet.\n"
+                "Bei 'AND' werden beide Gruppen kombiniert, z.B. (codeword1 AND codeword2) AND (gene1 AND gene2)."
+            )
 
-    # Logik wählbar
-    logic_option = st.radio("Logik für Codewörter + Gene in der finalen Suche:", ["OR", "AND"], index=0)
+    # --- Button: Suche starten ---
+    col_suche, col_suche_help = st.columns([0.8, 0.2])
+    with col_suche:
+        do_search = st.button("Suche starten")
+    with col_suche_help:
+        cb_suche = st.checkbox("?", key="help_search")
+        if cb_suche:
+            st.info(
+                "Klicke auf 'Suche starten', um alle im Profil aktivierten APIs abzufragen. "
+                "Die Ergebnisse werden gesammelt in der Tabelle angezeigt."
+            )
 
-    if st.button("Suche starten"):
+    if do_search:
         # 1) Codewörter in Liste
         raw_words_list = [w.strip() for w in codewords_str.replace(",", " ").split() if w.strip()]
         # 2) Genes in Liste
@@ -526,12 +558,13 @@ def module_codewords_pubmed():
             else:
                 final_query = query_codewords or query_genes
 
-        st.write("Finale Suchanfrage:", final_query)
+        st.write("**Finale Suchanfrage:**", final_query)
 
+        # Sammle Ergebnisse
         results_all = []
-
-        # APIs prüfen, ob aktiviert
         active_apis = []
+
+        # Prüfe, welche APIs im Profil aktiviert sind
         if profile_data.get("use_pubmed", False):
             pm = search_pubmed(final_query, max_results=200)
             st.write(f"PubMed: {len(pm)}")
@@ -572,31 +605,42 @@ def module_codewords_pubmed():
 
         st.session_state["search_results"] = results_all
         st.session_state["active_apis"] = active_apis
-        st.write(f"Gefundene Papers insgesamt: {len(results_all)}")
 
-    # Falls Ergebnisse in der Session
+        st.write(f"**Gefundene Papers insgesamt:** {len(results_all)}")
+        df_main = pd.DataFrame(results_all)
+        st.dataframe(df_main)
+
+    # Falls bereits Ergebnisse vorhanden sind
     if "search_results" in st.session_state and st.session_state["search_results"]:
         all_papers = st.session_state["search_results"]
-        df_main = pd.DataFrame(all_papers)
-        st.dataframe(df_main)
 
         st.write("---")
         st.subheader("ChatGPT-Online-Filterung (Top 100)")
 
-        if st.button("Starte ChatGPT-Scoring"):
+        col_scoring, col_scoring_help = st.columns([0.8, 0.2])
+        with col_scoring:
+            do_scoring = st.button("Starte ChatGPT-Scoring")
+        with col_scoring_help:
+            cb_scoring = st.checkbox("?", key="help_scoring")
+            if cb_scoring:
+                st.info(
+                    "Hiermit wird ChatGPT für jedes Paper (Title, Abstract) befragt und eine Relevanz "
+                    "zwischen 0 und 100 vergeben. Anschließend werden die Top 100 Papers präsentiert."
+                )
+
+        if do_scoring:
             if not codewords_str.strip() and not genes_from_profile:
                 st.warning("Keine Codewords und keine Gene vorhanden -> Abbruch.")
             else:
                 st.write("Starte ChatGPT-Scoring...\n")
                 top_results = chatgpt_online_search_with_genes(
                     all_papers,
-                    codewords=codewords_str,   # Aus dem Textfeld (ggf. Profil)
-                    genes=genes_from_profile,  # Immer aus Profil
+                    codewords=codewords_str,   
+                    genes=genes_from_profile,
                     top_k=100
                 )
                 if top_results:
                     st.subheader("Main sheet: Top 100 (relevanteste Papers)")
-                    # Wir bauen explizit ein "Haupt-Sheet" mit bestimmten Spalten
                     df_top_main = pd.DataFrame({
                         "PubMed ID": [p.get("PubMed ID","n/a") for p in top_results],
                         "Name": [p.get("Title","n/a") for p in top_results],
@@ -612,7 +656,6 @@ def module_codewords_pubmed():
 
                     active_apis = st.session_state.get("active_apis", [])
                     for api in active_apis:
-                        # Alle Paper dieser API (nicht nur top100)
                         subset = [p for p in all_papers if p["Source"] == api]
                         df_api = pd.DataFrame({
                             "PubMed ID": [x.get("PubMed ID","n/a") for x in subset],
@@ -632,7 +675,7 @@ def module_codewords_pubmed():
 def main():
     st.title("Kombinierte App: ChatGPT-Paper, arXiv-Suche, Multi-API-Suche (Genes+Codewords)")
 
-    # Beispiel-Profil beim ersten Start
+    # Profil(e) einmalig anlegen, falls nicht vorhanden
     if "profiles" not in st.session_state:
         st.session_state["profiles"] = {
             "DefaultProfile": {
@@ -647,12 +690,43 @@ def main():
         }
 
     menu = ["ChatGPT-Paper", "arXiv-Suche", "Multi-API-Suche"]
-    choice = st.sidebar.selectbox("Navigation", menu)
+    mcol1, mcol2 = st.columns([0.8, 0.2])
+    with mcol1:
+        choice = st.sidebar.selectbox("Navigation", menu)
+    with mcol2:
+        cb_menu = st.checkbox("?", key="help_menu")
+        if cb_menu:
+            st.info(
+                "Wähle den Bereich:\n"
+                "- 'ChatGPT-Paper': Lasse dir aus einem Prompt ein PDF generieren\n"
+                "- 'arXiv-Suche': Suche in arXiv und lade ggf. PDFs herunter\n"
+                "- 'Multi-API-Suche': Durchsuche PubMed etc. + ChatGPT-Relevanzfilter"
+            )
 
     if choice == "ChatGPT-Paper":
         st.subheader("1) Paper mit ChatGPT generieren & lokal speichern")
-        prompt_txt = st.text_area("Prompt:", "Schreibe ein Paper über KI in der Medizin.")
-        local_dir = st.text_input("Zielordner lokal:", "chatgpt_papers")
+
+        col_prompt, col_prompt_help = st.columns([0.8, 0.2])
+        with col_prompt:
+            prompt_txt = st.text_area("Prompt:", "Schreibe ein Paper über KI in der Medizin.")
+        with col_prompt_help:
+            c_prompt = st.checkbox("?", key="help_prompt")
+            if c_prompt:
+                st.info(
+                    "Hier gibst du deinen Prompt für ChatGPT ein. Das kann z.B. eine Frage oder ein Thema sein, "
+                    "zu dem du einen Text haben möchtest."
+                )
+
+        col_dir, col_dir_help = st.columns([0.8, 0.2])
+        with col_dir:
+            local_dir = st.text_input("Zielordner lokal:", "chatgpt_papers")
+        with col_dir_help:
+            c_dir = st.checkbox("?", key="help_dir")
+            if c_dir:
+                st.info(
+                    "Hier kannst du festlegen, in welchem Ordner das generierte PDF gespeichert werden soll."
+                )
+
         if st.button("Paper generieren"):
             text = generate_paper_via_chatgpt(prompt_txt)
             if text:
@@ -666,9 +740,37 @@ def main():
 
     elif choice == "arXiv-Suche":
         st.subheader("2) arXiv-Suche & PDF-Download (lokal)")
-        query = st.text_input("arXiv Suchbegriff:", "quantum computing")
-        num = st.number_input("Anzahl", 1, 50, 5)
-        local_dir_arxiv = st.text_input("Ordner für Downloads:", "arxiv_papers")
+
+        col_arxiv_query, col_arxiv_query_help = st.columns([0.8, 0.2])
+        with col_arxiv_query:
+            query = st.text_input("arXiv Suchbegriff:", "quantum computing")
+        with col_arxiv_query_help:
+            c_arxiv_query = st.checkbox("?", key="help_arxiv_query")
+            if c_arxiv_query:
+                st.info(
+                    "Gib hier ein Schlagwort oder Thema ein, das du bei arXiv durchsuchen willst. "
+                    "z.B. 'quantum computing'."
+                )
+
+        col_arxiv_num, col_arxiv_num_help = st.columns([0.8, 0.2])
+        with col_arxiv_num:
+            num = st.number_input("Anzahl", 1, 50, 5)
+        with col_arxiv_num_help:
+            c_arxiv_num = st.checkbox("?", key="help_arxiv_num")
+            if c_arxiv_num:
+                st.info(
+                    "Leg fest, wie viele Papers maximal von arXiv abgerufen werden sollen (1-50)."
+                )
+
+        col_arxiv_dir, col_arxiv_dir_help = st.columns([0.8, 0.2])
+        with col_arxiv_dir:
+            local_dir_arxiv = st.text_input("Ordner für Downloads:", "arxiv_papers")
+        with col_arxiv_dir_help:
+            c_arxiv_dir = st.checkbox("?", key="help_arxiv_dir")
+            if c_arxiv_dir:
+                st.info(
+                    "Bestimmt, in welchem Ordner die PDFs der arXiv-Papers gespeichert werden."
+                )
 
         if st.button("arXiv-Suche starten"):
             results = search_arxiv_papers(query, max_results=num)
@@ -693,11 +795,10 @@ def main():
                     st.write("---")
 
     else:
-        st.subheader("3) Multi-API-Suche (PubMed, Europe PMC, Google Scholar, Semantic Scholar, OpenAlex)")
+        st.subheader("3) Multi-API-Suche")
         module_codewords_pubmed()
 
 
 if __name__ == "__main__":
     st.set_page_config(layout="wide")
     main()
-
