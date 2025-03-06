@@ -445,6 +445,7 @@ def export_qa_to_excel(qa_history):
         df_qa.to_excel(writer, sheet_name="PaperQA_Results", index=False)
     return excel_buf.getvalue()
 
+
 def paperqa_section(top_results):
     st.write("---")
     st.subheader("Paper-QA (paper-qa) Integration")
@@ -517,6 +518,7 @@ def paperqa_section(top_results):
                 file_name="paperqa_results.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
+
 
 ###############################################################################
 # Haupt-Modul: Multi-API-Suche + ChatGPT-Scoring + PaperQA
@@ -652,6 +654,7 @@ def module_codewords_pubmed():
                     # PaperQA-Abschnitt:
                     paperqa_section(top_results)
 
+
 ###############################################################################
 # I) Haupt-App
 ###############################################################################
@@ -714,6 +717,7 @@ def main():
     else:
         st.subheader("Multi-API-Suche + ChatGPT-Scoring + PaperQA (lokales paperqa)")
         module_codewords_pubmed()
+
 
 if __name__ == "__main__":
     st.set_page_config(layout="wide")
