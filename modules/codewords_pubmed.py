@@ -13,11 +13,22 @@ from collections import defaultdict
 import base64
 import sys
 
-# Wir fügen den Pfad zum lokalen "paper-qa" hinzu:
-# => Denn dort liegt ein Ordner "paperqa/" mit __init__.py etc.
+# -------------------------------------------------------------
+# 1) Pfad zu 'modules/paper-qa' hinzufügen, 
+#    da dort der Ordner 'paperqa/' liegt.
 paperqa_local_path = os.path.join("modules", "paper-qa")
 if os.path.isdir(paperqa_local_path):
     sys.path.insert(0, paperqa_local_path)
+
+# 2) paperqa importieren
+try:
+    from paperqa import Docs
+except ImportError as e:
+    st.error(
+        "Konnte 'paperqa' nicht aus 'modules/paper-qa/paperqa/' importieren.\n"
+        "Bitte prüfen, ob 'paperqa/__init__.py' existiert."
+    )
+    st.stop()
 
 # Google Scholar (optional)
 try:
@@ -30,16 +41,6 @@ try:
     from fpdf import FPDF
 except ImportError:
     st.error("Bitte installiere 'fpdf' via: pip install fpdf")
-
-# paper-qa (lokal aus modules/paper-qa/paperqa)
-try:
-    from paperqa import Docs
-except ImportError as e:
-    st.error(
-        "Konnte 'paperqa' nicht aus 'modules/paper-qa/paperqa/' importieren.\n"
-        "Stelle sicher, dass dort eine __init__.py liegt."
-    )
-    st.stop()  # Stoppe das Skript, weil paperqa unverzichtbar ist.
 
 
 ###############################################################################
@@ -64,7 +65,6 @@ def save_text_as_pdf(text, pdf_path, title="Paper"):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    # Unicode-fähige Schrift einbinden (Die Datei befindet sich in modules/)
     font_path = os.path.join("modules", "DejaVuSansCondensed.ttf")
     if not os.path.exists(font_path):
         st.error(f"TTF Font file not found: {font_path}")
@@ -98,7 +98,6 @@ def search_arxiv_papers(query, max_results=5):
     for entry in feed.entries:
         link_pdf = None
         for link in entry.links:
-            # Manche Feeds nutzen 'related' + "pdf" in link.type, andere "application/pdf"
             if link.rel == "related" and "pdf" in link.type:
                 link_pdf = link.href
                 break
@@ -333,7 +332,6 @@ def search_openalex(query: str, max_results=100):
 def create_papers_info_pdf(papers):
     pdf = FPDF()
     pdf.add_page()
-    # Unicode-Schrift einbinden (DejaVuSansCondensed.ttf aus modules/)
     font_path = os.path.join("modules", "DejaVuSansCondensed.ttf")
     if not os.path.exists(font_path):
         st.error(f"Font file not found: {font_path}")
@@ -414,7 +412,7 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
 
 
 ###############################################################################
-# PaperQA + Q&A-History Export als Excel
+# PAPER-QA-ABSCHNITT
 ###############################################################################
 def export_qa_to_excel(qa_history):
     df_qa = pd.DataFrame(qa_history)
@@ -424,9 +422,6 @@ def export_qa_to_excel(qa_history):
     return excel_buf.getvalue()
 
 
-###############################################################################
-# PAPER-QA-ABSCHNITT
-###############################################################################
 def paperqa_section(top_results):
     st.write("---")
     st.subheader("Paper-QA (paper-qa) Integration")
@@ -435,12 +430,12 @@ def paperqa_section(top_results):
     if "paperqa_docs" not in st.session_state:
         st.session_state["paperqa_docs"] = None
         st.session_state["paperqa_approach"] = None
+
     if st.session_state["paperqa_approach"] != approach:
         st.session_state["paperqa_docs"] = None
         st.session_state["paperqa_approach"] = approach
 
     docs_obj = st.session_state["paperqa_docs"]
-    # Wir nutzen Docs aus dem lokal importierten 'paperqa'
     if docs_obj is None:
         if approach == "Online mit Abstracts":
             docs = Docs()
@@ -500,35 +495,41 @@ def paperqa_section(top_results):
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
-
 ###############################################################################
-# Haupt-Modul: Multi-API-Suche + ChatGPT-Scoring + PaperQA
+# Haupt-Modul
 ###############################################################################
 def module_codewords_pubmed():
-    st.title("Multi-API-Suche + ChatGPT-Scoring + PaperQA (lokales paperqa)")
+    st.title("Multi-API-Suche + ChatGPT-Scoring + PaperQA (lokale paperqa)")
     if "profiles" not in st.session_state or not st.session_state["profiles"]:
         st.warning("Keine Profile vorhanden. Bitte zuerst ein Profil speichern.")
         return
+
     prof_names = list(st.session_state["profiles"].keys())
     chosen_profile = st.selectbox("Wähle ein Profil:", ["(kein)"] + prof_names)
+
     if chosen_profile == "(kein)":
         st.info("Bitte wähle ein Profil aus.")
         return
+
     profile_data = load_settings(chosen_profile)
     if not profile_data:
         st.warning("Profil nicht gefunden oder leer.")
         return
+
     st.write("Profil-Einstellungen:", profile_data)
     codewords_str = st.text_input("Codewörter:", value=profile_data.get("codewords", ""))
     genes_from_profile = profile_data.get("genes", [])
     st.write(f"Gene: {genes_from_profile}")
+
     logic_option = st.radio("Logik (AND/OR):", ["OR", "AND"], index=0)
+
     if st.button("Suche starten"):
         raw_words_list = [w.strip() for w in codewords_str.replace(",", " ").split() if w.strip()]
         raw_genes_list = genes_from_profile
         if not raw_words_list and not raw_genes_list:
             st.warning("Keine Codewörter / Gene.")
             return
+
         if logic_option == "OR":
             q_c = " OR ".join(raw_words_list) if raw_words_list else ""
             q_g = " OR ".join(raw_genes_list) if raw_genes_list else ""
@@ -537,7 +538,9 @@ def module_codewords_pubmed():
             q_c = " AND ".join(raw_words_list) if raw_words_list else ""
             q_g = " AND ".join(raw_genes_list) if raw_genes_list else ""
             final_query = f"({q_c}) AND ({q_g})" if q_c and q_g else q_c or q_g
+
         st.write("**Finale Suchanfrage:**", final_query)
+
         results_all = []
         active_apis = []
         if profile_data.get("use_pubmed", False):
@@ -565,15 +568,19 @@ def module_codewords_pubmed():
             st.write(f"OpenAlex: {len(oa)}")
             results_all.extend(oa)
             active_apis.append("OpenAlex")
+
         if not results_all:
             st.info("Keine Ergebnisse gefunden.")
             return
+
         if len(results_all) > 1000:
             results_all = results_all[:1000]
+
         st.session_state["search_results"] = results_all
         st.session_state["active_apis"] = active_apis
         st.write(f"Gefundene Papers gesamt: {len(results_all)}")
         st.dataframe(pd.DataFrame(results_all))
+
     if "search_results" in st.session_state and st.session_state["search_results"]:
         st.write("---")
         st.subheader("ChatGPT-Scoring => Top 100")
@@ -600,9 +607,11 @@ def module_codewords_pubmed():
                         "Relevance": [p.get("Relevance", 0) for p in top_results]
                     })
                     st.dataframe(df_top)
+
                     active_apis = st.session_state.get("active_apis", [])
                     st.write("---")
                     st.subheader("Sheets pro API")
+
                     all_papers_df_list = {"Top_100": df_top}
                     for api in active_apis:
                         subset = [p for p in all_papers if p["Source"] == api]
@@ -610,6 +619,7 @@ def module_codewords_pubmed():
                         st.markdown(f"**{api}:**")
                         st.dataframe(df_api)
                         all_papers_df_list[api] = df_api
+
                     st.write("---")
                     st.subheader("Ergebnisse herunterladen")
                     excel_buffer = io.BytesIO()
@@ -624,6 +634,7 @@ def module_codewords_pubmed():
                         file_name="paper_info.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
+
                     pdf_bytes = create_papers_info_pdf(top_results)
                     st.download_button(
                         label="Download als PDF (Top 100)",
@@ -631,18 +642,15 @@ def module_codewords_pubmed():
                         file_name="paper_info.pdf",
                         mime="application/pdf"
                     )
-                    # PaperQA-Abschnitt aufrufen
+                    # PaperQA-Abschnitt:
                     paperqa_section(top_results)
 
 
-###############################################################################
-# I) Haupt-App
-###############################################################################
 def main():
     st.set_page_config(layout="wide")
-    st.title("Kombinierte App: ChatGPT-Paper, arXiv-Suche, Multi-API-Suche + PaperQA (lokale paperqa)")
+    st.title("Kombinierte App: ChatGPT-Paper, arXiv-Suche, Multi-API-Suche + PaperQA (lokales paperqa)")
 
-    # Beispiel-Profile, falls none vorhanden:
+    # Default-Profil, falls keins angelegt:
     if "profiles" not in st.session_state:
         st.session_state["profiles"] = {
             "DefaultProfile": {
@@ -699,8 +707,8 @@ def main():
                     else:
                         st.write("Kein PDF-Link.")
                     st.write("---")
+
     else:
-        # Multi-API-Suche + PaperQA
         st.subheader("Multi-API-Suche + ChatGPT-Scoring + PaperQA (lokale paperqa)")
         module_codewords_pubmed()
 
