@@ -9,7 +9,6 @@ selenium
 urllib3
 xlsxwriter
 pandas
-requests
 transformers
 selenium
 webdriver-manager
