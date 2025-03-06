@@ -11,6 +11,12 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from collections import defaultdict
 import base64
+import sys
+
+# Wir fügen den Pfad zum lokalen "paper-qa" hinzu:
+paperqa_local_path = os.path.join("modules", "paper-qa")
+if os.path.isdir(paperqa_local_path):
+    sys.path.insert(0, paperqa_local_path)
 
 # Google Scholar (optional)
 try:
@@ -24,11 +30,15 @@ try:
 except ImportError:
     st.error("Bitte installiere 'fpdf' via: pip install fpdf")
 
-# paper-qa
+# paper-qa (lokal aus modules/paper-qa/paperqa)
 try:
     from paperqa import Docs
-except ImportError:
-    st.error("Bitte installiere 'paper-qa' via: pip install paper-qa")
+except ImportError as e:
+    st.error(
+        "Konnte 'paperqa' nicht aus 'modules/paper-qa' importieren.\n"
+        "Stelle sicher, dass in 'modules/paper-qa/paperqa/' eine __init__.py liegt."
+    )
+    st.stop()  # Stoppe das Skript, weil paperqa unverzichtbar ist.
 
 
 ###############################################################################
@@ -427,14 +437,8 @@ def paperqa_section(top_results):
         st.session_state["paperqa_docs"] = None
         st.session_state["paperqa_approach"] = approach
 
-    # Erneuter Import von Docs (um sicherzugehen)
-    try:
-        from paperqa import Docs
-    except ImportError as e:
-        st.error("paper-qa konnte nicht importiert werden. Bitte installiere es via pip install paper-qa")
-        return
-
     docs_obj = st.session_state["paperqa_docs"]
+    # Wir nutzen Docs aus dem lokal importierten 'paperqa'
     if docs_obj is None:
         if approach == "Online mit Abstracts":
             docs = Docs()
@@ -499,7 +503,7 @@ def paperqa_section(top_results):
 # Haupt-Modul: Multi-API-Suche + ChatGPT-Scoring + PaperQA
 ###############################################################################
 def module_codewords_pubmed():
-    st.title("Multi-API-Suche + ChatGPT-Scoring + PaperQA")
+    st.title("Multi-API-Suche + ChatGPT-Scoring + PaperQA (lokales paperqa)")
     if "profiles" not in st.session_state or not st.session_state["profiles"]:
         st.warning("Keine Profile vorhanden. Bitte zuerst ein Profil speichern.")
         return
@@ -591,6 +595,7 @@ def module_codewords_pubmed():
                         "Publisher": [p.get("Publisher", "n/a") for p in top_results],
                         "Population": [p.get("Population", "n/a") for p in top_results],
                         "Abstract": [p.get("Abstract", "n/a") for p in top_results],
+                        "Relevance": [p.get("Relevance", 0) for p in top_results]
                     })
                     st.dataframe(df_top)
                     active_apis = st.session_state.get("active_apis", [])
@@ -632,7 +637,7 @@ def module_codewords_pubmed():
 # I) Haupt-App
 ###############################################################################
 def main():
-    st.title("Kombinierte App: ChatGPT-Paper, arXiv-Suche, Multi-API-Suche + PaperQA")
+    st.title("Kombinierte App: ChatGPT-Paper, arXiv-Suche, Multi-API-Suche + PaperQA (lokale paperqa)")
     if "profiles" not in st.session_state:
         st.session_state["profiles"] = {
             "DefaultProfile": {
@@ -647,6 +652,7 @@ def main():
         }
     menu = ["ChatGPT-Paper", "arXiv-Suche", "Multi-API-Suche"]
     choice = st.sidebar.selectbox("Navigation", menu)
+    
     if choice == "ChatGPT-Paper":
         st.subheader("Paper mit ChatGPT generieren & speichern")
         prompt_txt = st.text_area("Prompt:", "Schreibe ein Paper über KI in der Medizin")
@@ -687,7 +693,7 @@ def main():
                         st.write("Kein PDF-Link.")
                     st.write("---")
     else:
-        st.subheader("Multi-API-Suche + ChatGPT-Scoring + PaperQA")
+        st.subheader("Multi-API-Suche + ChatGPT-Scoring + PaperQA (lokale paperqa)")
         module_codewords_pubmed()
 
 
