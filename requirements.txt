@@ -13,7 +13,6 @@ transformers
 webdriver-manager
 pandas
 feedparser
-paper-qa
 pdfplumber
 faiss-cpu
 langchain
