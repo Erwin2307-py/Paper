@@ -25,14 +25,14 @@ Systempfad (sys.path): {sys.path}
 # --------------------------------------------------------------------------
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# KORREKTER Pfad: modules/paper-qa/paperqa (nur ein "modules")
+# WICHTIG: Nur einmal "modules". 
+# Hier die Struktur: modules/paper-qa/paperqa/__init__.py
 PAPERQA_LOCAL_PATH = os.path.join(CURRENT_DIR, "modules", "paper-qa", "paperqa")
 
 if not os.path.exists(PAPERQA_LOCAL_PATH):
     st.error(f"Kritischer Pfadfehler: {PAPERQA_LOCAL_PATH} existiert nicht!")
     st.stop()
 
-# Diesen Ordner in den Python-Pfad aufnehmen, falls noch nicht vorhanden
 if PAPERQA_LOCAL_PATH not in sys.path:
     sys.path.insert(0, PAPERQA_LOCAL_PATH)
 
@@ -42,7 +42,7 @@ try:
 except ImportError as e:
     st.error(
         "Konnte 'paperqa' nicht importieren. "
-        "Bitte prüfe, ob der Ordner 'modules/paper-qa/paperqa' eine Datei '__init__.py' enthält. \n"
+        "Bitte prüfe, ob im Ordner 'modules/paper-qa/paperqa' eine Datei '__init__.py' liegt. \n"
         f"Aktueller Pfad: {PAPERQA_LOCAL_PATH}\nFehler:\n{e}"
     )
     st.stop()
@@ -101,7 +101,7 @@ def save_current_settings(profile_name: str):
     st.success(f"Profil '{profile_name}' erfolgreich gespeichert.")
 
 # --------------------------------------------------------------------------
-# A) ChatGPT: Paper erstellen & lokal speichern
+# ChatGPT: Paper erstellen & lokal speichern
 # --------------------------------------------------------------------------
 def generate_paper_via_chatgpt(prompt_text, model="gpt-3.5-turbo"):
     try:
@@ -136,7 +136,7 @@ def save_text_as_pdf(text, pdf_path, title="ChatGPT-Paper"):
     pdf.output(pdf_path, "F")
 
 # --------------------------------------------------------------------------
-# B) arXiv-Suche & Download
+# arXiv-Suche & Download
 # --------------------------------------------------------------------------
 def search_arxiv_papers(query, max_results=5):
     base_url = "http://export.arxiv.org/api/query?"
@@ -183,7 +183,7 @@ def download_arxiv_pdf(pdf_url, local_filepath):
         return False
 
 # --------------------------------------------------------------------------
-# Beispiel: Lokaler PaperQA-Test mit Docs()
+# Lokaler PaperQA-Test (Docs)
 # --------------------------------------------------------------------------
 def paperqa_test():
     st.subheader("Lokaler PaperQA-Test (Docs-Klasse)")
@@ -221,7 +221,7 @@ def main():
     st.set_page_config(layout="wide")
     st.title("Kombinierte App: ChatGPT, arXiv-Suche, PaperQA (lokal)")
 
-    # Standard-Werte in Session anlegen
+    # Session Defaults
     if "profiles" not in st.session_state:
         st.session_state["profiles"] = {}
     if "selected_genes" not in st.session_state:
@@ -233,7 +233,7 @@ def main():
     if "final_gene" not in st.session_state:
         st.session_state["final_gene"] = ""
 
-    # Standard-Flags
+    # Default Flags
     if "use_pubmed" not in st.session_state:
         st.session_state["use_pubmed"] = True
     if "use_epmc" not in st.session_state:
