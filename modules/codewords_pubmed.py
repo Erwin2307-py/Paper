@@ -16,23 +16,36 @@ import importlib.util  # <--- für den dynamischen Import von paperqa
 # ----------------------------------------------------------------------------
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Pfad: "paper-qa/paperqa/__init__.py" liegt auf derselben Ebene wie `codewords_pubmed.py`
-# also: Paper/modules/paper-qa/paperqa/__init__.py
+# WICHTIG: Hier nehmen wir an, dass Ihr Pfad so aussieht:
+#  Paper/modules/paper-qa/paper-qa-main/paperqa/__init__.py
+#
+#  ─ modules
+#      ├─ codewords_pubmed.py  (dieses Skript)
+#      └─ paper-qa
+#         └─ paper-qa-main
+#            └─ paperqa
+#               └─ __init__.py
+
 PAPERQA_INIT_FILE = os.path.join(
-    CURRENT_DIR,          # => .../Paper/modules
-    "paper-qa",           # Ordner (mit Bindestrich)
-    "paperqa",            # Ordner (ohne Bindestrich)
-    "__init__.py"
+    CURRENT_DIR,            # => .../Paper/modules
+    "paper-qa",            # 1. Ordner (Bindestrich)
+    "paper-qa-main",       # 2. Ordner
+    "paperqa",             # 3. Ordner (ohne Bindestrich)
+    "__init__.py"          # Datei
 )
 
+# Pfadcheck
 if not os.path.isfile(PAPERQA_INIT_FILE):
     st.error(f"Kritischer Pfadfehler: {PAPERQA_INIT_FILE} existiert nicht!")
     st.stop()
 
 try:
+    # Spec für das dynamische Laden
     spec = importlib.util.spec_from_file_location("paperqa_custom", PAPERQA_INIT_FILE)
     paperqa_module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(paperqa_module)
+
+    # Prüfen, ob Docs vorhanden ist
     if not hasattr(paperqa_module, "Docs"):
         st.error("Im dynamisch geladenen PaperQA-Modul ist kein 'Docs' definiert!")
         st.stop()
@@ -44,10 +57,8 @@ except Exception as e:
 Docs = paperqa_module.Docs
 
 # ----------------------------------------------------------------------------
-# B) Weitere (vorhandene) Funktionen für Such-APIs etc.
-# (PubMed, Europe PMC, Google Scholar, ...) – ggf. anpassen oder kürzen
+# B) Ihre PubMed- (o. andere) Suchfunktionen
 # ----------------------------------------------------------------------------
-
 def search_pubmed(query: str, max_results=100):
     """Kürzliches Beispiel: Sucht in PubMed per ESearch + ESummary."""
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
@@ -82,35 +93,13 @@ def search_pubmed(query: str, max_results=100):
         st.error(f"PubMed-Suche fehlgeschlagen: {e}")
         return out
 
-def search_google_scholar(query: str, max_results=10):
-    """Dummy-Funktion, wenn 'scholarly' installiert ist."""
-    results = []
-    try:
-        from scholarly import scholarly
-        search_results = scholarly.search_pubs(query)
-        for i, pub in enumerate(search_results):
-            if i >= max_results:
-                break
-            bib = pub.get("bib", {})
-            title = bib.get("title", "n/a")
-            year = bib.get("pub_year", "n/a")
-            results.append({
-                "Source": "Google Scholar",
-                "Title": title,
-                "Year": year
-            })
-        return results
-    except Exception as e:
-        st.error(f"Google Scholar-Suche fehlgeschlagen: {e}")
-        return []
-
 # ----------------------------------------------------------------------------
-# C) PaperQA-Logik: z. B. Abfrage
+# C) PaperQA-Demo
 # ----------------------------------------------------------------------------
 def paperqa_test_locally():
     """
-    Beispiel-Funktion, die PaperQA (Docs) nutzt, um PDFs hochzuladen
-    und eine Frage zu stellen.
+    Beispiel-Funktion, die PaperQA (Docs) nutzt, 
+    um PDFs hochzuladen und eine Frage zu stellen.
     """
     st.subheader("Lokaler PaperQA-Test via codewords_pubmed")
     docs = Docs()
@@ -141,12 +130,12 @@ def paperqa_test_locally():
                 st.error(f"Fehler bei PaperQA-Abfrage: {e}")
 
 # ----------------------------------------------------------------------------
-# D) Haupt-Funktion, die man in 'main_app.py' oder in Streamlit direkt aufruft
+# D) Haupt-Funktion (Streamlit)
 # ----------------------------------------------------------------------------
 def module_codewords_pubmed():
     """
-    Diese Funktion enthält weiterhin Ihre 'Multi-API-Suche' + PaperQA oder Codewords-Logik.
-    Sie kann von main_app.py importiert und aufgerufen werden.
+    Diese Funktion enthält Ihre 'Multi-API-Suche' + PaperQA oder Codewords-Logik.
+    Sie können sie in einer anderen Streamlit-App (z. B. main_app.py) aufrufen.
     """
     st.title("Multi-API-Suche + PaperQA (lokaler Import)")
 
@@ -159,7 +148,7 @@ def module_codewords_pubmed():
             df = pd.DataFrame(res)
             st.dataframe(df)
 
-    # Beispiel: PaperQA-Teil
+    # Anschließend PaperQA-Teil
     st.write("---")
     st.subheader("PaperQA Test-Lauf (lokal)")
     paperqa_test_locally()
