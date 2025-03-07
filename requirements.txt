@@ -17,7 +17,7 @@ pdfplumber
 faiss-cpu
 langchain
 pypdf
-
+lmi
 
 
 
