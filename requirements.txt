@@ -18,7 +18,7 @@ faiss-cpu
 langchain
 pypdf
 litellm
-paper-qa
+paper-qa>=5
 habanero
 semanticscholar
 
