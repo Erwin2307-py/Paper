@@ -18,6 +18,10 @@ faiss-cpu
 langchain
 pypdf
 litellm
+paper-qa
+habanero
+semanticscholar
+
 
 
 
