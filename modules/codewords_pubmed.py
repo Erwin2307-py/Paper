@@ -11,87 +11,26 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from collections import defaultdict
 import base64
-import sys
 
-# ----------------- Debug-Informationen (für Fehlersuche) -------------------
-st.sidebar.markdown("**[DEBUG-INFO]**")
-st.sidebar.code(f"""
-Aktuelles Arbeitsverzeichnis: {os.getcwd()}
-Systempfad (sys.path): {sys.path}
-""")
-
-# --------------------------------------------------------------------------
-# Eventuell vorhandene Bibliotheken
-# --------------------------------------------------------------------------
 try:
     from scholarly import scholarly
 except ImportError:
-    st.error("Bitte installiere 'scholarly' (z.B. mit 'pip install scholarly').")
+    st.error("Bitte installiere 'scholarly', z.B. via: pip install scholarly")
 
 import openai
 try:
     from fpdf import FPDF
 except ImportError:
-    st.error("Bitte installiere 'fpdf' (z.B. mit 'pip install fpdf').")
-
-# --------------------------------------------------------------------------
-# Globale Profil-Verwaltung in st.session_state
-# --------------------------------------------------------------------------
-def load_settings(profile_name: str):
-    """
-    Lädt ein bestehendes Profil aus st.session_state['profiles'].
-    Stellt zusätzlich alle relevanten Felder in st.session_state wieder her.
-    """
-    if "profiles" not in st.session_state:
-        return None
-    profile_data = st.session_state["profiles"].get(profile_name, None)
-    if profile_data:
-        # Wiederherstellung z.B.:
-        st.session_state["selected_genes"] = profile_data.get("selected_genes", [])
-        st.session_state["synonyms_selected"] = profile_data.get("synonyms_selected", {})
-        st.session_state["codewords_str"] = profile_data.get("codewords_str", "")
-        st.session_state["final_gene"] = profile_data.get("final_gene", "")
-        st.session_state["use_pubmed"] = profile_data.get("use_pubmed", True)
-        st.session_state["use_epmc"] = profile_data.get("use_epmc", True)
-        st.session_state["use_google"] = profile_data.get("use_google", False)
-        st.session_state["use_semantic"] = profile_data.get("use_semantic", False)
-        st.session_state["use_openalex"] = profile_data.get("use_openalex", False)
-        st.session_state["use_core"] = profile_data.get("use_core", False)
-        st.session_state["use_chatgpt"] = profile_data.get("use_chatgpt", False)
-    return profile_data
+    st.error("Bitte installiere 'fpdf', z.B. mit: pip install fpdf")
 
 
-def save_current_settings(profile_name: str):
-    """
-    Speichert alle relevanten Einstellungen und Listen in st.session_state["profiles"][profile_name].
-    """
-    if "profiles" not in st.session_state:
-        st.session_state["profiles"] = {}
-
-    st.session_state["profiles"][profile_name] = {
-        "selected_genes": st.session_state.get("selected_genes", []),
-        "synonyms_selected": st.session_state.get("synonyms_selected", {}),
-        "codewords_str": st.session_state.get("codewords_str", ""),
-        "final_gene": st.session_state.get("final_gene", ""),
-        # Beispiel: Weitere Flags
-        "use_pubmed": st.session_state.get("use_pubmed", True),
-        "use_epmc": st.session_state.get("use_epmc", True),
-        "use_google": st.session_state.get("use_google", False),
-        "use_semantic": st.session_state.get("use_semantic", False),
-        "use_openalex": st.session_state.get("use_openalex", False),
-        "use_core": st.session_state.get("use_core", False),
-        "use_chatgpt": st.session_state.get("use_chatgpt", False),
-    }
-    st.success(f"Profil '{profile_name}' erfolgreich gespeichert.")
-
-
-# --------------------------------------------------------------------------
+###############################################################################
 # A) ChatGPT: Paper erstellen & lokal speichern
-# --------------------------------------------------------------------------
+###############################################################################
 def generate_paper_via_chatgpt(prompt_text, model="gpt-3.5-turbo"):
     """Ruft die ChatGPT-API auf und erzeugt ein Paper (Text)."""
     try:
-        openai.api_key = st.secrets["OPENAI_API_KEY"]
+        openai.api_key = st.secrets["OPENAI_API_KEY"]  # Holt KEY aus secrets
         response = openai.ChatCompletion.create(
             model=model,
             messages=[{"role": "user", "content": prompt_text}],
@@ -101,7 +40,7 @@ def generate_paper_via_chatgpt(prompt_text, model="gpt-3.5-turbo"):
         return response.choices[0].message.content
     except Exception as e:
         st.error(
-            "Fehler bei ChatGPT-API-Aufruf: "
+            "Fehler bei ChatGPT-API: "
             f"'{e}'.\nPrüfe, ob 'OPENAI_API_KEY' in secrets.toml hinterlegt ist!"
         )
         return ""
@@ -125,9 +64,9 @@ def save_text_as_pdf(text, pdf_path, title="Paper"):
     pdf.output(pdf_path, "F")
 
 
-# --------------------------------------------------------------------------
-# B) arXiv-Suche & Download
-# --------------------------------------------------------------------------
+###############################################################################
+# B) arXiv-Suche & Download & lokal speichern
+###############################################################################
 def search_arxiv_papers(query, max_results=5):
     base_url = "http://export.arxiv.org/api/query?"
     params = {
@@ -139,7 +78,7 @@ def search_arxiv_papers(query, max_results=5):
         response = requests.get(base_url, params=params, timeout=10)
         response.raise_for_status()
     except Exception as e:
-        st.error(f"Fehler beim Abrufen von arXiv: {e}")
+        st.error(f"Fehler beim Abrufen der Daten von arXiv: {e}")
         return []
     
     feed = feedparser.parse(response.text)
@@ -181,9 +120,9 @@ def download_arxiv_pdf(pdf_url, local_filepath):
         return False
 
 
-# --------------------------------------------------------------------------
-# C) Weitere Multi-API-Suche (PubMed, Europe PMC, Google Scholar, etc.)
-# --------------------------------------------------------------------------
+###############################################################################
+# C) Multi-API-Suche
+###############################################################################
 def flatten_dict(d, parent_key="", sep="__"):
     """Wandelt ein verschachteltes Dict in ein flaches Dict um."""
     items = []
@@ -195,7 +134,8 @@ def flatten_dict(d, parent_key="", sep="__"):
             items.append((new_key, v))
     return dict(items)
 
-# -- PubMed-Funktionen --
+
+# --- PubMed-Funktionen ---
 def esearch_pubmed(query: str, max_results=100, timeout=10):
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {
@@ -213,6 +153,7 @@ def esearch_pubmed(query: str, max_results=100, timeout=10):
         st.error(f"PubMed-Suche fehlgeschlagen: {e}")
         return []
 
+
 def parse_efetch_response(xml_text: str) -> dict:
     root = ET.fromstring(xml_text)
     pmid_abstract_map = {}
@@ -224,6 +165,7 @@ def parse_efetch_response(xml_text: str) -> dict:
         if pmid_val:
             pmid_abstract_map[pmid_val] = abstract_text
     return pmid_abstract_map
+
 
 def fetch_pubmed_abstracts(pmids, timeout=10):
     """Holt Abstracts per efetch."""
@@ -238,6 +180,7 @@ def fetch_pubmed_abstracts(pmids, timeout=10):
     except Exception as e:
         st.error(f"Fehler beim Abrufen der Abstracts via EFetch: {e}")
         return {}
+
 
 def get_pubmed_details(pmids: list):
     if not pmids:
@@ -281,13 +224,15 @@ def get_pubmed_details(pmids: list):
         })
     return results
 
+
 def search_pubmed(query: str, max_results=100):
     pmids = esearch_pubmed(query, max_results=max_results)
     if not pmids:
         return []
     return get_pubmed_details(pmids)
 
-# -- Europe PMC --
+
+# --- Europe PMC ---
 def search_europe_pmc(query: str, max_results=100, timeout=10):
     url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {"query": query, "format": "json", "pageSize": max_results}
@@ -317,7 +262,8 @@ def search_europe_pmc(query: str, max_results=100, timeout=10):
         st.error(f"Europe PMC-Suche fehlgeschlagen: {e}")
         return []
 
-# -- Google Scholar --
+
+# --- Google Scholar ---
 def search_google_scholar(query: str, max_results=100):
     results = []
     try:
@@ -344,7 +290,8 @@ def search_google_scholar(query: str, max_results=100):
         st.error(f"Google Scholar-Suche fehlgeschlagen: {e}")
         return []
 
-# -- Semantic Scholar --
+
+# --- Semantic Scholar ---
 def search_semantic_scholar(query: str, max_results=100):
     url = "https://api.semanticscholar.org/graph/v1/paper/search"
     params = {"query": query, "limit": max_results, "fields": "title,authors,year,abstract"}
@@ -370,10 +317,11 @@ def search_semantic_scholar(query: str, max_results=100):
         return results
     except Exception as e:
         st.error(f"Semantic Scholar-Suche fehlgeschlagen: {e}")
-        return results
+        return []
     return results
 
-# -- OpenAlex --
+
+# --- OpenAlex ---
 def search_openalex(query: str, max_results=100):
     url = "https://api.openalex.org/works"
     params = {"search": query, "per-page": max_results}
@@ -386,7 +334,7 @@ def search_openalex(query: str, max_results=100):
             title = w.get("display_name", "n/a")
             year_ = str(w.get("publication_year", "n/a"))
             doi = w.get("doi", "n/a")
-            abstract_ = "n/a"  # OpenAlex liefert i.d.R. kein Abstract
+            abstract_ = "n/a"
             results.append({
                 "Source": "OpenAlex",
                 "Title": title,
@@ -404,9 +352,9 @@ def search_openalex(query: str, max_results=100):
         return results
 
 
-# --------------------------------------------------------------------------
+###############################################################################
 # D) ChatGPT-Summary PDF
-# --------------------------------------------------------------------------
+###############################################################################
 def create_gpt_paper_pdf(gpt_text, output_stream, title="ChatGPT-Paper"):
     pdf = FPDF()
     pdf.add_page()
@@ -426,48 +374,70 @@ def create_gpt_paper_pdf(gpt_text, output_stream, title="ChatGPT-Paper"):
     output_stream.write(pdf_bytes)
 
 
-# --------------------------------------------------------------------------
-# E) ChatGPT-Scoring in extra Fenster + Genes-Check
-# --------------------------------------------------------------------------
-def chatgpt_online_search_with_genes(papers, codewords=None, genes=None, top_k=100):
+###############################################################################
+# E) "Profiles" laden (optional)
+###############################################################################
+def load_settings(profile_name: str):
+    if "profiles" in st.session_state:
+        profiles = st.session_state["profiles"]
+        return profiles.get(profile_name, None)
+    return None
+
+
+###############################################################################
+# F) Helper
+###############################################################################
+def safe_excel_value(value):
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list, tuple, set)):
+        return str(value)
+    if isinstance(value, (int, float, bool, str)):
+        return value
+    return str(value)
+
+
+###############################################################################
+# G) ChatGPT-Scoring in extra Fenster + Genes-Check
+###############################################################################
+def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     """
-    Schleife über Papers, ChatGPT bewertet die Relevanz (0-100).
-    Hier werden Codewörter und Gene in den Prompt eingefügt.
-    Daten müssen vorher in st.secrets['OPENAI_API_KEY'] liegen.
+    Schleife über Papers mit eigener 'Fortschritt'-Anzeige in Expander.
+    Falls 'genes' vorhanden ist, fließt das in den Prompt mit ein.
     """
+    if not papers:
+        return []
+
     openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
     if not openai.api_key:
         st.error("Kein 'OPENAI_API_KEY' in st.secrets! Abbruch.")
         return []
 
-    if not papers:
-        return []
-    if codewords is None:
-        codewords = st.session_state.get("codewords_str", "")
-    if genes is None:
-        genes = st.session_state.get("selected_genes", [])
-
-    # Schnelles Popup für Fortschrittsanzeige
+    # Separates Fenster für Fortschritt:
     progress_area = st.expander("Fortschritt (aktuelles Paper)", expanded=True)
     paper_status = progress_area.empty()
 
     results_scored = []
     total = len(papers)
-    genes_str = ", ".join(genes)
+
+    # Gene-Liste in String fassen:
+    genes_str = ""
+    if genes:
+        genes_str = ", ".join(genes)
 
     for idx, paper in enumerate(papers, start=1):
+        # Updaten wir NUR diese Zeile => immer das aktuelle Paper
         paper_title = paper.get('Title', '(kein Titel)')
         paper_status.write(f"Paper {idx}/{total}: **{paper_title}**")
 
-        # Prompt
+        # Prompt:
         prompt_text = (
             f"Codewörter: {codewords}\n"
             f"Gene: {genes_str}\n\n"
             f"Paper:\n"
             f"Titel: {paper_title}\n"
             f"Abstract:\n{paper.get('Abstract','(kein Abstract)')}\n\n"
-            "Gib mir eine Zahl von 0 bis 100 (Relevanz), "
-            "wobei sowohl Codewörter als auch Gene berücksichtigt werden."
+            "Gib mir eine Zahl von 0 bis 100 (Relevanz), wobei sowohl Codewörter als auch Gene berücksichtigt werden."
         )
         try:
             response = openai.ChatCompletion.create(
@@ -490,45 +460,50 @@ def chatgpt_online_search_with_genes(papers, codewords=None, genes=None, top_k=1
         new_p["Relevance"] = score
         results_scored.append(new_p)
 
+    # Sortieren nach Relevanz
     results_scored.sort(key=lambda x: x["Relevance"], reverse=True)
     return results_scored[:top_k]
 
 
-# --------------------------------------------------------------------------
-# F) Beispiel-Funktion: Multi-API-Suche + ChatGPT
-# --------------------------------------------------------------------------
+###############################################################################
+# H) Multi-API-Suche + ChatGPT mit Genes (falls im Profil hinterlegt)
+###############################################################################
 def module_codewords_pubmed():
-    st.title("Multi-API-Suche + ChatGPT Scoring (inkl. Gene & Codewords)")
+    st.title("Multi-API-Suche (PubMed, Europe PMC, Google Scholar, ...) + ChatGPT Online Suche (inkl. Genes)")
 
-    # Profil-Auswahl (optional)
-    if "profiles" in st.session_state and st.session_state["profiles"]:
-        prof_names = list(st.session_state["profiles"].keys())
-        chosen_profile = st.selectbox("Wähle ein Profil:", ["(kein)"] + prof_names)
-        if st.button("Profil laden"):
-            if chosen_profile != "(kein)":
-                loaded = load_settings(chosen_profile)
-                if loaded:
-                    st.info(f"Profil '{chosen_profile}' geladen.")
-            else:
-                st.info("Kein Profil gewählt.")
+    # Profile check
+    if "profiles" not in st.session_state or not st.session_state["profiles"]:
+        st.warning("Keine Profile (optional).")
+        return
 
-    codewords_str = st.text_input("Codewörter (werden mit Genes kombiniert):", 
-                                  st.session_state.get("codewords_str", ""))
-    logic_option = st.radio("Logik (Codewörter-Verknüpfung):", ["AND", "OR"], 1)
+    prof_names = list(st.session_state["profiles"].keys())
+    chosen_profile = st.selectbox("Wähle ein Profil:", ["(kein)"] + prof_names)
+    if chosen_profile == "(kein)":
+        st.info("Kein Profil gewählt.")
+        return
 
-    # Genes (aus Session)
-    genes = st.session_state.get("selected_genes", [])
-    st.write(f"Aktueller Genes-Stand (Session): {genes}")
+    profile_data = load_settings(chosen_profile)
+    st.json(profile_data)
+
+    # Aus dem Profil kann man codewords (String) + genes (Liste) ziehen:
+    codewords_str = st.text_input("Codewörter (werden mit Genes kombiniert):", "")
+    logic_option = st.radio("Logik:", ["AND","OR"], 1)
+
+    # Falls das Profil Genes enthält, nutzen wir sie gleich:
+    genes = profile_data.get("genes", [])
+    st.write(f"Profil-Genes (falls vorhanden): {genes}")
 
     if st.button("Suche starten"):
         raw_list = [w.strip() for w in codewords_str.replace(",", " ").split() if w.strip()]
 
-        # Query bauen
+        # Aus codewords + genes => finaler Querystring, z.B. OR-Verknüpfung
+        # 1) codewords verknüpfen (AND oder OR) => query_str
         if logic_option == "AND":
             query_str = " AND ".join(raw_list) if raw_list else ""
         else:
             query_str = " OR ".join(raw_list) if raw_list else ""
 
+        # 2) Genes in Query einbauen => z.B. als OR:
         if genes:
             genes_query = " OR ".join(genes)
             if query_str:
@@ -543,38 +518,33 @@ def module_codewords_pubmed():
         st.write("Finale Suchanfrage:", query_str)
 
         results_all = []
-        # Nutzung der in der Session hinterlegten Booleans
-        use_pubmed_ = st.session_state.get("use_pubmed", True)
-        use_epmc_ = st.session_state.get("use_epmc", True)
-        use_google_ = st.session_state.get("use_google", False)
-        use_semantic_ = st.session_state.get("use_semantic", False)
-        use_openalex_ = st.session_state.get("use_openalex", False)
 
-        if use_pubmed_:
+        if profile_data.get("use_pubmed", False):
             pm = search_pubmed(query_str, max_results=200)
             st.write(f"PubMed: {len(pm)}")
             results_all.extend(pm)
 
-        if use_epmc_:
+        if profile_data.get("use_epmc", False):
             ep = search_europe_pmc(query_str, max_results=200)
             st.write(f"Europe PMC: {len(ep)}")
             results_all.extend(ep)
 
-        if use_google_:
-            gg = search_google_scholar(query_str, max_results=50)
+        if profile_data.get("use_google", False):
+            gg = search_google_scholar(query_str, max_results=200)
             st.write(f"Google Scholar: {len(gg)}")
             results_all.extend(gg)
 
-        if use_semantic_:
-            se = search_semantic_scholar(query_str, max_results=50)
+        if profile_data.get("use_semantic", False):
+            se = search_semantic_scholar(query_str, max_results=200)
             st.write(f"Semantic Scholar: {len(se)}")
             results_all.extend(se)
 
-        if use_openalex_:
-            oa = search_openalex(query_str, max_results=50)
+        if profile_data.get("use_openalex", False):
+            oa = search_openalex(query_str, max_results=200)
             st.write(f"OpenAlex: {len(oa)}")
             results_all.extend(oa)
 
+        # Maximal 1000 begrenzen
         if len(results_all) > 1000:
             results_all = results_all[:1000]
 
@@ -584,109 +554,57 @@ def module_codewords_pubmed():
 
         st.session_state["search_results"] = results_all
         st.write(f"Gefundene Papers insgesamt: {len(results_all)}")
-        df_main = pd.DataFrame(results_all)
+
+    # Falls Ergebnisse vorhanden:
+    if "search_results" in st.session_state and st.session_state["search_results"]:
+        df_main = pd.DataFrame(st.session_state["search_results"])
         st.dataframe(df_main)
 
-    # Falls Ergebnisse vorhanden => ChatGPT Scoring
-    if "search_results" in st.session_state and st.session_state["search_results"]:
         st.write("---")
-        st.subheader("ChatGPT-Online-Scoring (max. Top 100)")
+        st.subheader("ChatGPT-Online-Suche (inkl. Genes)")
 
-        if st.button("Starte ChatGPT-Scoring"):
-            codewords_for_scoring = codewords_str.strip()
-            if not codewords_for_scoring and not genes:
-                st.warning("Bitte Codewörter oder Gene eingeben, um Relevanz zu bestimmen!")
+        if st.button("Starte ChatGPT-Online-Suche (max. 1000 Papers)"):
+            if not codewords_str.strip() and not genes:
+                st.warning("Bitte Codewörter oder Gene eingeben/haben, um Relevanz zu bestimmen!")
             else:
+                st.write("Starte ChatGPT-Scoring...\n")
                 top_results = chatgpt_online_search_with_genes(
                     st.session_state["search_results"],
-                    codewords=codewords_for_scoring,
+                    codewords=codewords_str,
                     genes=genes,
                     top_k=100
                 )
                 if top_results:
-                    st.subheader("Top 100 Paper (nach ChatGPT-Relevanz)")
+                    st.subheader("Top 100 Paper (nach ChatGPT-Relevanz, inkl. Genes)")
                     df_top = pd.DataFrame(top_results)
                     st.dataframe(df_top)
 
 
-# --------------------------------------------------------------------------
-# Haupt-Menü
-# --------------------------------------------------------------------------
+###############################################################################
+# I) Haupt-App
+###############################################################################
 def main():
-    st.set_page_config(layout="wide")
-    st.title("Kombinierte App: ChatGPT, arXiv-Suche und Multi-API-Suche")
+    st.title("Kombinierte App: ChatGPT-Paper, arXiv-Suche, Multi-API-Suche (Genes+Codewords)")
 
-    # Default-Profil in Session anlegen
     if "profiles" not in st.session_state:
-        st.session_state["profiles"] = {}
-    if "selected_genes" not in st.session_state:
-        st.session_state["selected_genes"] = []
-    if "synonyms_selected" not in st.session_state:
-        st.session_state["synonyms_selected"] = {}
-    if "codewords_str" not in st.session_state:
-        st.session_state["codewords_str"] = ""
-    if "final_gene" not in st.session_state:
-        st.session_state["final_gene"] = ""
+        # Beispiel: wir speichern Genes in "genes", Codewords in "codewords"
+        st.session_state["profiles"] = {
+            "DefaultProfile": {
+                "use_pubmed": True,
+                "use_epmc": True,
+                "use_google": True,
+                "use_semantic": True,
+                "use_openalex": True,
+                "genes": ["BRCA1", "TP53"],
+                "codewords": "Cancer therapy"
+            }
+        }
 
-    # Default Flags
-    if "use_pubmed" not in st.session_state:
-        st.session_state["use_pubmed"] = True
-    if "use_epmc" not in st.session_state:
-        st.session_state["use_epmc"] = True
-    if "use_google" not in st.session_state:
-        st.session_state["use_google"] = False
-    if "use_semantic" not in st.session_state:
-        st.session_state["use_semantic"] = False
-    if "use_openalex" not in st.session_state:
-        st.session_state["use_openalex"] = False
-    if "use_core" not in st.session_state:
-        st.session_state["use_core"] = False
-    if "use_chatgpt" not in st.session_state:
-        st.session_state["use_chatgpt"] = False
-
-    menu = ["Home / Profile", "ChatGPT-Paper", "arXiv-Suche", "Multi-API-Suche"]
+    menu = ["ChatGPT-Paper", "arXiv-Suche", "Multi-API-Suche"]
     choice = st.sidebar.selectbox("Navigation", menu)
 
-    if choice == "Home / Profile":
-        st.subheader("Profilverwaltung / Übersicht")
-
-        colp1, colp2 = st.columns([2,1])
-        with colp1:
-            profile_name_input = st.text_input("Profilname (zum Speichern):", "")
-            if st.button("Profil speichern"):
-                if profile_name_input.strip():
-                    save_current_settings(profile_name_input.strip())
-                else:
-                    st.warning("Bitte einen Profilnamen eingeben.")
-
-        with colp2:
-            profiles_existing = list(st.session_state["profiles"].keys())
-            prof_sel = st.selectbox("Profil laden:", ["(kein)"] + profiles_existing)
-            if st.button("Profil übernehmen"):
-                if prof_sel != "(kein)":
-                    loaded = load_settings(prof_sel)
-                    if loaded:
-                        st.success(f"Profil '{prof_sel}' geladen.")
-                else:
-                    st.info("Kein Profil ausgewählt.")
-        
-        st.write("**Aktuelle Session-Einstellungen:**")
-        st.json({
-            "selected_genes": st.session_state["selected_genes"],
-            "synonyms_selected": st.session_state["synonyms_selected"],
-            "codewords_str": st.session_state["codewords_str"],
-            "final_gene": st.session_state["final_gene"],
-            "use_pubmed": st.session_state["use_pubmed"],
-            "use_epmc": st.session_state["use_epmc"],
-            "use_google": st.session_state["use_google"],
-            "use_semantic": st.session_state["use_semantic"],
-            "use_openalex": st.session_state["use_openalex"],
-            "use_core": st.session_state["use_core"],
-            "use_chatgpt": st.session_state["use_chatgpt"],
-        })
-
-    elif choice == "ChatGPT-Paper":
-        st.subheader("Paper mit ChatGPT generieren & lokal speichern")
+    if choice == "ChatGPT-Paper":
+        st.subheader("1) Paper mit ChatGPT generieren & lokal speichern")
         prompt_txt = st.text_area("Prompt:", "Schreibe ein Paper über KI in der Medizin.")
         local_dir = st.text_input("Zielordner lokal:", "chatgpt_papers")
         if st.button("Paper generieren"):
@@ -701,7 +619,7 @@ def main():
                 st.success(f"Paper gespeichert unter: {pdf_path}")
 
     elif choice == "arXiv-Suche":
-        st.subheader("arXiv-Suche & PDF-Download (lokal)")
+        st.subheader("2) arXiv-Suche & PDF-Download (lokal)")
         query = st.text_input("arXiv Suchbegriff:", "quantum computing")
         num = st.number_input("Anzahl", 1, 50, 5)
         local_dir_arxiv = st.text_input("Ordner für Downloads:", "arxiv_papers")
@@ -728,9 +646,11 @@ def main():
                         st.write("_Kein PDF-Link._")
                     st.write("---")
 
-    else:  # Multi-API-Suche
+    else:
+        st.subheader("3) Multi-API-Suche (PubMed, Europe PMC, Google Scholar, Semantic Scholar, OpenAlex)")
         module_codewords_pubmed()
 
 
 if __name__ == "__main__":
+    st.set_page_config(layout="wide")
     main()
