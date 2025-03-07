@@ -21,11 +21,11 @@ Systempfad (sys.path): {sys.path}
 """)
 
 # --------------------------------------------------------------------------
-# A) Pfad für lokales PaperQA (nur wenn Sie paperqa lokal nutzen)
+# A) Pfad für lokales PaperQA
 # --------------------------------------------------------------------------
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Pfad jetzt OHNE doppeltes "modules":
+# KORREKTER Pfad: "paper-qa/paperqa" (ohne doppeltes "modules")
 PAPERQA_LOCAL_PATH = os.path.join(CURRENT_DIR, "paper-qa", "paperqa")
 
 if not os.path.exists(PAPERQA_LOCAL_PATH):
@@ -65,39 +65,44 @@ except ImportError:
 # Globale Profil-Verwaltung in st.session_state
 # --------------------------------------------------------------------------
 def load_settings(profile_name: str):
+    """
+    Lädt ein bestehendes Profil aus st.session_state['profiles'] und aktualisiert die Session-Werte.
+    """
     if "profiles" not in st.session_state:
         return None
     profile_data = st.session_state["profiles"].get(profile_name, None)
     if profile_data:
-        st.session_state["selected_genes"] = profile_data.get("selected_genes", [])
-        st.session_state["synonyms_selected"] = profile_data.get("synonyms_selected", {})
-        st.session_state["codewords_str"] = profile_data.get("codewords_str", "")
-        st.session_state["final_gene"] = profile_data.get("final_gene", "")
-        st.session_state["use_pubmed"] = profile_data.get("use_pubmed", True)
-        st.session_state["use_epmc"] = profile_data.get("use_epmc", True)
-        st.session_state["use_google"] = profile_data.get("use_google", False)
-        st.session_state["use_semantic"] = profile_data.get("use_semantic", False)
-        st.session_state["use_openalex"] = profile_data.get("use_openalex", False)
-        st.session_state["use_core"] = profile_data.get("use_core", False)
-        st.session_state["use_chatgpt"] = profile_data.get("use_chatgpt", False)
+        st.session_state["selected_genes"]       = profile_data.get("selected_genes", [])
+        st.session_state["synonyms_selected"]    = profile_data.get("synonyms_selected", {})
+        st.session_state["codewords_str"]        = profile_data.get("codewords_str", "")
+        st.session_state["final_gene"]           = profile_data.get("final_gene", "")
+        st.session_state["use_pubmed"]           = profile_data.get("use_pubmed", True)
+        st.session_state["use_epmc"]             = profile_data.get("use_epmc", True)
+        st.session_state["use_google"]           = profile_data.get("use_google", False)
+        st.session_state["use_semantic"]         = profile_data.get("use_semantic", False)
+        st.session_state["use_openalex"]         = profile_data.get("use_openalex", False)
+        st.session_state["use_core"]             = profile_data.get("use_core", False)
+        st.session_state["use_chatgpt"]          = profile_data.get("use_chatgpt", False)
     return profile_data
 
 def save_current_settings(profile_name: str):
+    """
+    Speichert alle relevanten Einstellungen und Listen in st.session_state["profiles"][profile_name].
+    """
     if "profiles" not in st.session_state:
         st.session_state["profiles"] = {}
-
     st.session_state["profiles"][profile_name] = {
-        "selected_genes": st.session_state.get("selected_genes", []),
-        "synonyms_selected": st.session_state.get("synonyms_selected", {}),
-        "codewords_str": st.session_state.get("codewords_str", ""),
-        "final_gene": st.session_state.get("final_gene", ""),
-        "use_pubmed": st.session_state.get("use_pubmed", True),
-        "use_epmc": st.session_state.get("use_epmc", True),
-        "use_google": st.session_state.get("use_google", False),
-        "use_semantic": st.session_state.get("use_semantic", False),
-        "use_openalex": st.session_state.get("use_openalex", False),
-        "use_core": st.session_state.get("use_core", False),
-        "use_chatgpt": st.session_state.get("use_chatgpt", False),
+        "selected_genes":     st.session_state.get("selected_genes", []),
+        "synonyms_selected":  st.session_state.get("synonyms_selected", {}),
+        "codewords_str":      st.session_state.get("codewords_str", ""),
+        "final_gene":         st.session_state.get("final_gene", ""),
+        "use_pubmed":         st.session_state.get("use_pubmed", True),
+        "use_epmc":           st.session_state.get("use_epmc", True),
+        "use_google":         st.session_state.get("use_google", False),
+        "use_semantic":       st.session_state.get("use_semantic", False),
+        "use_openalex":       st.session_state.get("use_openalex", False),
+        "use_core":           st.session_state.get("use_core", False),
+        "use_chatgpt":        st.session_state.get("use_chatgpt", False),
     }
     st.success(f"Profil '{profile_name}' erfolgreich gespeichert.")
 
@@ -116,8 +121,8 @@ def generate_paper_via_chatgpt(prompt_text, model="gpt-3.5-turbo"):
         return response.choices[0].message.content
     except Exception as e:
         st.error(
-            "Fehler bei ChatGPT-API-Aufruf: "
-            f"'{e}'.\nPrüfe, ob 'OPENAI_API_KEY' in secrets.toml hinterlegt ist!"
+            f"Fehler bei ChatGPT-API-Aufruf: '{e}'.\n"
+            "Prüfe, ob 'OPENAI_API_KEY' in secrets.toml hinterlegt ist!"
         )
         return ""
 
@@ -126,7 +131,6 @@ def save_text_as_pdf(text, pdf_path, title="ChatGPT-Paper"):
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.set_font("Arial", size=12)
-
     pdf.cell(0, 10, title, ln=1)
     pdf.ln(5)
 
@@ -184,16 +188,50 @@ def download_arxiv_pdf(pdf_url, local_filepath):
         st.error(f"Fehler beim Herunterladen der PDF: {e}")
         return False
 
-# [Die anderen Multi-API-Funktionen und PaperQA-Teile bleiben unverändert]
+# --------------------------------------------------------------------------
+# Hier könnten Sie weitere Multi-API-Funktionen einbinden (PubMed usw.)
+# --------------------------------------------------------------------------
+
+# --------------------------------------------------------------------------
+# Beispiel-PaperQA-Test mit lokalem Docs()
+# --------------------------------------------------------------------------
+def paperqa_test():
+    st.subheader("Lokaler PaperQA-Test (Docs-Klasse)")
+    st.write("Hier kannst du PDFs hochladen und anschließend Fragen stellen (lokale PaperQA).")
+
+    docs = Docs()
+    uploaded_files = st.file_uploader("PDFs hochladen", type=["pdf"], accept_multiple_files=True)
+    if uploaded_files:
+        for up in uploaded_files:
+            pdf_bytes = up.read()
+            try:
+                docs.add(pdf_bytes, metadata=up.name)
+                st.success(f"{up.name} hinzugefügt.")
+            except Exception as e:
+                st.error(f"Fehler beim Einlesen {up.name}: {e}")
+
+    question = st.text_input("Frage an die hochgeladenen PDFs:")
+    if st.button("An PaperQA fragen"):
+        if not question.strip():
+            st.warning("Bitte eine Frage eingeben.")
+        else:
+            try:
+                answer_obj = docs.query(question)
+                st.markdown("### Antwort:")
+                st.write(answer_obj.answer)
+                with st.expander("Kontext / Belege"):
+                    st.write(answer_obj.context)
+            except Exception as e:
+                st.error(f"Fehler bei PaperQA-Abfrage: {e}")
 
 # --------------------------------------------------------------------------
 # Haupt-Menü
 # --------------------------------------------------------------------------
 def main():
     st.set_page_config(layout="wide")
-    st.title("Kombinierte App: ChatGPT, arXiv-Suche, Multi-API-Suche, PaperQA")
+    st.title("Kombinierte App: ChatGPT, arXiv-Suche, PaperQA (lokal)")
 
-    # Hier ggf. Ihre Default-States anlegen
+    # Standard-Werte in Session anlegen
     if "profiles" not in st.session_state:
         st.session_state["profiles"] = {}
     if "selected_genes" not in st.session_state:
@@ -221,12 +259,19 @@ def main():
     if "use_chatgpt" not in st.session_state:
         st.session_state["use_chatgpt"] = False
 
-    menu = ["Home / Profile", "ChatGPT-Paper", "arXiv-Suche", "Multi-API-Suche", "PaperQA-Test"]
+    menu = [
+        "Home / Profile",
+        "ChatGPT-Paper",
+        "arXiv-Suche",
+        "PaperQA-Test"
+    ]
     choice = st.sidebar.selectbox("Navigation", menu)
 
+    # 1) Profilverwaltung
     if choice == "Home / Profile":
         st.subheader("Profilverwaltung / Übersicht")
         colp1, colp2 = st.columns([2,1])
+
         with colp1:
             profile_name_input = st.text_input("Profilname (zum Speichern):", "")
             if st.button("Profil speichern"):
@@ -245,27 +290,27 @@ def main():
                         st.success(f"Profil '{prof_sel}' geladen.")
                 else:
                     st.info("Kein Profil ausgewählt.")
-        
+
         st.write("**Aktuelle Session-Einstellungen:**")
         st.json({
-            "selected_genes": st.session_state["selected_genes"],
-            "synonyms_selected": st.session_state["synonyms_selected"],
-            "codewords_str": st.session_state["codewords_str"],
-            "final_gene": st.session_state["final_gene"],
-            "use_pubmed": st.session_state["use_pubmed"],
-            "use_epmc": st.session_state["use_epmc"],
-            "use_google": st.session_state["use_google"],
-            "use_semantic": st.session_state["use_semantic"],
-            "use_openalex": st.session_state["use_openalex"],
-            "use_core": st.session_state["use_core"],
-            "use_chatgpt": st.session_state["use_chatgpt"],
+            "selected_genes":       st.session_state["selected_genes"],
+            "synonyms_selected":    st.session_state["synonyms_selected"],
+            "codewords_str":        st.session_state["codewords_str"],
+            "final_gene":           st.session_state["final_gene"],
+            "use_pubmed":           st.session_state["use_pubmed"],
+            "use_epmc":             st.session_state["use_epmc"],
+            "use_google":           st.session_state["use_google"],
+            "use_semantic":         st.session_state["use_semantic"],
+            "use_openalex":         st.session_state["use_openalex"],
+            "use_core":             st.session_state["use_core"],
+            "use_chatgpt":          st.session_state["use_chatgpt"],
         })
 
+    # 2) ChatGPT-Paper generieren
     elif choice == "ChatGPT-Paper":
         st.subheader("1) Paper mit ChatGPT generieren & lokal speichern")
         prompt_txt = st.text_area("Prompt:", "Schreibe ein Paper über KI in der Medizin.")
         local_dir = st.text_input("Zielordner lokal:", "chatgpt_papers")
-
         if st.button("Paper generieren"):
             text = generate_paper_via_chatgpt(prompt_txt)
             if text:
@@ -277,6 +322,7 @@ def main():
                 save_text_as_pdf(text, pdf_path, title="ChatGPT-Paper")
                 st.success(f"Paper gespeichert unter: {pdf_path}")
 
+    # 3) arXiv-Suche & PDF-Download
     elif choice == "arXiv-Suche":
         st.subheader("2) arXiv-Suche & PDF-Download (lokal)")
         query = st.text_input("arXiv Suchbegriff:", "quantum computing")
@@ -305,13 +351,9 @@ def main():
                         st.write("_Kein PDF-Link._")
                     st.write("---")
 
-    elif choice == "Multi-API-Suche":
-        # Hier z.B. module_codewords_pubmed() aufrufen
-        module_codewords_pubmed()
-
-    else:  # PaperQA-Test
+    # 4) Lokaler PaperQA-Test
+    else:
         paperqa_test()
-
 
 if __name__ == "__main__":
     main()
