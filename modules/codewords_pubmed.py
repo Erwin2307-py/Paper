@@ -21,13 +21,12 @@ Systempfad (sys.path): {sys.path}
 """)
 
 # --------------------------------------------------------------------------
-# A) Pfad für lokales PaperQA (wenn Sie es in modules/paper-qa/paperqa nutzen)
+# A) Pfad für lokales PaperQA
 # --------------------------------------------------------------------------
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Wichtig: KEIN doppeltes "modules"!
-# Wir gehen davon aus, dass es so liegt: modules/paper-qa/paperqa/__init__.py
-PAPERQA_LOCAL_PATH = os.path.join(CURRENT_DIR, "paper-qa", "paperqa")
+# KORREKTER Pfad: modules/paper-qa/paperqa (nur ein "modules")
+PAPERQA_LOCAL_PATH = os.path.join(CURRENT_DIR, "modules", "paper-qa", "paperqa")
 
 if not os.path.exists(PAPERQA_LOCAL_PATH):
     st.error(f"Kritischer Pfadfehler: {PAPERQA_LOCAL_PATH} existiert nicht!")
@@ -43,8 +42,7 @@ try:
 except ImportError as e:
     st.error(
         "Konnte 'paperqa' nicht importieren. "
-        "Bitte prüfe, ob im Ordner 'paper-qa/paperqa' eine Datei '__init__.py' liegt "
-        "und ob Du die Struktur korrekt hast.\n"
+        "Bitte prüfe, ob der Ordner 'modules/paper-qa/paperqa' eine Datei '__init__.py' enthält. \n"
         f"Aktueller Pfad: {PAPERQA_LOCAL_PATH}\nFehler:\n{e}"
     )
     st.stop()
@@ -63,14 +61,10 @@ try:
 except ImportError:
     st.error("Bitte installiere 'fpdf' (z.B. mit 'pip install fpdf').")
 
-
 # --------------------------------------------------------------------------
 # Globale Profil-Verwaltung in st.session_state
 # --------------------------------------------------------------------------
 def load_settings(profile_name: str):
-    """
-    Lädt ein bestehendes Profil aus st.session_state['profiles'] und aktualisiert die Session-Werte.
-    """
     if "profiles" not in st.session_state:
         return None
     profile_data = st.session_state["profiles"].get(profile_name, None)
@@ -89,9 +83,6 @@ def load_settings(profile_name: str):
     return profile_data
 
 def save_current_settings(profile_name: str):
-    """
-    Speichert alle relevanten Einstellungen und Listen in st.session_state['profiles'][profile_name].
-    """
     if "profiles" not in st.session_state:
         st.session_state["profiles"] = {}
     st.session_state["profiles"][profile_name] = {
@@ -109,9 +100,8 @@ def save_current_settings(profile_name: str):
     }
     st.success(f"Profil '{profile_name}' erfolgreich gespeichert.")
 
-
 # --------------------------------------------------------------------------
-# ChatGPT: Paper erstellen & lokal speichern
+# A) ChatGPT: Paper erstellen & lokal speichern
 # --------------------------------------------------------------------------
 def generate_paper_via_chatgpt(prompt_text, model="gpt-3.5-turbo"):
     try:
@@ -145,9 +135,8 @@ def save_text_as_pdf(text, pdf_path, title="ChatGPT-Paper"):
 
     pdf.output(pdf_path, "F")
 
-
 # --------------------------------------------------------------------------
-# arXiv-Suche & Download
+# B) arXiv-Suche & Download
 # --------------------------------------------------------------------------
 def search_arxiv_papers(query, max_results=5):
     base_url = "http://export.arxiv.org/api/query?"
@@ -193,7 +182,6 @@ def download_arxiv_pdf(pdf_url, local_filepath):
         st.error(f"Fehler beim Herunterladen der PDF: {e}")
         return False
 
-
 # --------------------------------------------------------------------------
 # Beispiel: Lokaler PaperQA-Test mit Docs()
 # --------------------------------------------------------------------------
@@ -225,7 +213,6 @@ def paperqa_test():
                     st.write(answer_obj.context)
             except Exception as e:
                 st.error(f"Fehler bei PaperQA-Abfrage: {e}")
-
 
 # --------------------------------------------------------------------------
 # Haupt-Menü
