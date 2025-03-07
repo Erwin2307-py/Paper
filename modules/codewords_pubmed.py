@@ -21,47 +21,6 @@ Systempfad (sys.path): {sys.path}
 """)
 
 # --------------------------------------------------------------------------
-# A) Pfad für lokales PaperQA
-# --------------------------------------------------------------------------
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# WICHTIG: Nur einmal "modules". 
-# Hier die Struktur: modules/paper-qa/paperqa/__init__.py
-PAPERQA_LOCAL_PATH = os.path.join(CURRENT_DIR,  "paper-qa", "paperqa")
-
-if not os.path.exists(PAPERQA_LOCAL_PATH):
-    st.error(f"Kritischer Pfadfehler: {PAPERQA_LOCAL_PATH} existiert nicht!")
-    st.stop()
-
-if PAPERQA_LOCAL_PATH not in sys.path:
-    sys.path.insert(0, PAPERQA_LOCAL_PATH)
-
-# Versuch, PaperQA zu importieren
-try:
-    from paperqa import Docs
-except ImportError as e:
-    st.error(
-        "Konnte 'paperqa' nicht importieren. "
-        "Bitte prüfe, ob im Ordner 'modules/paper-qa/paperqa' eine Datei '__init__.py' liegt. \n"
-        f"Aktueller Pfad: {PAPERQA_LOCAL_PATH}\nFehler:\n{e}"
-    )
-    st.stop()
-
-# --------------------------------------------------------------------------
-# Eventuell weitere Bibliotheken
-# --------------------------------------------------------------------------
-try:
-    from scholarly import scholarly
-except ImportError:
-    st.error("Bitte installiere 'scholarly' (z.B. mit 'pip install scholarly').")
-
-import openai
-try:
-    from fpdf import FPDF
-except ImportError:
-    st.error("Bitte installiere 'fpdf' (z.B. mit 'pip install fpdf').")
-
-# --------------------------------------------------------------------------
 # Globale Profil-Verwaltung in st.session_state
 # --------------------------------------------------------------------------
 def load_settings(profile_name: str):
@@ -101,8 +60,14 @@ def save_current_settings(profile_name: str):
     st.success(f"Profil '{profile_name}' erfolgreich gespeichert.")
 
 # --------------------------------------------------------------------------
-# ChatGPT: Paper erstellen & lokal speichern
+# A) ChatGPT: Paper erstellen & lokal speichern
 # --------------------------------------------------------------------------
+import openai
+try:
+    from fpdf import FPDF
+except ImportError:
+    st.error("Bitte installiere 'fpdf' (z.B. mit 'pip install fpdf').")
+
 def generate_paper_via_chatgpt(prompt_text, model="gpt-3.5-turbo"):
     try:
         openai.api_key = st.secrets["OPENAI_API_KEY"]
@@ -138,6 +103,8 @@ def save_text_as_pdf(text, pdf_path, title="ChatGPT-Paper"):
 # --------------------------------------------------------------------------
 # arXiv-Suche & Download
 # --------------------------------------------------------------------------
+import feedparser
+
 def search_arxiv_papers(query, max_results=5):
     base_url = "http://export.arxiv.org/api/query?"
     params = {"search_query": f"all:{query}", "start": 0, "max_results": max_results}
@@ -183,43 +150,11 @@ def download_arxiv_pdf(pdf_url, local_filepath):
         return False
 
 # --------------------------------------------------------------------------
-# Lokaler PaperQA-Test (Docs)
-# --------------------------------------------------------------------------
-def paperqa_test():
-    st.subheader("Lokaler PaperQA-Test (Docs-Klasse)")
-    st.write("Hier kannst du PDFs hochladen und anschließend Fragen stellen (lokale PaperQA).")
-
-    docs = Docs()
-    uploaded_files = st.file_uploader("PDFs hochladen", type=["pdf"], accept_multiple_files=True)
-    if uploaded_files:
-        for up in uploaded_files:
-            pdf_bytes = up.read()
-            try:
-                docs.add(pdf_bytes, metadata=up.name)
-                st.success(f"{up.name} hinzugefügt.")
-            except Exception as e:
-                st.error(f"Fehler beim Einlesen {up.name}: {e}")
-
-    question = st.text_input("Frage an die hochgeladenen PDFs:")
-    if st.button("An PaperQA fragen"):
-        if not question.strip():
-            st.warning("Bitte eine Frage eingeben.")
-        else:
-            try:
-                answer_obj = docs.query(question)
-                st.markdown("### Antwort:")
-                st.write(answer_obj.answer)
-                with st.expander("Kontext / Belege"):
-                    st.write(answer_obj.context)
-            except Exception as e:
-                st.error(f"Fehler bei PaperQA-Abfrage: {e}")
-
-# --------------------------------------------------------------------------
 # Haupt-Menü
 # --------------------------------------------------------------------------
 def main():
     st.set_page_config(layout="wide")
-    st.title("Kombinierte App: ChatGPT, arXiv-Suche, PaperQA (lokal)")
+    st.title("Kombinierte App: ChatGPT-Paper & arXiv-Suche")
 
     # Session Defaults
     if "profiles" not in st.session_state:
@@ -252,8 +187,7 @@ def main():
     menu = [
         "Home / Profile",
         "ChatGPT-Paper",
-        "arXiv-Suche",
-        "PaperQA-Test"
+        "arXiv-Suche"
     ]
     choice = st.sidebar.selectbox("Navigation", menu)
 
@@ -313,7 +247,7 @@ def main():
                 st.success(f"Paper gespeichert unter: {pdf_path}")
 
     # 3) arXiv-Suche & PDF-Download
-    elif choice == "arXiv-Suche":
+    else:
         st.subheader("2) arXiv-Suche & PDF-Download (lokal)")
         query = st.text_input("arXiv Suchbegriff:", "quantum computing")
         num = st.number_input("Anzahl", 1, 50, 5)
@@ -340,10 +274,6 @@ def main():
                     else:
                         st.write("_Kein PDF-Link._")
                     st.write("---")
-
-    # 4) Lokaler PaperQA-Test
-    else:
-        paperqa_test()
 
 
 if __name__ == "__main__":
