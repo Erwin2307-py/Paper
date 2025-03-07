@@ -21,12 +21,13 @@ Systempfad (sys.path): {sys.path}
 """)
 
 # --------------------------------------------------------------------------
-# A) Pfad für lokales PaperQA
+# A) Pfad für lokales PaperQA (wenn Sie es in modules/paper-qa/paperqa nutzen)
 # --------------------------------------------------------------------------
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# KORREKTER Pfad: "paper-qa/paperqa" (ohne doppeltes "modules")
-PAPERQA_LOCAL_PATH = os.path.join(CURRENT_DIR, "paper-qa")
+# Wichtig: KEIN doppeltes "modules"!
+# Wir gehen davon aus, dass es so liegt: modules/paper-qa/paperqa/__init__.py
+PAPERQA_LOCAL_PATH = os.path.join(CURRENT_DIR, "modules", "paper-qa", "paperqa")
 
 if not os.path.exists(PAPERQA_LOCAL_PATH):
     st.error(f"Kritischer Pfadfehler: {PAPERQA_LOCAL_PATH} existiert nicht!")
@@ -42,13 +43,14 @@ try:
 except ImportError as e:
     st.error(
         "Konnte 'paperqa' nicht importieren. "
-        "Bitte prüfe, ob der Ordner 'paper-qa/paperqa' und dessen '__init__.py' korrekt vorhanden sind.\n"
+        "Bitte prüfe, ob im Ordner 'paper-qa/paperqa' eine Datei '__init__.py' liegt "
+        "und ob Du die Struktur korrekt hast.\n"
         f"Aktueller Pfad: {PAPERQA_LOCAL_PATH}\nFehler:\n{e}"
     )
     st.stop()
 
 # --------------------------------------------------------------------------
-# Eventuell vorhandene Bibliotheken
+# Eventuell weitere Bibliotheken
 # --------------------------------------------------------------------------
 try:
     from scholarly import scholarly
@@ -60,6 +62,7 @@ try:
     from fpdf import FPDF
 except ImportError:
     st.error("Bitte installiere 'fpdf' (z.B. mit 'pip install fpdf').")
+
 
 # --------------------------------------------------------------------------
 # Globale Profil-Verwaltung in st.session_state
@@ -87,7 +90,7 @@ def load_settings(profile_name: str):
 
 def save_current_settings(profile_name: str):
     """
-    Speichert alle relevanten Einstellungen und Listen in st.session_state["profiles"][profile_name].
+    Speichert alle relevanten Einstellungen und Listen in st.session_state['profiles'][profile_name].
     """
     if "profiles" not in st.session_state:
         st.session_state["profiles"] = {}
@@ -106,8 +109,9 @@ def save_current_settings(profile_name: str):
     }
     st.success(f"Profil '{profile_name}' erfolgreich gespeichert.")
 
+
 # --------------------------------------------------------------------------
-# A) ChatGPT: Paper erstellen & lokal speichern
+# ChatGPT: Paper erstellen & lokal speichern
 # --------------------------------------------------------------------------
 def generate_paper_via_chatgpt(prompt_text, model="gpt-3.5-turbo"):
     try:
@@ -141,8 +145,9 @@ def save_text_as_pdf(text, pdf_path, title="ChatGPT-Paper"):
 
     pdf.output(pdf_path, "F")
 
+
 # --------------------------------------------------------------------------
-# B) arXiv-Suche & Download
+# arXiv-Suche & Download
 # --------------------------------------------------------------------------
 def search_arxiv_papers(query, max_results=5):
     base_url = "http://export.arxiv.org/api/query?"
@@ -188,12 +193,9 @@ def download_arxiv_pdf(pdf_url, local_filepath):
         st.error(f"Fehler beim Herunterladen der PDF: {e}")
         return False
 
-# --------------------------------------------------------------------------
-# Hier könnten Sie weitere Multi-API-Funktionen einbinden (PubMed usw.)
-# --------------------------------------------------------------------------
 
 # --------------------------------------------------------------------------
-# Beispiel-PaperQA-Test mit lokalem Docs()
+# Beispiel: Lokaler PaperQA-Test mit Docs()
 # --------------------------------------------------------------------------
 def paperqa_test():
     st.subheader("Lokaler PaperQA-Test (Docs-Klasse)")
@@ -223,6 +225,7 @@ def paperqa_test():
                     st.write(answer_obj.context)
             except Exception as e:
                 st.error(f"Fehler bei PaperQA-Abfrage: {e}")
+
 
 # --------------------------------------------------------------------------
 # Haupt-Menü
@@ -354,6 +357,7 @@ def main():
     # 4) Lokaler PaperQA-Test
     else:
         paperqa_test()
+
 
 if __name__ == "__main__":
     main()
