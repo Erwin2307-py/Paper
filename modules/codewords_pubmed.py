@@ -20,7 +20,7 @@ import sys
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Zusammensetzen des Pfads zum Ordner "paperqa", der im selben Verzeichnis liegt
-PAPERQA_LOCAL_PATH = os.path.join(CURRENT_DIR, "paperqa")
+PAPERQA_LOCAL_PATH = os.path.join(CURRENT_DIR, "paper-qa")
 
 # Diesen Ordner in den Python-Pfad aufnehmen (falls noch nicht vorhanden)
 if PAPERQA_LOCAL_PATH not in sys.path:
