@@ -27,7 +27,7 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # KORREKTUR: Nun mit Bindestrich "paper-qa" + Unterordner "paperqa"
 # Passen Sie ggf. an, wenn Ihre Struktur abweicht
-PAPERQA_LOCAL_PATH = os.path.join(CURRENT_DIR, "modules", "paper-qa", "paperqa")
+PAPERQA_LOCAL_PATH = os.path.join(CURRENT_DIR, "modules", "paper-qa")
 
 if not os.path.exists(PAPERQA_LOCAL_PATH):
     st.error(f"Kritischer Pfadfehler: {PAPERQA_LOCAL_PATH} existiert nicht!")
