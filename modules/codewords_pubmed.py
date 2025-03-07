@@ -21,34 +21,6 @@ Systempfad (sys.path): {sys.path}
 """)
 
 # --------------------------------------------------------------------------
-# A) Pfad für lokales PaperQA anpassen
-# --------------------------------------------------------------------------
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# KORREKTUR: Nun mit Bindestrich "paper-qa" + Unterordner "paperqa"
-# Passen Sie ggf. an, wenn Ihre Struktur abweicht
-PAPERQA_LOCAL_PATH = os.path.join(CURRENT_DIR, "modules", "paper-qa", "paperqa")
-
-if not os.path.exists(PAPERQA_LOCAL_PATH):
-    st.error(f"Kritischer Pfadfehler: {PAPERQA_LOCAL_PATH} existiert nicht!")
-    st.stop()
-
-# Diesen Ordner in den Python-Pfad aufnehmen, falls noch nicht vorhanden
-if PAPERQA_LOCAL_PATH not in sys.path:
-    sys.path.insert(0, PAPERQA_LOCAL_PATH)
-
-# Versuch, PaperQA zu importieren
-try:
-    from paperqa import Docs
-except ImportError as e:
-    st.error(
-        "Konnte 'paperqa' nicht importieren. "
-        "Bitte prüfe, ob der Ordner 'paper-qa/paperqa' und dessen '__init__.py' korrekt vorhanden sind.\n"
-        f"Aktueller Pfad: {PAPERQA_LOCAL_PATH}\nFehler:\n{e}"
-    )
-    st.stop()
-
-# --------------------------------------------------------------------------
 # Eventuell vorhandene Bibliotheken
 # --------------------------------------------------------------------------
 try:
@@ -638,44 +610,11 @@ def module_codewords_pubmed():
 
 
 # --------------------------------------------------------------------------
-# G) PaperQA-Testmodul (lokaler Import)
-# --------------------------------------------------------------------------
-def paperqa_test():
-    st.subheader("Lokaler PaperQA-Test")
-    st.write("Hier kannst du PDFs hochladen und anschließend Fragen stellen.")
-
-    docs = Docs()
-    uploaded_files = st.file_uploader("PDFs hochladen", type=["pdf"], accept_multiple_files=True)
-    if uploaded_files:
-        for up in uploaded_files:
-            pdf_bytes = up.read()
-            try:
-                docs.add(pdf_bytes, metadata=up.name)
-                st.success(f"{up.name} hinzugefügt.")
-            except Exception as e:
-                st.error(f"Fehler beim Einlesen {up.name}: {e}")
-
-    question = st.text_input("Frage an die hochgeladenen PDFs:")
-    if st.button("An PaperQA fragen"):
-        if not question.strip():
-            st.warning("Bitte eine Frage eingeben.")
-        else:
-            try:
-                answer_obj = docs.query(question)
-                st.markdown("### Antwort:")
-                st.write(answer_obj.answer)
-                with st.expander("Kontext / Belege"):
-                    st.write(answer_obj.context)
-            except Exception as e:
-                st.error(f"Fehler bei PaperQA-Abfrage: {e}")
-
-
-# --------------------------------------------------------------------------
 # Haupt-Menü
 # --------------------------------------------------------------------------
 def main():
     st.set_page_config(layout="wide")
-    st.title("Kombinierte App: ChatGPT, arXiv-Suche, Multi-API-Suche, PaperQA")
+    st.title("Kombinierte App: ChatGPT, arXiv-Suche und Multi-API-Suche")
 
     # Default-Profil in Session anlegen
     if "profiles" not in st.session_state:
@@ -705,7 +644,7 @@ def main():
     if "use_chatgpt" not in st.session_state:
         st.session_state["use_chatgpt"] = False
 
-    menu = ["Home / Profile", "ChatGPT-Paper", "arXiv-Suche", "Multi-API-Suche", "PaperQA-Test"]
+    menu = ["Home / Profile", "ChatGPT-Paper", "arXiv-Suche", "Multi-API-Suche"]
     choice = st.sidebar.selectbox("Navigation", menu)
 
     if choice == "Home / Profile":
@@ -747,7 +686,7 @@ def main():
         })
 
     elif choice == "ChatGPT-Paper":
-        st.subheader("1) Paper mit ChatGPT generieren & lokal speichern")
+        st.subheader("Paper mit ChatGPT generieren & lokal speichern")
         prompt_txt = st.text_area("Prompt:", "Schreibe ein Paper über KI in der Medizin.")
         local_dir = st.text_input("Zielordner lokal:", "chatgpt_papers")
         if st.button("Paper generieren"):
@@ -762,7 +701,7 @@ def main():
                 st.success(f"Paper gespeichert unter: {pdf_path}")
 
     elif choice == "arXiv-Suche":
-        st.subheader("2) arXiv-Suche & PDF-Download (lokal)")
+        st.subheader("arXiv-Suche & PDF-Download (lokal)")
         query = st.text_input("arXiv Suchbegriff:", "quantum computing")
         num = st.number_input("Anzahl", 1, 50, 5)
         local_dir_arxiv = st.text_input("Ordner für Downloads:", "arxiv_papers")
@@ -789,11 +728,8 @@ def main():
                         st.write("_Kein PDF-Link._")
                     st.write("---")
 
-    elif choice == "Multi-API-Suche":
+    else:  # Multi-API-Suche
         module_codewords_pubmed()
-
-    else:  # PaperQA-Test
-        paperqa_test()
 
 
 if __name__ == "__main__":
