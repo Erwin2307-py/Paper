@@ -26,7 +26,7 @@ Systempfad (sys.path): {sys.path}
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # KORREKTER Pfad: "paper-qa/paperqa" (ohne doppeltes "modules")
-PAPERQA_LOCAL_PATH = os.path.join(CURRENT_DIR, "paper-qa", "paperqa")
+PAPERQA_LOCAL_PATH = os.path.join(CURRENT_DIR, "paper-qa")
 
 if not os.path.exists(PAPERQA_LOCAL_PATH):
     st.error(f"Kritischer Pfadfehler: {PAPERQA_LOCAL_PATH} existiert nicht!")
