@@ -1,9 +1,0 @@
-streamlit
-openai
-requests
-openpyxl
-fpdf
-PyMuPDF
-scholarly
-selenium
-urllib3
