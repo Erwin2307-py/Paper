@@ -23,7 +23,7 @@ semanticscholar
 pydantic
 haystack
 sentence-transformers
-
+farm-haystack
 
 
 
