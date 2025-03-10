@@ -11,7 +11,6 @@ xlsxwriter
 pandas
 transformers
 webdriver-manager
-pandas
 feedparser
 pdfplumber
 faiss-cpu
@@ -21,8 +20,8 @@ litellm
 paper-qa>=5
 habanero
 semanticscholar
-litellm
 pydantic
+
 
 
 
