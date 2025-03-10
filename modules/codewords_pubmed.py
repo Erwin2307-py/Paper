@@ -1,9 +1,20 @@
 import sys
 import types
+import importlib.util
+import streamlit as st
+import requests
+import feedparser
+import pandas as pd
+import os
+import re
+import time
+import xml.etree.ElementTree as ET
+from datetime import datetime
+from collections import defaultdict
+import base64
+import openai
 
-# -------------------------------------------------------------------
-# Dummy-Modul für lmi erstellen (falls nicht installiert)
-# -------------------------------------------------------------------
+# Versuche zuerst, das Modul lmi zu importieren. Falls nicht vorhanden, erstelle ein Dummy-Modul.
 try:
     import lmi
 except ImportError:
@@ -25,6 +36,14 @@ except ImportError:
 
     dummy_lmi.HybridEmbeddingModel = HybridEmbeddingModel
 
+    # Dummy-Klasse für LiteLLMEmbeddingModel
+    class LiteLLMEmbeddingModel(EmbeddingModel):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+
+    dummy_lmi.LiteLLMEmbeddingModel = LiteLLMEmbeddingModel
+
+    # Falls PaperQA2 auch LiteLLMModel benötigt:
     class LiteLLMModel(EmbeddingModel):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
@@ -33,52 +52,22 @@ except ImportError:
 
     sys.modules["lmi"] = dummy_lmi
 
-# -------------------------------------------------------------------
-# Weitere Imports
-# -------------------------------------------------------------------
-import streamlit as st
-import requests
-import feedparser
-import pandas as pd
-import os
-import re
-import time
-import xml.etree.ElementTree as ET
-from datetime import datetime
-from collections import defaultdict
-import base64
-import importlib.util
-import openai
-
-try:
-    from scholarly import scholarly
-except ImportError:
-    st.error("Bitte installiere 'scholarly', z.B. via: pip install scholarly")
-    st.stop()
-
-try:
-    from fpdf import FPDF
-except ImportError:
-    st.error("Bitte installiere 'fpdf', z.B. via: pip install fpdf")
-    st.stop()
-
-# -------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Debug-Informationen (zur Überprüfung in Streamlit Cloud)
-# -------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 st.sidebar.markdown("**[DEBUG-INFO]**")
 st.sidebar.code(f"""
 Aktuelles Arbeitsverzeichnis: {os.getcwd()}
 Systempfad (sys.path): {sys.path}
 """)
 
-# -------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # A) Dynamischer Import von PaperQA2 via direktem Pfad zur __init__.py
-# -------------------------------------------------------------------
-# Annahme: Repository-Struktur:
-#
+# ----------------------------------------------------------------------------
+# Annahme: Ihre Repository-Struktur sieht so aus:
 # your_repo/
 # └── modules/
-#     ├── codewords_pubmed.py    <-- Dieses Skript
+#     ├── codewords_pubmed.py   <-- Dieses Skript
 #     └── paper-qa/
 #          └── paper-qa-main/
 #               └── paperqa/
@@ -111,9 +100,9 @@ except Exception as e:
 
 Docs = paperqa_module.Docs
 
-# -------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # B) Beispielhafte Such-Funktion für PubMed
-# -------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 def search_pubmed(query: str, max_results=100):
     """
     Sucht in PubMed per ESearch und ESummary.
@@ -156,13 +145,13 @@ def search_pubmed(query: str, max_results=100):
         st.error(f"PubMed-Suche fehlgeschlagen: {e}")
         return out
 
-# -------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # C) PaperQA2-Demo: PDFs hochladen und Frage stellen
-# -------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 def paperqa_test_locally():
     """
     Ermöglicht das Hochladen von PDF-Dateien und das Stellen einer Frage
-    an das PaperQA2-System via der Docs-Klasse.
+    an das PaperQA2-System über die Docs-Klasse.
     """
     st.subheader("Lokaler PaperQA2-Test")
     docs = Docs()
@@ -191,9 +180,9 @@ def paperqa_test_locally():
             except Exception as e:
                 st.error(f"Fehler bei PaperQA2-Abfrage: {e}")
 
-# -------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # D) Multi-API-Suche + PaperQA2-Demo (Beispiel: PubMed-Suche + PaperQA2)
-# -------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 def module_codewords_pubmed():
     st.title("Multi-API-Suche + PaperQA2 (lokaler Import)")
 
@@ -212,9 +201,9 @@ def module_codewords_pubmed():
     st.subheader("PaperQA2 Test-Lauf (lokal)")
     paperqa_test_locally()
 
-# -------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # E) Hauptprogramm (Streamlit-App)
-# -------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 def main():
     st.set_page_config(layout="wide")
     st.title("Kombinierte App: Multi-API-Suche + PaperQA2 (Streamlit)")
