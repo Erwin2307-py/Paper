@@ -23,7 +23,6 @@ habanero
 semanticscholar
 litellm
 pydantic
-git+https://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@github.com/Erwin2307-y/Paper.git@main#egg=lmi
 
 
 
