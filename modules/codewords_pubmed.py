@@ -42,6 +42,23 @@ if not hasattr(openai, "APIStatusError"):
     openai.APIStatusError = Exception
 
 # ----------------------------------------------------------------------------
+# Patch: Dummy-Modul für openai._models erstellen, falls nicht vorhanden
+# ----------------------------------------------------------------------------
+if "openai._models" not in sys.modules:
+    st.warning("Modul 'openai._models' nicht gefunden – Dummy wird verwendet.")
+    dummy_openai_models = types.ModuleType("openai._models")
+    # Wir definieren hier einige Dummy-Attribute, die eventuell von PaperQA2 benötigt werden.
+    dummy_openai_models.AuthenticationError = openai.AuthenticationError
+    dummy_openai_models.BadRequestError = openai.BadRequestError
+    dummy_openai_models.RateLimitError = openai.RateLimitError
+    dummy_openai_models.APITimeoutError = openai.APITimeoutError
+    dummy_openai_models.APIConnectionError = openai.APIConnectionError
+    dummy_openai_models.APIStatusError = openai.APIStatusError
+    # Dummy für weitere erwartete Komponenten
+    dummy_openai_models.LLMResult = lambda text="": text
+    sys.modules["openai._models"] = dummy_openai_models
+
+# ----------------------------------------------------------------------------
 # Versuch, scholarly und fpdf zu importieren
 # ----------------------------------------------------------------------------
 try:
@@ -65,7 +82,6 @@ except ImportError:
     st.warning("Modul 'lmi' nicht gefunden – Dummy-Implementierung wird verwendet.")
     dummy_lmi = types.ModuleType("lmi")
     
-    # Dummy für LLMModel
     class LLMModel:
         def __init__(self, *args, **kwargs):
             pass
@@ -73,41 +89,33 @@ except ImportError:
             return "Dummy LLMModel output"
     dummy_lmi.LLMModel = LLMModel
 
-    # Dummy für EmbeddingModel
     class EmbeddingModel:
         def __init__(self, *args, **kwargs):
             pass
         def embed(self, text):
-            # Beispiel: Rückgabe eines Dummy-Vektors (768 Dimensionen)
             return [0.0] * 768
     dummy_lmi.EmbeddingModel = EmbeddingModel
 
-    # Dummy für LiteLLMModel
     class LiteLLMModel(LLMModel):
         pass
     dummy_lmi.LiteLLMModel = LiteLLMModel
 
-    # Dummy für LiteLLMEmbeddingModel
     class LiteLLMEmbeddingModel(EmbeddingModel):
         pass
     dummy_lmi.LiteLLMEmbeddingModel = LiteLLMEmbeddingModel
 
-    # Dummy für HybridEmbeddingModel
     class HybridEmbeddingModel(EmbeddingModel):
         pass
     dummy_lmi.HybridEmbeddingModel = HybridEmbeddingModel
 
-    # Dummy für SentenceTransformerEmbeddingModel
     class SentenceTransformerEmbeddingModel(EmbeddingModel):
         pass
     dummy_lmi.SentenceTransformerEmbeddingModel = SentenceTransformerEmbeddingModel
 
-    # Dummy für SparseEmbeddingModel
     class SparseEmbeddingModel(EmbeddingModel):
         pass
     dummy_lmi.SparseEmbeddingModel = SparseEmbeddingModel
 
-    # Dummy für LLMResult
     class LLMResult:
         def __init__(self, text=""):
             self.text = text
@@ -115,7 +123,6 @@ except ImportError:
             return self.text
     dummy_lmi.LLMResult = LLMResult
 
-    # Dummy-Funktion für embedding_model_factory
     def embedding_model_factory(*args, **kwargs):
         return dummy_lmi.EmbeddingModel(*args, **kwargs)
     dummy_lmi.embedding_model_factory = embedding_model_factory
