@@ -1,5 +1,46 @@
 import sys
 import types
+
+# ----------------------------------------------------------------------------
+# Dummy-Modul für lmi erstellen (falls lmi nicht vorhanden ist)
+# ----------------------------------------------------------------------------
+try:
+    import lmi
+except ImportError:
+    dummy_lmi = types.ModuleType("lmi")
+
+    class LLMModel:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __call__(self, *args, **kwargs):
+            return "Dummy LLMModel response"
+
+    dummy_lmi.LLMModel = LLMModel
+
+    class LiteLLMModel(LLMModel):
+        pass
+
+    dummy_lmi.LiteLLMModel = LiteLLMModel
+
+    class LiteLLMEmbeddingModel:
+        def embed(self, text):
+            # Gibt einen Dummy-Vektor zurück (hier 768 Dimensionen)
+            return [0.0] * 768
+
+    dummy_lmi.LiteLLMEmbeddingModel = LiteLLMEmbeddingModel
+
+    class HybridEmbeddingModel(LLMModel):
+        pass
+
+    dummy_lmi.HybridEmbeddingModel = HybridEmbeddingModel
+
+    # Füge das Dummy-Modul zu sys.modules hinzu, sodass spätere Importe funktionieren
+    sys.modules["lmi"] = dummy_lmi
+
+# ----------------------------------------------------------------------------
+# Weitere notwendige Importe
+# ----------------------------------------------------------------------------
 import streamlit as st
 import requests
 import feedparser
@@ -11,42 +52,21 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from collections import defaultdict
 import base64
-import importlib.util  # Für den dynamischen Import von PaperQA2
+import importlib.util
 import openai
 
-# ----------------------------------------------------------------------------
-# Dummy-Modul für lmi
-# ----------------------------------------------------------------------------
-# Falls PaperQA2 noch versucht, aus "lmi" Klassen zu importieren, erstellen wir
-# hier ein Dummy-Modul, das die benötigten Klassen bereitstellt.
-if "lmi" not in sys.modules:
-    dummy_lmi = types.ModuleType("lmi")
+try:
+    from scholarly import scholarly
+except ImportError:
+    st.error("Bitte installiere 'scholarly', z.B. via: pip install scholarly")
 
-    class LLMModel:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def __call__(self, *args, **kwargs):
-            return "dummy LLM response"
-
-    dummy_lmi.LLMModel = LLMModel
-
-    class LiteLLMModel(LLMModel):
-        pass
-
-    dummy_lmi.LiteLLMModel = LiteLLMModel
-
-    class LiteLLMEmbeddingModel:
-        def embed(self, text):
-            # Gibt einen Dummy-Vektor zurück (z. B. 768 Dimensionen)
-            return [0.0] * 768
-
-    dummy_lmi.LiteLLMEmbeddingModel = LiteLLMEmbeddingModel
-
-    sys.modules["lmi"] = dummy_lmi
+try:
+    from fpdf import FPDF
+except ImportError:
+    st.error("Bitte installiere 'fpdf', z.B. mit: pip install fpdf")
 
 # ----------------------------------------------------------------------------
-# Debug-Informationen (zur Überprüfung in Streamlit Cloud)
+# Debug-Informationen in der Seitenleiste (zur Überprüfung in Streamlit Cloud)
 # ----------------------------------------------------------------------------
 st.sidebar.markdown("**[DEBUG-INFO]**")
 st.sidebar.code(f"""
@@ -60,12 +80,11 @@ Systempfad (sys.path): {sys.path}
 # Erwartete Repository-Struktur:
 # your_repo/
 # └── modules/
-#     ├── codewords_pubmed.py  (dieses Skript)
+#     ├── codewords_pubmed.py   (dieses Skript)
 #     └── paper-qa/
 #          └── paper-qa-main/
 #               └── paperqa/
 #                    └── __init__.py
-#
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 PAPERQA_INIT_FILE = os.path.join(
@@ -91,7 +110,7 @@ except Exception as e:
     st.error(f"Fehler beim Laden von PaperQA2 via {PAPERQA_INIT_FILE}: {e}")
     st.stop()
 
-# Zugriff auf PaperQA2's Docs-Klasse
+# Zugriff auf die Docs-Klasse aus PaperQA2
 Docs = paperqa_module.Docs
 
 # ----------------------------------------------------------------------------
@@ -100,10 +119,15 @@ Docs = paperqa_module.Docs
 def search_pubmed(query: str, max_results=100):
     """
     Sucht in PubMed per ESearch + ESummary.
-    Gibt eine Liste von Dicts mit einfachen Informationen zurück.
+    Gibt eine Liste von Dicts zurück (mit Titel, PubMed-ID und Jahr).
     """
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-    params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": max_results}
+    params = {
+        "db": "pubmed",
+        "term": query,
+        "retmode": "json",
+        "retmax": max_results
+    }
     out = []
     try:
         r = requests.get(esearch_url, params=params, timeout=10)
@@ -112,13 +136,11 @@ def search_pubmed(query: str, max_results=100):
         idlist = data.get("esearchresult", {}).get("idlist", [])
         if not idlist:
             return out
-        
         esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
         sum_params = {"db": "pubmed", "id": ",".join(idlist), "retmode": "json"}
         r2 = requests.get(esummary_url, params=sum_params, timeout=10)
         r2.raise_for_status()
         summary_data = r2.json().get("result", {})
-
         for pmid in idlist:
             info = summary_data.get(pmid, {})
             title = info.get("title", "n/a")
@@ -140,8 +162,7 @@ def search_pubmed(query: str, max_results=100):
 # ----------------------------------------------------------------------------
 def paperqa_test_locally():
     """
-    Beispiel-Funktion, die PaperQA2 (Docs) nutzt,
-    um PDFs hochzuladen und eine Frage zu stellen.
+    Demonstriert PaperQA2: PDFs hochladen und eine Frage stellen.
     """
     st.subheader("Lokaler PaperQA2-Test")
     docs = Docs()
@@ -171,21 +192,17 @@ def paperqa_test_locally():
                 st.error(f"Fehler bei PaperQA2-Abfrage: {e}")
 
 # ----------------------------------------------------------------------------
-# D) Haupt-Funktion (Streamlit-App)
+# D) Multi-API-Suche + PaperQA2-Demo (Beispiel: PubMed-Suche + PaperQA2)
 # ----------------------------------------------------------------------------
 def module_codewords_pubmed():
-    """
-    Diese Funktion demonstriert eine PubMed-Suche plus einen PaperQA2-Test.
-    """
     st.title("Multi-API-Suche + PaperQA2 (lokaler Import)")
 
-    # Beispiel: PubMed-Suche
     query = st.text_input("PubMed-Suchbegriff:", "Cancer")
     anzahl = st.number_input("Anzahl Treffer", min_value=1, max_value=200, value=10)
     if st.button("PubMed-Suche starten"):
         results = search_pubmed(query, max_results=anzahl)
         if results:
-            st.write(f"{len(results)} PubMed-Ergebnisse gefunden:")
+            st.write(f"{len(results)} Ergebnisse via PubMed:")
             df = pd.DataFrame(results)
             st.dataframe(df)
         else:
@@ -196,7 +213,7 @@ def module_codewords_pubmed():
     paperqa_test_locally()
 
 # ----------------------------------------------------------------------------
-# E) Haupt-App
+# E) Haupt-App (Streamlit)
 # ----------------------------------------------------------------------------
 def main():
     st.set_page_config(layout="wide")
