@@ -1,55 +1,6 @@
 import sys
 import types
-
-# ----------------------------------------------------------------------------
-# Dummy-Modul für lmi erstellen (falls lmi nicht installiert/gefunden wird)
-# ----------------------------------------------------------------------------
-try:
-    import lmi
-except ImportError:
-    dummy_lmi = types.ModuleType("lmi")
-
-    # Dummy-Implementierung für LLMModel
-    class LLMModel:
-        def __init__(self, *args, **kwargs):
-            pass
-        def __call__(self, *args, **kwargs):
-            return "Dummy LLMModel output"
-    dummy_lmi.LLMModel = LLMModel
-
-    # Dummy-Implementierung für EmbeddingModel
-    class EmbeddingModel:
-        def __init__(self, *args, **kwargs):
-            pass
-        def embed(self, text):
-            # Gibt einen Dummy-Vektor zurück (hier 768 Dimensionen)
-            return [0.0] * 768
-    dummy_lmi.EmbeddingModel = EmbeddingModel
-
-    # Dummy-Implementierung für LiteLLMModel
-    class LiteLLMModel(LLMModel):
-        pass
-    dummy_lmi.LiteLLMModel = LiteLLMModel
-
-    # Dummy-Implementierung für LiteLLMEmbeddingModel
-    class LiteLLMEmbeddingModel(EmbeddingModel):
-        pass
-    dummy_lmi.LiteLLMEmbeddingModel = LiteLLMEmbeddingModel
-
-    # Dummy-Implementierung für HybridEmbeddingModel
-    class HybridEmbeddingModel(EmbeddingModel):
-        pass
-    dummy_lmi.HybridEmbeddingModel = HybridEmbeddingModel
-
-    # Dummy-Implementierung für weitere ggf. benötigte Klassen
-    # (Falls weitere Fehler auftreten, können hier weitere Dummy-Klassen ergänzt werden)
-
-    # Füge das Dummy-Modul zu sys.modules hinzu
-    sys.modules["lmi"] = dummy_lmi
-
-# ----------------------------------------------------------------------------
-# Weitere notwendige Importe
-# ----------------------------------------------------------------------------
+import importlib.util
 import streamlit as st
 import requests
 import feedparser
@@ -61,21 +12,63 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from collections import defaultdict
 import base64
-import importlib.util  # Für den dynamischen Import von PaperQA2
 import openai
 
+# ----------------------------------------------------------------------------
+# Dummy-Modul für lmi erstellen (falls lmi nicht installiert/gefunden wird)
+# ----------------------------------------------------------------------------
+try:
+    import lmi
+except ImportError:
+    st.warning("Modul 'lmi' nicht gefunden – verwende Dummy-Implementierung.")
+    dummy_lmi = types.ModuleType("lmi")
+    
+    class LLMModel:
+        def __init__(self, *args, **kwargs):
+            pass
+        def __call__(self, *args, **kwargs):
+            return "Dummy LLMModel output"
+    dummy_lmi.LLMModel = LLMModel
+
+    class EmbeddingModel:
+        def __init__(self, *args, **kwargs):
+            pass
+        def embed(self, text):
+            # Gibt einen Dummy-Vektor (z. B. 768 Dimensionen) zurück
+            return [0.0] * 768
+    dummy_lmi.EmbeddingModel = EmbeddingModel
+
+    class LiteLLMModel(LLMModel):
+        pass
+    dummy_lmi.LiteLLMModel = LiteLLMModel
+
+    class LiteLLMEmbeddingModel(EmbeddingModel):
+        pass
+    dummy_lmi.LiteLLMEmbeddingModel = LiteLLMEmbeddingModel
+
+    class HybridEmbeddingModel(EmbeddingModel):
+        pass
+    dummy_lmi.HybridEmbeddingModel = HybridEmbeddingModel
+
+    sys.modules["lmi"] = dummy_lmi
+
+# ----------------------------------------------------------------------------
+# Weitere Importe (prüfen Sie, ob alle Pakete installiert sind)
+# ----------------------------------------------------------------------------
 try:
     from scholarly import scholarly
 except ImportError:
-    st.error("Bitte installiere 'scholarly' (z.B. via: pip install scholarly)")
+    st.error("Bitte installieren Sie 'scholarly' (z.B. pip install scholarly)")
+    st.stop()
 
 try:
     from fpdf import FPDF
 except ImportError:
-    st.error("Bitte installiere 'fpdf' (z.B. via: pip install fpdf)")
+    st.error("Bitte installieren Sie 'fpdf' (z.B. pip install fpdf)")
+    st.stop()
 
 # ----------------------------------------------------------------------------
-# Debug-Informationen in der Seitenleiste (zur Überprüfung in Streamlit Cloud)
+# Debug-Informationen (zur Überprüfung in Streamlit Cloud)
 # ----------------------------------------------------------------------------
 st.sidebar.markdown("**[DEBUG-INFO]**")
 st.sidebar.code(f"""
@@ -86,16 +79,14 @@ Systempfad (sys.path): {sys.path}
 # ----------------------------------------------------------------------------
 # A) Dynamischer Import von PaperQA2 via direktem Pfad zur __init__.py
 # ----------------------------------------------------------------------------
-# Erwartete Repository-Struktur:
-#
+# Erwartete Struktur:
 # your_repo/
 # └── modules/
-#     ├── codewords_pubmed.py   <-- Dieses Skript
+#     ├── codewords_pubmed.py  <-- Dieses Skript
 #     └── paper-qa/
 #          └── paper-qa-main/
 #               └── paperqa/
 #                    └── __init__.py
-#
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 PAPERQA_INIT_FILE = os.path.join(
@@ -128,16 +119,10 @@ Docs = paperqa_module.Docs
 # ----------------------------------------------------------------------------
 def search_pubmed(query: str, max_results=100):
     """
-    Sucht in PubMed per ESearch + ESummary.
-    Gibt eine Liste von Dicts zurück (mit Titel, PubMed-ID und Jahr).
+    Sucht in PubMed per ESearch + ESummary und gibt eine Liste von Dicts zurück.
     """
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-    params = {
-        "db": "pubmed",
-        "term": query,
-        "retmode": "json",
-        "retmax": max_results
-    }
+    params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": max_results}
     out = []
     try:
         r = requests.get(esearch_url, params=params, timeout=10)
@@ -176,7 +161,7 @@ def paperqa_test_locally():
     """
     st.subheader("Lokaler PaperQA2-Test")
     docs = Docs()
-
+    
     pdfs = st.file_uploader("Lade PDF(s) hoch:", type=["pdf"], accept_multiple_files=True)
     if pdfs:
         for up in pdfs:
@@ -186,7 +171,7 @@ def paperqa_test_locally():
                 st.success(f"Datei '{up.name}' hinzugefügt.")
             except Exception as e:
                 st.error(f"Fehler beim Hinzufügen von {up.name}: {e}")
-
+    
     question = st.text_area("Frage an PaperQA2:")
     if st.button("PaperQA2-Abfrage starten"):
         if not question.strip():
@@ -206,7 +191,7 @@ def paperqa_test_locally():
 # ----------------------------------------------------------------------------
 def module_codewords_pubmed():
     st.title("Multi-API-Suche + PaperQA2 (lokaler Import)")
-
+    
     query = st.text_input("PubMed-Suchbegriff:", "Cancer")
     anzahl = st.number_input("Anzahl Treffer", min_value=1, max_value=200, value=10)
     if st.button("PubMed-Suche starten"):
@@ -217,7 +202,7 @@ def module_codewords_pubmed():
             st.dataframe(df)
         else:
             st.info("Keine Treffer für PubMed.")
-
+    
     st.write("---")
     st.subheader("PaperQA2 Test-Lauf (lokal)")
     paperqa_test_locally()
