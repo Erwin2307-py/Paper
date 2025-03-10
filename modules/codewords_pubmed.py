@@ -47,7 +47,11 @@ if not hasattr(openai, "APIStatusError"):
 if "openai._models" not in sys.modules:
     st.warning("Modul 'openai._models' nicht gefunden – Dummy wird verwendet.")
     dummy_openai_models = types.ModuleType("openai._models")
-    # Wir definieren hier einige Dummy-Attribute, die eventuell von PaperQA2 benötigt werden.
+    try:
+        import pydantic
+        dummy_openai_models.BaseModel = pydantic.BaseModel
+    except ImportError:
+        dummy_openai_models.BaseModel = object
     dummy_openai_models.AuthenticationError = openai.AuthenticationError
     dummy_openai_models.BadRequestError = openai.BadRequestError
     dummy_openai_models.RateLimitError = openai.RateLimitError
