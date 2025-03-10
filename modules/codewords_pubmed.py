@@ -1,49 +1,3 @@
-import openai
-
-# ----------------------------------------------------------------------------
-# Patch: Sicherstellen, dass openai.AuthenticationError verfügbar ist
-# ----------------------------------------------------------------------------
-try:
-    from openai import AuthenticationError
-except ImportError:
-    try:
-        from openai.error import AuthenticationError
-        openai.AuthenticationError = AuthenticationError
-    except ImportError:
-        raise ImportError("AuthenticationError konnte nicht gefunden werden. Bitte überprüfen Sie Ihre OpenAI-Installation.")
-
-# ----------------------------------------------------------------------------
-# Patch: Sicherstellen, dass openai.BadRequestError verfügbar ist
-# ----------------------------------------------------------------------------
-try:
-    from openai import BadRequestError
-except ImportError:
-    try:
-        from openai.error import BadRequestError
-        openai.BadRequestError = BadRequestError
-    except ImportError:
-        class BadRequestError(Exception):
-            pass
-        openai.BadRequestError = BadRequestError
-
-# ----------------------------------------------------------------------------
-# Neuer Patch: Sicherstellen, dass openai.RateLimitError verfügbar ist
-# ----------------------------------------------------------------------------
-try:
-    from openai import RateLimitError
-except ImportError:
-    try:
-        from openai.error import RateLimitError
-        openai.RateLimitError = RateLimitError
-    except ImportError:
-        class RateLimitError(Exception):
-            pass
-        openai.RateLimitError = RateLimitError
-
-# ----------------------------------------------------------------------------
-# Rest des Skripts (inklusive Dummy-Modul für lmi usw.)
-# ----------------------------------------------------------------------------
-
 import sys
 import types
 import importlib.util
@@ -58,70 +12,101 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from collections import defaultdict
 import base64
+import openai
 
+# Versuche, scholarly und fpdf zu importieren
 try:
     from scholarly import scholarly
 except ImportError:
-    st.error("Bitte installiere 'scholarly' (z.B. via: pip install scholarly)")
+    st.error("Bitte installieren Sie 'scholarly' (z.B. pip install scholarly)")
     st.stop()
 
 try:
     from fpdf import FPDF
 except ImportError:
-    st.error("Bitte installiere 'fpdf' (z.B. via: pip install fpdf)")
+    st.error("Bitte installieren Sie 'fpdf' (z.B. pip install fpdf)")
     st.stop()
 
 # ----------------------------------------------------------------------------
-# Dummy-Modul für lmi erstellen, falls lmi nicht vorhanden ist
+# OpenAI-Patch: Fehlende Fehlerklassen (falls nötig)
+# ----------------------------------------------------------------------------
+try:
+    from openai import AuthenticationError
+except ImportError:
+    try:
+        from openai.error import AuthenticationError
+        openai.AuthenticationError = AuthenticationError
+    except ImportError:
+        class AuthenticationError(Exception): pass
+        openai.AuthenticationError = AuthenticationError
+
+try:
+    from openai import BadRequestError
+except ImportError:
+    try:
+        from openai.error import BadRequestError
+        openai.BadRequestError = BadRequestError
+    except ImportError:
+        class BadRequestError(Exception): pass
+        openai.BadRequestError = BadRequestError
+
+try:
+    from openai import RateLimitError
+except ImportError:
+    try:
+        from openai.error import RateLimitError
+        openai.RateLimitError = RateLimitError
+    except ImportError:
+        class RateLimitError(Exception): pass
+        openai.RateLimitError = RateLimitError
+
+try:
+    from openai import APIStatusError
+except ImportError:
+    try:
+        from openai.error import APIStatusError
+        openai.APIStatusError = APIStatusError
+    except ImportError:
+        class APIStatusError(Exception): pass
+        openai.APIStatusError = APIStatusError
+
+# ----------------------------------------------------------------------------
+# Dummy-Modul für lmi erstellen (falls nicht vorhanden)
 # ----------------------------------------------------------------------------
 try:
     import lmi
 except ImportError:
-    st.warning("Modul 'lmi' nicht gefunden – verwende Dummy-Implementierung.")
+    st.warning("Modul 'lmi' nicht gefunden – Dummy-Implementierung wird verwendet.")
     dummy_lmi = types.ModuleType("lmi")
     
-    # Dummy für LLMModel
+    # Dummy-Klassen und Funktionen
     class LLMModel:
-        def __init__(self, *args, **kwargs):
-            pass
+        def __init__(self, *args, **kwargs): pass
         def __call__(self, *args, **kwargs):
             return "Dummy LLMModel output"
     dummy_lmi.LLMModel = LLMModel
 
-    # Dummy für EmbeddingModel
     class EmbeddingModel:
-        def __init__(self, *args, **kwargs):
-            pass
+        def __init__(self, *args, **kwargs): pass
         def embed(self, text):
-            return [0.0] * 768
+            return [0.0] * 768  # Beispielvektor
     dummy_lmi.EmbeddingModel = EmbeddingModel
 
-    # Dummy für LiteLLMModel
-    class LiteLLMModel(LLMModel):
-        pass
+    class LiteLLMModel(LLMModel): pass
     dummy_lmi.LiteLLMModel = LiteLLMModel
 
-    # Dummy für LiteLLMEmbeddingModel
-    class LiteLLMEmbeddingModel(EmbeddingModel):
-        pass
+    class LiteLLMEmbeddingModel(EmbeddingModel): pass
     dummy_lmi.LiteLLMEmbeddingModel = LiteLLMEmbeddingModel
 
-    # Dummy für HybridEmbeddingModel
-    class HybridEmbeddingModel(EmbeddingModel):
-        pass
+    class HybridEmbeddingModel(EmbeddingModel): pass
     dummy_lmi.HybridEmbeddingModel = HybridEmbeddingModel
 
-    # Dummy für SentenceTransformerEmbeddingModel
-    class SentenceTransformerEmbeddingModel(EmbeddingModel):
-        pass
+    class SentenceTransformerEmbeddingModel(EmbeddingModel): pass
     dummy_lmi.SentenceTransformerEmbeddingModel = SentenceTransformerEmbeddingModel
 
-    # Dummy für SparseEmbeddingModel
-    class SparseEmbeddingModel(EmbeddingModel):
-        pass
+    class SparseEmbeddingModel(EmbeddingModel): pass
     dummy_lmi.SparseEmbeddingModel = SparseEmbeddingModel
 
-    # Dummy für LLMResult
     class LLMResult:
         def __init__(self, text=""):
             self.text = text
@@ -129,7 +114,6 @@ except ImportError:
             return self.text
     dummy_lmi.LLMResult = LLMResult
 
-    # Dummy-Funktion für embedding_model_factory
     def embedding_model_factory(*args, **kwargs):
         return dummy_lmi.EmbeddingModel(*args, **kwargs)
     dummy_lmi.embedding_model_factory = embedding_model_factory
@@ -148,6 +132,14 @@ Systempfad (sys.path): {sys.path}
 # ----------------------------------------------------------------------------
 # A) Dynamischer Import von PaperQA2 via direktem Pfad zur __init__.py
 # ----------------------------------------------------------------------------
+# Erwartete Repository-Struktur:
+# your_repo/
+# └── modules/
+#     ├── codewords_pubmed.py   <-- Dieses Skript
+#     └── paper-qa/
+#          └── paper-qa-main/
+#               └── paperqa/
+#                    └── __init__.py
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 PAPERQA_INIT_FILE = os.path.join(
@@ -179,6 +171,9 @@ Docs = paperqa_module.Docs
 # B) Beispielhafte Such-Funktion für PubMed
 # ----------------------------------------------------------------------------
 def search_pubmed(query: str, max_results=100):
+    """
+    Sucht in PubMed per ESearch + ESummary und gibt eine Liste einfacher Dicts zurück.
+    """
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": max_results}
     out = []
@@ -214,6 +209,9 @@ def search_pubmed(query: str, max_results=100):
 # C) PaperQA2-Demo: PDFs hochladen und Frage stellen
 # ----------------------------------------------------------------------------
 def paperqa_test_locally():
+    """
+    Demonstriert PaperQA2: PDFs hochladen und eine Frage stellen.
+    """
     st.subheader("Lokaler PaperQA2-Test")
     docs = Docs()
     pdfs = st.file_uploader("Lade PDF(s) hoch:", type=["pdf"], accept_multiple_files=True)
