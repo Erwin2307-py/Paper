@@ -23,3 +23,8 @@ semanticscholar
 pydantic
 sentence-transformers
 haystack
+farm-haystack[faiss]>=1.15.0
+torch>=1.9.0
+pillow
+numpy
+rank-bm25
