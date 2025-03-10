@@ -23,9 +23,25 @@ Systempfad (sys.path): {sys.path}
 """)
 
 # ----------------------------------------------------------------------------
+# Dummy-Modul für 'lmi' erstellen, falls nicht vorhanden
+# ----------------------------------------------------------------------------
+try:
+    import lmi
+except ImportError:
+    st.warning("Modul 'lmi' nicht gefunden. Erstelle Dummy-Modul für 'lmi'.")
+    dummy_lmi = types.ModuleType("lmi")
+    class DummyEmbeddingModel:
+        def __init__(self, *args, **kwargs):
+            st.warning("DummyEmbeddingModel wird verwendet. Funktionalität ist eingeschränkt.")
+        def __call__(self, *args, **kwargs):
+            return None
+    dummy_lmi.EmbeddingModel = DummyEmbeddingModel
+    sys.modules["lmi"] = dummy_lmi
+
+# ----------------------------------------------------------------------------
 # A) Dynamischer Import von PaperQA2 via direktem Pfad zur __init__.py
 # ----------------------------------------------------------------------------
-# Annahme: Ihre Repository-Struktur sieht folgendermaßen aus:
+# Annahme: Ihre Repository-Struktur:
 #
 # your_repo/
 # └── modules/
@@ -52,18 +68,7 @@ if not os.path.isfile(PAPERQA_INIT_FILE):
 try:
     spec = importlib.util.spec_from_file_location("paperqa_custom", PAPERQA_INIT_FILE)
     paperqa_module = importlib.util.module_from_spec(spec)
-    try:
-        spec.loader.exec_module(paperqa_module)
-    except ImportError as e:
-        # Falls der Fehler "No module named 'lmi'" auftritt, erstellen wir ein Dummy-Modul
-        if "No module named 'lmi'" in str(e):
-            st.warning("Modul 'lmi' wurde nicht gefunden. Erstelle Dummy-Modul für 'lmi'.")
-            dummy_lmi = types.ModuleType("lmi")
-            sys.modules["lmi"] = dummy_lmi
-            # Erneut versuchen, das Modul zu laden
-            spec.loader.exec_module(paperqa_module)
-        else:
-            raise
+    spec.loader.exec_module(paperqa_module)
     if not hasattr(paperqa_module, "Docs"):
         st.error("Im dynamisch geladenen PaperQA2-Modul ist kein 'Docs' definiert!")
         st.stop()
@@ -96,6 +101,7 @@ def search_pubmed(query: str, max_results=100):
         idlist = data.get("esearchresult", {}).get("idlist", [])
         if not idlist:
             return out
+        
         esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
         sum_params = {"db": "pubmed", "id": ",".join(idlist), "retmode": "json"}
         r2 = requests.get(esummary_url, params=sum_params, timeout=10)
@@ -118,7 +124,7 @@ def search_pubmed(query: str, max_results=100):
         return out
 
 # ----------------------------------------------------------------------------
-# C) PaperQA2-Demo: Dateien hochladen + Frage stellen
+# C) PaperQA2-Demo: PDFs hochladen und Frage stellen
 # ----------------------------------------------------------------------------
 def paperqa_test_locally():
     """
