@@ -15,17 +15,34 @@ import base64
 import openai
 
 # ----------------------------------------------------------------------------
-# Patch: Dummy-Modul für openai._models erstellen, falls nicht vorhanden
+# Patch: Dummy-Definitionen für fehlende OpenAI-Fehlerklassen
 # ----------------------------------------------------------------------------
-try:
-    import openai._models
-except ImportError:
-    st.warning("Modul 'openai._models' nicht gefunden – Dummy wird erstellt.")
-    dummy_models = types.ModuleType("openai._models")
-    sys.modules["openai._models"] = dummy_models
+if not hasattr(openai, "AuthenticationError"):
+    st.warning("openai.AuthenticationError fehlt – Dummy wird verwendet.")
+    openai.AuthenticationError = Exception
+
+if not hasattr(openai, "BadRequestError"):
+    st.warning("openai.BadRequestError fehlt – Dummy wird verwendet.")
+    openai.BadRequestError = Exception
+
+if not hasattr(openai, "RateLimitError"):
+    st.warning("openai.RateLimitError fehlt – Dummy wird verwendet.")
+    openai.RateLimitError = Exception
+
+if not hasattr(openai, "APITimeoutError"):
+    st.warning("openai.APITimeoutError fehlt – Dummy wird verwendet.")
+    openai.APITimeoutError = Exception
+
+if not hasattr(openai, "APIConnectionError"):
+    st.warning("openai.APIConnectionError fehlt – Dummy wird verwendet.")
+    openai.APIConnectionError = Exception
+
+if not hasattr(openai, "APIStatusError"):
+    st.warning("openai.APIStatusError fehlt – Dummy wird verwendet.")
+    openai.APIStatusError = Exception
 
 # ----------------------------------------------------------------------------
-# Versuche, scholarly und fpdf zu importieren
+# Versuch, scholarly und fpdf zu importieren
 # ----------------------------------------------------------------------------
 try:
     from scholarly import scholarly
@@ -40,7 +57,7 @@ except ImportError:
     st.stop()
 
 # ----------------------------------------------------------------------------
-# Dummy-Modul für lmi erstellen (falls nicht vorhanden)
+# Dummy-Modul für lmi erstellen, falls lmi nicht installiert/gefunden wird
 # ----------------------------------------------------------------------------
 try:
     import lmi
@@ -50,36 +67,44 @@ except ImportError:
     
     # Dummy für LLMModel
     class LLMModel:
-        def __init__(self, *args, **kwargs): pass
+        def __init__(self, *args, **kwargs):
+            pass
         def __call__(self, *args, **kwargs):
             return "Dummy LLMModel output"
     dummy_lmi.LLMModel = LLMModel
 
     # Dummy für EmbeddingModel
     class EmbeddingModel:
-        def __init__(self, *args, **kwargs): pass
+        def __init__(self, *args, **kwargs):
+            pass
         def embed(self, text):
-            return [0.0] * 768  # Beispielvektor
+            # Beispiel: Rückgabe eines Dummy-Vektors (768 Dimensionen)
+            return [0.0] * 768
     dummy_lmi.EmbeddingModel = EmbeddingModel
 
     # Dummy für LiteLLMModel
-    class LiteLLMModel(LLMModel): pass
+    class LiteLLMModel(LLMModel):
+        pass
     dummy_lmi.LiteLLMModel = LiteLLMModel
 
     # Dummy für LiteLLMEmbeddingModel
-    class LiteLLMEmbeddingModel(EmbeddingModel): pass
+    class LiteLLMEmbeddingModel(EmbeddingModel):
+        pass
     dummy_lmi.LiteLLMEmbeddingModel = LiteLLMEmbeddingModel
 
     # Dummy für HybridEmbeddingModel
-    class HybridEmbeddingModel(EmbeddingModel): pass
+    class HybridEmbeddingModel(EmbeddingModel):
+        pass
     dummy_lmi.HybridEmbeddingModel = HybridEmbeddingModel
 
     # Dummy für SentenceTransformerEmbeddingModel
-    class SentenceTransformerEmbeddingModel(EmbeddingModel): pass
+    class SentenceTransformerEmbeddingModel(EmbeddingModel):
+        pass
     dummy_lmi.SentenceTransformerEmbeddingModel = SentenceTransformerEmbeddingModel
 
     # Dummy für SparseEmbeddingModel
-    class SparseEmbeddingModel(EmbeddingModel): pass
+    class SparseEmbeddingModel(EmbeddingModel):
+        pass
     dummy_lmi.SparseEmbeddingModel = SparseEmbeddingModel
 
     # Dummy für LLMResult
