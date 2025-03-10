@@ -338,6 +338,10 @@ def page_home():
     st.write("Choose a module in the sidebar to proceed.")
     st.image("Bild1.jpg", caption="Willkommen!", use_container_width=False, width=600)
 
+    # NEU: Button, um direkt zur PaperQA2-Seite zu springen
+    if st.button("Go to PaperQA2"):
+        st.session_state["current_page"] = "7) PaperQA2"
+
 
 def page_codewords_pubmed():
     st.title("Codewords & PubMed Settings")
@@ -390,9 +394,7 @@ def page_excel_online_search():
 # def page_selenium_qa():
 #     st.title("Selenium Q&A (Modul) - Example")
 #     st.write("Dies ruft das Modul 'my_selenium_qa_module' auf.")
-#     # Da hier 'my_selenium_qa_module.main()' aufgerufen wird, kommt es
-#     # ggf. zum Import-Fehler. Also entfernen/auskommentieren:
-#     # my_selenium_qa_module.main()
+#     # ...
 #     if st.button("Back to Main Menu"):
 #         st.session_state["current_page"] = "Home"
 
