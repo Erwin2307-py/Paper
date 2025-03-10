@@ -16,7 +16,7 @@ pdfplumber
 faiss-cpu
 langchain
 pypdf
-litellm
+litellm==0.14.1
 paper-qa>=5
 habanero
 semanticscholar
