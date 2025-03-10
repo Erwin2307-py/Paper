@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from collections import defaultdict
 import base64
-import importlib.util  # Für dynamischen Import
+import importlib.util  # Für den dynamischen Import von PaperQA2
 import sys
 
 # ----------------------------------------------------------------------------
@@ -22,9 +22,14 @@ Systempfad (sys.path): {sys.path}
 """)
 
 # ----------------------------------------------------------------------------
-# Online API + Filter Modul importieren
+# Versuche, das Online API + Filter Modul zu importieren
 # ----------------------------------------------------------------------------
-from modules.online_api_filter import module_online_filter  # oder module_online_filter, wie benötigt
+try:
+    from modules.online_api_filter import module_online_filter
+except ImportError as e:
+    st.warning("Modul 'module_online_filter' konnte nicht importiert werden. Es wird eine Dummy-Funktion verwendet.")
+    def module_online_filter():
+        st.info("Dummy module_online_filter-Funktion wurde aufgerufen.")
 
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
@@ -310,7 +315,7 @@ class SemanticScholarSearch:
 
 ################################################################################
 # D) Dynamischer Import von PaperQA2 (als separates Modul)
-# ----------------------------------------------------------------------------
+################################################################################
 def load_paperqa2_module():
     """
     Lädt das PaperQA2-Modul dynamisch. Wir gehen davon aus, dass sich PaperQA2 in
