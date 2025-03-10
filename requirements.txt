@@ -21,7 +21,6 @@ paper-qa>=5
 habanero
 semanticscholar
 pydantic
-haystack
 sentence-transformers
 farm-haystack
 
