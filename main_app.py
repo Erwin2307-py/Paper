@@ -13,10 +13,7 @@ import datetime
 # from modules import my_selenium_qa_module
 
 # NEW: We import the combined “online API + filter” module
-from modules.online_api_filter import module_online_api_filter
-
-# NEW: We import the PaperQA2 module from modules/paperqa2_module.py
-from modules.paperqa2_module import module_paperqa2
+from modules.online_api_filter import module_online_api_filter  # <-- CHANGED HERE
 
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
@@ -49,11 +46,7 @@ class CoreAPI:
         return r.json()
 
 
-def check_core_aggregate_connection(api_key, timeout=15):
-    """
-    Prüft, ob eine erfolgreiche Verbindung zur CORE-API aufgebaut werden kann.
-    Erwartet einen API-Key als Parameter.
-    """
+def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", timeout=15):
     try:
         core = CoreAPI(api_key)
         result = core.search_publications("test", limit=1)
@@ -62,11 +55,7 @@ def check_core_aggregate_connection(api_key, timeout=15):
         return False
 
 
-def search_core_aggregate(query, api_key):
-    """
-    Führt eine Suche über die CORE-API durch.
-    Erwartet einen Query-String und einen API-Key als Parameter.
-    """
+def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
     if not api_key:
         return []
     try:
@@ -332,10 +321,17 @@ class SemanticScholarSearch:
 
 # [unverändert, Belassen Sie hier, falls alles korrekt läuft...]
 
-
 ################################################################################
 # 3) Restliche Module + Seiten (Pages)
 ################################################################################
+
+def module_paperqa2():
+    st.subheader("PaperQA2 Module")
+    st.write("Dies ist das PaperQA2 Modul. Hier kannst du weitere Einstellungen und Funktionen für PaperQA2 implementieren.")
+    question = st.text_input("Bitte gib deine Frage ein:")
+    if st.button("Frage absenden"):
+        st.write("Antwort: Dies ist eine Dummy-Antwort auf die Frage:", question)
+
 
 def page_home():
     st.title("Welcome to the Main Menu")
@@ -374,8 +370,6 @@ def page_extended_topics():
 
 def page_paperqa2():
     st.title("PaperQA2")
-    # Instead of the local function, call the external module's function:
-    from modules.paperqa2_module import module_paperqa2
     module_paperqa2()
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
@@ -410,7 +404,7 @@ def page_excel_online_search():
 def page_online_api_filter():
     st.title("Online-API_Filter (Kombiniert)")
     st.write("Hier kombinierst du ggf. API-Auswahl und Online-Filter in einem Schritt.")
-    module_online_api_filter()
+    module_online_api_filter()  # This function is presumably the combined logic
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
@@ -423,6 +417,8 @@ def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
     pages = {
         "Home": page_home,
+        # "1) API Selection": page_api_selection,     # <-- REMOVED
+        # "2) Online Filter": page_online_filter,     # <-- REMOVED
         "Online-API_Filter": page_online_api_filter,
         "3) Codewords & PubMed": page_codewords_pubmed,
         "4) Paper Selection": page_paper_selection,
@@ -430,7 +426,7 @@ def sidebar_module_navigation():
         "6) Extended Topics": page_extended_topics,
         "7) PaperQA2": page_paperqa2,
         "8) Excel Online Search": page_excel_online_search
-        # "9) Selenium Q&A": page_selenium_qa,  # auskommentiert
+        # "9) Selenium Q&A": page_selenium_qa,       # <-- auskommentiert, damit der Fehler nicht auftritt
     }
     for label, page in pages.items():
         if st.sidebar.button(label, key=label):
