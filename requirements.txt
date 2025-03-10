@@ -10,7 +10,7 @@ urllib3==2.1.0
 xlsxwriter==3.1.1
 pandas==2.1.0
 transformers==4.33.0
-webdriver-manager==4.3.1
+# webdriver-manager==4.3.1
 feedparser==6.0.10
 pdfplumber==0.9.0
 faiss-cpu==1.7.4
