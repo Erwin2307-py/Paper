@@ -34,7 +34,7 @@ except ImportError:
         def __init__(self, *args, **kwargs):
             pass
         def embed(self, text):
-            # Gibt einen Dummy-Vektor (z. B. 768 Dimensionen) zurück
+            # Gibt einen Dummy-Vektor (z. B. 768 Dimensionen) zurück
             return [0.0] * 768
     dummy_lmi.EmbeddingModel = EmbeddingModel
 
@@ -50,10 +50,17 @@ except ImportError:
         pass
     dummy_lmi.HybridEmbeddingModel = HybridEmbeddingModel
 
+    class LLMResult:
+        def __init__(self, text=""):
+            self.text = text
+        def __str__(self):
+            return self.text
+    dummy_lmi.LLMResult = LLMResult
+
     sys.modules["lmi"] = dummy_lmi
 
 # ----------------------------------------------------------------------------
-# Weitere Importe (prüfen Sie, ob alle Pakete installiert sind)
+# Weitere Importe
 # ----------------------------------------------------------------------------
 try:
     from scholarly import scholarly
@@ -79,10 +86,10 @@ Systempfad (sys.path): {sys.path}
 # ----------------------------------------------------------------------------
 # A) Dynamischer Import von PaperQA2 via direktem Pfad zur __init__.py
 # ----------------------------------------------------------------------------
-# Erwartete Struktur:
+# Erwartete Struktur im Repository:
 # your_repo/
 # └── modules/
-#     ├── codewords_pubmed.py  <-- Dieses Skript
+#     ├── codewords_pubmed.py   <-- Dieses Skript
 #     └── paper-qa/
 #          └── paper-qa-main/
 #               └── paperqa/
@@ -122,7 +129,12 @@ def search_pubmed(query: str, max_results=100):
     Sucht in PubMed per ESearch + ESummary und gibt eine Liste von Dicts zurück.
     """
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-    params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": max_results}
+    params = {
+        "db": "pubmed",
+        "term": query,
+        "retmode": "json",
+        "retmax": max_results
+    }
     out = []
     try:
         r = requests.get(esearch_url, params=params, timeout=10)
@@ -161,7 +173,7 @@ def paperqa_test_locally():
     """
     st.subheader("Lokaler PaperQA2-Test")
     docs = Docs()
-    
+
     pdfs = st.file_uploader("Lade PDF(s) hoch:", type=["pdf"], accept_multiple_files=True)
     if pdfs:
         for up in pdfs:
@@ -171,7 +183,7 @@ def paperqa_test_locally():
                 st.success(f"Datei '{up.name}' hinzugefügt.")
             except Exception as e:
                 st.error(f"Fehler beim Hinzufügen von {up.name}: {e}")
-    
+
     question = st.text_area("Frage an PaperQA2:")
     if st.button("PaperQA2-Abfrage starten"):
         if not question.strip():
