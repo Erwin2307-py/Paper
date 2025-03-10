@@ -9,188 +9,183 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from collections import defaultdict
 import base64
-import importlib.util  # Für den dynamischen Import von PaperQA2
 import sys
-import types
+import importlib.util
 
-# ----------------------------------------------------------------------------
-# Debug-Informationen (zur Überprüfung in Streamlit Cloud)
-# ----------------------------------------------------------------------------
-st.sidebar.markdown("**[DEBUG-INFO]**")
-st.sidebar.code(f"""
-Aktuelles Arbeitsverzeichnis: {os.getcwd()}
-Systempfad (sys.path): {sys.path}
-""")
-
-# ----------------------------------------------------------------------------
-# Dummy-Modul für 'lmi' erstellen, falls nicht vorhanden
-# ----------------------------------------------------------------------------
-try:
-    import lmi
-except ImportError:
-    st.warning("Modul 'lmi' nicht gefunden. Erstelle Dummy-Modul für 'lmi'.")
-    dummy_lmi = types.ModuleType("lmi")
-    class DummyHybridEmbeddingModel:
-        def __init__(self, *args, **kwargs):
-            st.warning("DummyHybridEmbeddingModel wird verwendet. Funktionalität ist eingeschränkt.")
-        def embed(self, *args, **kwargs):
-            return None
-        def __call__(self, *args, **kwargs):
-            return self.embed(*args, **kwargs)
-    dummy_lmi.HybridEmbeddingModel = DummyHybridEmbeddingModel
-    # Falls weitere Klassen benötigt werden, können Sie diese hier ergänzen
-    sys.modules["lmi"] = dummy_lmi
-
-# ----------------------------------------------------------------------------
-# A) Dynamischer Import von PaperQA2 via direktem Pfad zur __init__.py
-# ----------------------------------------------------------------------------
-# Annahme: Ihre Repository-Struktur:
-#
-# your_repo/
-# └── modules/
-#     ├── codewords_pubmed.py   (dieses Skript)
-#     └── paper-qa/
-#          └── paper-qa-main/
-#               └── paperqa/
-#                    └── __init__.py
-#
+# ------------------------ Streamlit Cloud-Spezifische Einstellungen ------------------------
+# Pfad zur PaperQA Installation im Repository
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+PAPERQA_PATH = os.path.join(CURRENT_DIR, "modules", "paper-qa")
 
-PAPERQA_INIT_FILE = os.path.join(
-    CURRENT_DIR,
-    "paper-qa",        # Ordner 1
-    "paper-qa-main",   # Ordner 2
-    "paperqa",         # Ordner 3
-    "__init__.py"      # Datei
-)
+# Systempfad anpassen
+if PAPERQA_PATH not in sys.path:
+    sys.path.insert(0, PAPERQA_PATH)
 
-if not os.path.isfile(PAPERQA_INIT_FILE):
-    st.error(f"Kritischer Pfadfehler: {PAPERQA_INIT_FILE} existiert nicht!")
-    st.stop()
-
+# ------------------------ PaperQA Import mit Fehlerdiagnose ------------------------
 try:
-    spec = importlib.util.spec_from_file_location("paperqa_custom", PAPERQA_INIT_FILE)
-    paperqa_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(paperqa_module)
-    if not hasattr(paperqa_module, "Docs"):
-        st.error("Im dynamisch geladenen PaperQA2-Modul ist kein 'Docs' definiert!")
-        st.stop()
-except Exception as e:
-    st.error(f"Fehler beim Laden von PaperQA2 via {PAPERQA_INIT_FILE}: {e}")
+    from paperqa import Docs
+except ImportError as e:
+    st.error(f"""
+    Kritischer Importfehler: {e}
+    Bitte überprüfe:
+    1. Existiert der Ordner '{PAPERQA_PATH}'?
+    2. Enthält er die Datei '__init__.py'?
+    3. Ist das Repository als Submodule integriert?
+    """)
     st.stop()
 
-Docs = paperqa_module.Docs
+# ------------------------ API-Schlüssel Management ------------------------
+# OpenAI-Key aus Streamlit Secrets
+if "OPENAI_API_KEY" not in st.secrets:
+    st.error("OPENAI_API_KEY fehlt in Streamlit Secrets!")
+    st.stop()
 
-# ----------------------------------------------------------------------------
-# B) Beispielhafte Such-Funktion für PubMed
-# ----------------------------------------------------------------------------
+os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
+
+# ------------------------ Hauptfunktionen ------------------------
 def search_pubmed(query: str, max_results=100):
-    """
-    Sucht in PubMed per ESearch + ESummary.
-    Gibt eine Liste einfacher Dicts zurück.
-    """
-    esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-    params = {
-        "db": "pubmed",
-        "term": query,
-        "retmode": "json",
-        "retmax": max_results
-    }
-    out = []
+    """PubMed-Suche über NCBI eUtils"""
     try:
+        esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+        params = {
+            "db": "pubmed",
+            "term": query,
+            "retmode": "json",
+            "retmax": max_results
+        }
+        
         r = requests.get(esearch_url, params=params, timeout=10)
         r.raise_for_status()
         data = r.json()
         idlist = data.get("esearchresult", {}).get("idlist", [])
+        
         if not idlist:
-            return out
+            return []
+        
         esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
         sum_params = {"db": "pubmed", "id": ",".join(idlist), "retmode": "json"}
         r2 = requests.get(esummary_url, params=sum_params, timeout=10)
         r2.raise_for_status()
-        summary_data = r2.json().get("result", {})
-        for pmid in idlist:
-            info = summary_data.get(pmid, {})
-            title = info.get("title", "n/a")
-            pubdate = info.get("pubdate", "n/a")
-            year = pubdate[:4] if pubdate != "n/a" else "n/a"
-            out.append({
-                "Source": "PubMed",
-                "Title": title,
-                "PubMed ID": pmid,
-                "Year": year
-            })
-        return out
+        
+        return process_pubmed_results(r2.json())
+    
     except Exception as e:
         st.error(f"PubMed-Suche fehlgeschlagen: {e}")
-        return out
+        return []
 
-# ----------------------------------------------------------------------------
-# C) PaperQA2-Demo: PDFs hochladen und Frage stellen
-# ----------------------------------------------------------------------------
-def paperqa_test_locally():
-    """
-    Demonstriert PaperQA2: PDFs hochladen und eine Frage stellen.
-    """
-    st.subheader("Lokaler PaperQA2-Test")
+def process_pubmed_results(data):
+    """Verarbeitet PubMed-Ergebnisse"""
+    results = []
+    summary_data = data.get("result", {})
+    
+    for pmid in summary_data.get("uids", []):
+        info = summary_data.get(pmid, {})
+        results.append({
+            "Title": info.get("title", "n/a"),
+            "Authors": ", ".join(info.get("authors", [])[:3]),
+            "Journal": info.get("source", "n/a"),
+            "Year": info.get("pubdate", "n/a")[:4] if "pubdate" in info else "n/a",
+            "PMID": pmid
+        })
+    
+    return results
+
+# ------------------------ PaperQA Integration ------------------------
+def paperqa_query_interface():
+    """UI für PaperQA-Abfragen"""
+    st.subheader("PaperQA Dokumentenanalyse")
+    
+    # Dokumenten-Upload
+    uploaded_files = st.file_uploader(
+        "PDF-Dokumente hochladen",
+        type=["pdf"],
+        accept_multiple_files=True
+    )
+    
+    # PaperQA-Docs initialisieren
     docs = Docs()
-    pdfs = st.file_uploader("Lade PDF(s) hoch:", type=["pdf"], accept_multiple_files=True)
-    if pdfs:
-        for up in pdfs:
-            pdf_bytes = up.read()
+    
+    # Dokumente verarbeiten
+    if uploaded_files:
+        for file in uploaded_files:
             try:
-                docs.add(pdf_bytes, metadata=up.name)
-                st.success(f"Datei '{up.name}' hinzugefügt.")
+                docs.add(file.read(), metadata=file.name)
+                st.success(f"{file.name} erfolgreich hinzugefügt")
             except Exception as e:
-                st.error(f"Fehler beim Hinzufügen von {up.name}: {e}")
-    question = st.text_area("Frage an PaperQA2:")
-    if st.button("PaperQA2-Abfrage starten"):
-        if not question.strip():
-            st.warning("Bitte eine Frage eingeben!")
-        else:
+                st.error(f"Fehler bei {file.name}: {str(e)}")
+    
+    # Frage-Eingabe
+    question = st.text_area("Stellen Sie eine Frage zu den Dokumenten:")
+    
+    if st.button("Analyse starten") and question:
+        with st.spinner("Analysiere Dokumente..."):
             try:
-                answer_obj = docs.query(question)
-                st.markdown("### Antwort:")
-                st.write(answer_obj.answer)
-                with st.expander("Kontext / Belege"):
-                    st.write(answer_obj.context)
+                answer = docs.query(question)
+                display_results(answer)
             except Exception as e:
-                st.error(f"Fehler bei PaperQA2-Abfrage: {e}")
+                st.error(f"Analysefehler: {str(e)}")
 
-# ----------------------------------------------------------------------------
-# D) Haupt-Funktion (Streamlit-App)
-# ----------------------------------------------------------------------------
-def module_codewords_pubmed():
-    """
-    Demonstriert eine PubMed-Suche und einen anschließenden PaperQA2-Test.
-    """
-    st.title("Multi-API-Suche + PaperQA2 (lokaler Import)")
-    query = st.text_input("PubMed-Suchbegriff:", "Cancer")
-    anzahl = st.number_input("Anzahl Treffer", min_value=1, max_value=200, value=10)
-    if st.button("PubMed-Suche starten"):
-        results = search_pubmed(query, max_results=anzahl)
-        if results:
-            st.write(f"{len(results)} Ergebnisse via PubMed:")
-            df = pd.DataFrame(results)
-            st.dataframe(df)
-        else:
-            st.info("Keine Treffer für PubMed.")
-    st.write("---")
-    st.subheader("PaperQA2 Test-Lauf (lokal)")
-    paperqa_test_locally()
+def display_results(answer):
+    """Zeigt PaperQA-Ergebnisse an"""
+    st.subheader("Ergebnis")
+    st.markdown(f"**Antwort:** {answer.answer}")
+    
+    with st.expander("Detailierte Belege"):
+        st.markdown(answer.context)
+    
+    with st.expander("Zitationsanalyse"):
+        for evidence in answer.docs:
+            st.markdown(f"""
+            **Dokument:** {evidence.metadata.get('name', 'Unbekannt')}
+            **Relevanz:** {evidence.score:.2f}
+            **Inhalt:** {evidence.text[:300]}...
+            """)
 
-# ----------------------------------------------------------------------------
-# E) Hauptprogramm (Streamlit)
-# ----------------------------------------------------------------------------
+# ------------------------ Hauptanwendung ------------------------
 def main():
-    st.set_page_config(layout="wide")
-    st.title("Kombinierte App: Multi-API-Suche + PaperQA2 (Streamlit)")
-    menu = ["Multi-API-Suche + PaperQA2"]
-    choice = st.sidebar.selectbox("Navigation", menu)
-    if choice == "Multi-API-Suche + PaperQA2":
-        module_codewords_pubmed()
-    else:
-        st.info("Bitte wählen Sie eine Option aus dem Menü.")
+    st.set_page_config(
+        page_title="Wissenschaftliche Analyseplattform",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+    
+    st.title("🔬 Wissenschaftliche Analyseplattform")
+    
+    menu_options = {
+        "PubMed-Suche": pubmed_search,
+        "Dokumentenanalyse": paperqa_query_interface
+    }
+    
+    choice = st.sidebar.selectbox("Menü", list(menu_options.keys()))
+    
+    # Debug-Info
+    st.sidebar.markdown("### Systeminformationen")
+    st.sidebar.code(f"""
+    Python-Pfad: {sys.path}
+    Arbeitsverzeichnis: {os.getcwd()}
+    PaperQA-Pfad: {PAPERQA_PATH}
+    """)
+    
+    menu_options[choice]()
+
+def pubmed_search():
+    """UI für PubMed-Suche"""
+    st.subheader("PubMed Literatursuche")
+    query = st.text_input("Suchbegriff(e)", "machine learning cancer")
+    max_results = st.number_input("Maximale Treffer", 1, 500, 50)
+    
+    if st.button("Suche starten"):
+        results = search_pubmed(query, max_results)
+        
+        if results:
+            df = pd.DataFrame(results)
+            st.dataframe(
+                df[["Title", "Authors", "Year", "PMID"]],
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.warning("Keine Treffer gefunden")
 
 if __name__ == "__main__":
     main()
