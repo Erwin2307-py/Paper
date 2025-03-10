@@ -5,14 +5,19 @@ import pandas as pd
 from io import BytesIO
 import re
 import datetime
+
+# Neue Imports für PaperQA2-Logik
+import openai
+import pdfplumber
+from haystack.document_stores import FAISSDocumentStore
+from haystack.nodes import EmbeddingRetriever
+from haystack import Document
 import os
-import importlib.util
+import tempfile
 
-# Remove or comment out the direct module_online_filter import if you no longer need it here:
-# from modules.online_filter import module_online_filter
-
-# ENTFERNT: Hier importieren wir dein Selenium-Modul aus modules/
-# from modules import my_selenium_qa_module
+# OpenAI API-Key setzen (entweder aus Streamlit Secrets oder Umgebung)
+OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"] if "OPENAI_API_KEY" in st.secrets else os.getenv("OPENAI_API_KEY")
+openai.api_key = OPENAI_API_KEY
 
 # NEW: We import the combined “online API + filter” module
 from modules.online_api_filter import module_online_api_filter  # <-- CHANGED HERE
@@ -320,78 +325,36 @@ class SemanticScholarSearch:
 ################################################################################
 # 2) Neues Modul: "module_excel_online_search"
 ################################################################################
+
 # [unverändert, Belassen Sie hier, falls alles korrekt läuft...]
-
-################################################################################
-# PaperQA2 - Dynamischer Import / "Erik Kohlmeier"-Logik
-################################################################################
-# Wir verbinden nun dein Skript mit dem Ansatz, den Erik Kohlmeier verwendet hat,
-# um PaperQA via dynamischem Import lauffähig zu machen. Passen ggf. Pfade an.
-
-import importlib.util
-
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-# Beispielhafter Pfad zu paperqa/__init__.py:
-PAPERQA_INIT_FILE = os.path.join(
-    CURRENT_DIR,
-    "paper-qa",      # <-- ordner anpassen
-    "paper-qa-main", # <-- ordner anpassen
-    "paperqa",
-    "__init__.py"
-)
-
-if not os.path.isfile(PAPERQA_INIT_FILE):
-    st.error(f"Pfadfehler: {PAPERQA_INIT_FILE} existiert nicht! Bitte anpassen.")
-else:
-    try:
-        spec = importlib.util.spec_from_file_location("paperqa_custom", PAPERQA_INIT_FILE)
-        paperqa_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(paperqa_module)
-        if not hasattr(paperqa_module, "Docs"):
-            st.error("Im dynamisch geladenen PaperQA2-Modul ist kein 'Docs' definiert!")
-        else:
-            Docs = paperqa_module.Docs
-    except Exception as e:
-        st.error(f"Fehler beim Laden von PaperQA2 via {PAPERQA_INIT_FILE}: {e}")
-
-def paperqa_test_locally():
-    """
-    Demonstriert PaperQA2: PDFs hochladen und eine Frage stellen.
-    """
-    if 'Docs' not in globals():
-        st.error("PaperQA2-Modul wurde nicht korrekt geladen.")
-        return
-
-    st.subheader("Lokaler PaperQA2-Test")
-    docs = Docs()
-    pdfs = st.file_uploader("Lade PDF(s) hoch:", type=["pdf"], accept_multiple_files=True)
-    if pdfs:
-        for up in pdfs:
-            pdf_bytes = up.read()
-            try:
-                docs.add(pdf_bytes, metadata=up.name)
-                st.success(f"Datei '{up.name}' hinzugefügt.")
-            except Exception as e:
-                st.error(f"Fehler beim Hinzufügen von {up.name}: {e}")
-
-    question = st.text_area("Frage an PaperQA2:")
-    if st.button("PaperQA2-Abfrage starten"):
-        if not question.strip():
-            st.warning("Bitte eine Frage eingeben!")
-        else:
-            try:
-                answer_obj = docs.query(question)
-                st.markdown("### Antwort:")
-                st.write(answer_obj.answer)
-                with st.expander("Kontext / Belege"):
-                    st.write(answer_obj.context)
-            except Exception as e:
-                st.error(f"Fehler bei PaperQA2-Abfrage: {e}")
-
 
 ################################################################################
 # 3) Restliche Module + Seiten (Pages)
 ################################################################################
+
+# Neue PaperQA2-Logik gemäß Erik Kohlmeiers Ansatz
+def process_pdf(uploaded_file):
+    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+        temp_file.write(uploaded_file.read())
+        temp_filename = temp_file.name
+
+    # Extrahiere Text aus PDF
+    text_chunks = []
+    with pdfplumber.open(temp_filename) as pdf:
+        for page in pdf.pages:
+            text = page.extract_text()
+            if text:
+                text_chunks.extend(text.split("\n\n"))  # Aufteilung in Chunks
+
+    # Dokumente zur FAISS-Datenbank hinzufügen
+    docs = [Document(content=chunk) for chunk in text_chunks]
+    st.session_state.document_store.write_documents(docs)
+    st.session_state.document_store.update_embeddings(st.session_state.retriever)
+    
+    # Temporäre Datei löschen
+    os.remove(temp_filename)
+    st.success(f"PDF '{uploaded_file.name}' wurde erfolgreich verarbeitet und indexiert!")
+
 
 def page_home():
     st.title("Welcome to the Main Menu")
@@ -428,15 +391,76 @@ def page_extended_topics():
         st.session_state["current_page"] = "Home"
 
 
+# Neue PaperQA2-Seite mit integrierter Logik
 def page_paperqa2():
-    """
-    Ersetzt die ursprüngliche Funktion 'module_paperqa2' durch den
-    dynamischen PaperQA-Ansatz.
-    """
-    st.title("PaperQA2 (Erik Kohlmeier Logic)")
-    paperqa_test_locally()
-    if st.button("Back to Main Menu"):
-        st.session_state["current_page"] = "Home"
+    st.title("📄 PaperQA2: Wissenschaftliche Q&A basierend auf Paper-Daten")
+    st.write("Lade wissenschaftliche PDFs hoch, stelle Fragen und erhalte fundierte Antworten.")
+
+    # Initialisierung der FAISS-Datenbank und des Retrievers (falls noch nicht vorhanden)
+    if "document_store" not in st.session_state:
+        st.session_state.document_store = FAISSDocumentStore(embedding_dim=768)
+    if "retriever" not in st.session_state:
+        st.session_state.retriever = EmbeddingRetriever(
+            document_store=st.session_state.document_store,
+            embedding_model="sentence-transformers/all-MiniLM-L6-v2",
+            model_format="sentence_transformers"
+        )
+    
+    # PDF-Upload
+    uploaded_file = st.file_uploader("📥 Lade ein PDF hoch", type=["pdf"])
+    if uploaded_file:
+        process_pdf(uploaded_file)
+
+    st.divider()  # UI-Trenner
+
+    # Frageingabe
+    question = st.text_input("🔎 Ihre Frage an das Paper:")
+    num_matches = st.slider("🔢 Anzahl der relevanten Passagen", 1, 5, 3)
+
+    if st.button("💡 PaperQA2 starten"):
+        if not question:
+            st.warning("⚠ Bitte geben Sie eine Frage ein.")
+        else:
+            # Relevante Passagen abrufen
+            results = st.session_state.retriever.retrieve(question, top_k=num_matches)
+
+            # Kontext aufbereiten
+            context_text = ""
+            for idx, doc in enumerate(results):
+                context_text += f"Abschnitt {idx+1}:\n{doc.content}\n\n"
+
+            # LLM-Prompt vorbereiten
+            prompt = (
+                f"Lies die folgenden wissenschaftlichen Paper-Auszüge und beantworte anschließend die Frage.\n\n"
+                f"{context_text}"
+                f"Frage: {question}\nAntwort:"
+            )
+
+            # OpenAI API-Aufruf
+            response = openai.Completion.create(
+                engine="text-davinci-003",  # oder gpt-3.5-turbo
+                prompt=prompt,
+                temperature=0.7,  # Steuerung der Kreativität der Antwort
+                max_tokens=300,
+                n=1
+            )
+            answer = response['choices'][0]['text'].strip()
+
+            # Antwort anzeigen
+            st.write("### ✅ Antwort:")
+            st.write(answer)
+
+            # Verwendete Kontextstellen anzeigen
+            with st.expander("📜 Genutzte Kontextstellen"):
+                for doc in results:
+                    st.markdown(f"**Ähnlichkeits-Score {doc.score:.2f}:**\n\n{doc.content[:300]}…")
+
+    st.divider()
+
+    # Datenbank zurücksetzen
+    if st.button("🗑 Datenbank zurücksetzen"):
+        st.session_state.document_store.delete_documents()
+        st.success("🗃 FAISS-Datenbank wurde zurückgesetzt.")
 
 
 def page_excel_online_search():
@@ -481,6 +505,8 @@ def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
     pages = {
         "Home": page_home,
+        # "1) API Selection": page_api_selection,     # <-- REMOVED
+        # "2) Online Filter": page_online_filter,         # <-- REMOVED
         "Online-API_Filter": page_online_api_filter,
         "3) Codewords & PubMed": page_codewords_pubmed,
         "4) Paper Selection": page_paper_selection,
@@ -488,6 +514,7 @@ def sidebar_module_navigation():
         "6) Extended Topics": page_extended_topics,
         "7) PaperQA2": page_paperqa2,
         "8) Excel Online Search": page_excel_online_search
+        # "9) Selenium Q&A": page_selenium_qa,          # <-- auskommentiert, damit der Fehler nicht auftritt
     }
     for label, page in pages.items():
         if st.sidebar.button(label, key=label):
