@@ -1,3 +1,49 @@
+import openai
+
+# ----------------------------------------------------------------------------
+# Patch: Sicherstellen, dass openai.AuthenticationError verfügbar ist
+# ----------------------------------------------------------------------------
+try:
+    from openai import AuthenticationError
+except ImportError:
+    try:
+        from openai.error import AuthenticationError
+        openai.AuthenticationError = AuthenticationError
+    except ImportError:
+        raise ImportError("AuthenticationError konnte nicht gefunden werden. Bitte überprüfen Sie Ihre OpenAI-Installation.")
+
+# ----------------------------------------------------------------------------
+# Patch: Sicherstellen, dass openai.BadRequestError verfügbar ist
+# ----------------------------------------------------------------------------
+try:
+    from openai import BadRequestError
+except ImportError:
+    try:
+        from openai.error import BadRequestError
+        openai.BadRequestError = BadRequestError
+    except ImportError:
+        class BadRequestError(Exception):
+            pass
+        openai.BadRequestError = BadRequestError
+
+# ----------------------------------------------------------------------------
+# Neuer Patch: Sicherstellen, dass openai.RateLimitError verfügbar ist
+# ----------------------------------------------------------------------------
+try:
+    from openai import RateLimitError
+except ImportError:
+    try:
+        from openai.error import RateLimitError
+        openai.RateLimitError = RateLimitError
+    except ImportError:
+        class RateLimitError(Exception):
+            pass
+        openai.RateLimitError = RateLimitError
+
+# ----------------------------------------------------------------------------
+# Rest des Skripts (inklusive Dummy-Modul für lmi usw.)
+# ----------------------------------------------------------------------------
+
 import sys
 import types
 import importlib.util
@@ -12,39 +58,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from collections import defaultdict
 import base64
-import openai
 
-# ----------------------------------------------------------------------------
-# Patch: Sicherstellen, dass openai.AuthenticationError verfügbar ist
-# ----------------------------------------------------------------------------
-try:
-    from openai import AuthenticationError
-except ImportError:
-    try:
-        from openai.error import AuthenticationError
-        openai.AuthenticationError = AuthenticationError
-    except ImportError:
-        st.error("AuthenticationError konnte nicht gefunden werden. Bitte überprüfen Sie Ihre OpenAI-Installation.")
-        st.stop()
-
-# ----------------------------------------------------------------------------
-# Patch: Sicherstellen, dass openai.BadRequestError verfügbar ist
-# ----------------------------------------------------------------------------
-try:
-    from openai import BadRequestError
-except ImportError:
-    try:
-        from openai.error import BadRequestError
-        openai.BadRequestError = BadRequestError
-    except ImportError:
-        # Dummy-Implementierung
-        class BadRequestError(Exception):
-            pass
-        openai.BadRequestError = BadRequestError
-
-# ----------------------------------------------------------------------------
-# Versuch, 'scholarly' und 'fpdf' zu importieren
-# ----------------------------------------------------------------------------
 try:
     from scholarly import scholarly
 except ImportError:
@@ -134,14 +148,6 @@ Systempfad (sys.path): {sys.path}
 # ----------------------------------------------------------------------------
 # A) Dynamischer Import von PaperQA2 via direktem Pfad zur __init__.py
 # ----------------------------------------------------------------------------
-# Erwartete Repository-Struktur:
-# your_repo/
-# └── modules/
-#     ├── codewords_pubmed.py   <-- Dieses Skript
-#     └── paper-qa/
-#          └── paper-qa-main/
-#               └── paperqa/
-#                    └── __init__.py
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 PAPERQA_INIT_FILE = os.path.join(
@@ -173,9 +179,6 @@ Docs = paperqa_module.Docs
 # B) Beispielhafte Such-Funktion für PubMed
 # ----------------------------------------------------------------------------
 def search_pubmed(query: str, max_results=100):
-    """
-    Sucht in PubMed per ESearch + ESummary und gibt eine Liste einfacher Dicts zurück.
-    """
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": max_results}
     out = []
@@ -211,9 +214,6 @@ def search_pubmed(query: str, max_results=100):
 # C) PaperQA2-Demo: PDFs hochladen und Frage stellen
 # ----------------------------------------------------------------------------
 def paperqa_test_locally():
-    """
-    Demonstriert PaperQA2: PDFs hochladen und eine Frage stellen.
-    """
     st.subheader("Lokaler PaperQA2-Test")
     docs = Docs()
     pdfs = st.file_uploader("Lade PDF(s) hoch:", type=["pdf"], accept_multiple_files=True)
