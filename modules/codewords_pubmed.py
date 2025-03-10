@@ -30,30 +30,28 @@ except ImportError:
     st.stop()
 
 # ----------------------------------------------------------------------------
-# OpenAI-Fehlerklassen patchen, falls sie nicht vorhanden sind
+# Patch für OpenAI-Fehlerklassen (einschließlich APIConnectionError)
 # ----------------------------------------------------------------------------
 def patch_openai_errors():
-    error_classes = {
-        "AuthenticationError": "AuthenticationError",
-        "BadRequestError": "BadRequestError",
-        "RateLimitError": "RateLimitError",
-        "APIStatusError": "APIStatusError",
-        "APITimeoutError": "APITimeoutError"
-    }
-    for attr, name in error_classes.items():
+    error_names = [
+        "AuthenticationError",
+        "BadRequestError",
+        "RateLimitError",
+        "APIStatusError",
+        "APITimeoutError",
+        "APIConnectionError"
+    ]
+    for error_name in error_names:
         try:
-            # Versuch zuerst direkt zu importieren
-            getattr(openai, attr)
+            getattr(openai, error_name)
         except AttributeError:
             try:
-                # Alternativ aus openai.error importieren
                 module = importlib.import_module("openai.error")
-                setattr(openai, attr, getattr(module, attr))
+                setattr(openai, error_name, getattr(module, error_name))
             except (ImportError, AttributeError):
-                # Fallback: Dummy-Klasse
-                st.warning(f"OpenAI-Fehlerklasse '{attr}' wurde nicht gefunden. Dummy wird verwendet.")
-                dummy_error = type(attr, (Exception,), {})
-                setattr(openai, attr, dummy_error)
+                st.warning(f"OpenAI-Fehlerklasse '{error_name}' wurde nicht gefunden. Dummy wird verwendet.")
+                dummy_error = type(error_name, (Exception,), {})
+                setattr(openai, error_name, dummy_error)
 
 patch_openai_errors()
 
