@@ -23,5 +23,6 @@ semanticscholar
 pydantic
 sentence-transformers
 haystack
+farm-haystack[faiss]
 
 
