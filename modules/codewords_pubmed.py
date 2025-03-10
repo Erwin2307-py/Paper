@@ -14,61 +14,48 @@ from collections import defaultdict
 import base64
 import openai
 
+# ----------------------------------------------------------------------------
 # Versuche, scholarly und fpdf zu importieren
+# ----------------------------------------------------------------------------
 try:
     from scholarly import scholarly
 except ImportError:
-    st.error("Bitte installieren Sie 'scholarly' (z.B. pip install scholarly)")
+    st.error("Bitte installiere 'scholarly' (z.B. via: pip install scholarly)")
     st.stop()
 
 try:
     from fpdf import FPDF
 except ImportError:
-    st.error("Bitte installieren Sie 'fpdf' (z.B. pip install fpdf)")
+    st.error("Bitte installiere 'fpdf' (z.B. via: pip install fpdf)")
     st.stop()
 
 # ----------------------------------------------------------------------------
-# OpenAI-Patch: Fehlende Fehlerklassen (falls nötig)
+# OpenAI-Fehlerklassen patchen, falls sie nicht vorhanden sind
 # ----------------------------------------------------------------------------
-try:
-    from openai import AuthenticationError
-except ImportError:
-    try:
-        from openai.error import AuthenticationError
-        openai.AuthenticationError = AuthenticationError
-    except ImportError:
-        class AuthenticationError(Exception): pass
-        openai.AuthenticationError = AuthenticationError
+def patch_openai_errors():
+    error_classes = {
+        "AuthenticationError": "AuthenticationError",
+        "BadRequestError": "BadRequestError",
+        "RateLimitError": "RateLimitError",
+        "APIStatusError": "APIStatusError",
+        "APITimeoutError": "APITimeoutError"
+    }
+    for attr, name in error_classes.items():
+        try:
+            # Versuch zuerst direkt zu importieren
+            getattr(openai, attr)
+        except AttributeError:
+            try:
+                # Alternativ aus openai.error importieren
+                module = importlib.import_module("openai.error")
+                setattr(openai, attr, getattr(module, attr))
+            except (ImportError, AttributeError):
+                # Fallback: Dummy-Klasse
+                st.warning(f"OpenAI-Fehlerklasse '{attr}' wurde nicht gefunden. Dummy wird verwendet.")
+                dummy_error = type(attr, (Exception,), {})
+                setattr(openai, attr, dummy_error)
 
-try:
-    from openai import BadRequestError
-except ImportError:
-    try:
-        from openai.error import BadRequestError
-        openai.BadRequestError = BadRequestError
-    except ImportError:
-        class BadRequestError(Exception): pass
-        openai.BadRequestError = BadRequestError
-
-try:
-    from openai import RateLimitError
-except ImportError:
-    try:
-        from openai.error import RateLimitError
-        openai.RateLimitError = RateLimitError
-    except ImportError:
-        class RateLimitError(Exception): pass
-        openai.RateLimitError = RateLimitError
-
-try:
-    from openai import APIStatusError
-except ImportError:
-    try:
-        from openai.error import APIStatusError
-        openai.APIStatusError = APIStatusError
-    except ImportError:
-        class APIStatusError(Exception): pass
-        openai.APIStatusError = APIStatusError
+patch_openai_errors()
 
 # ----------------------------------------------------------------------------
 # Dummy-Modul für lmi erstellen (falls nicht vorhanden)
@@ -79,34 +66,41 @@ except ImportError:
     st.warning("Modul 'lmi' nicht gefunden – Dummy-Implementierung wird verwendet.")
     dummy_lmi = types.ModuleType("lmi")
     
-    # Dummy-Klassen und Funktionen
+    # Dummy für LLMModel
     class LLMModel:
         def __init__(self, *args, **kwargs): pass
         def __call__(self, *args, **kwargs):
             return "Dummy LLMModel output"
     dummy_lmi.LLMModel = LLMModel
 
+    # Dummy für EmbeddingModel
     class EmbeddingModel:
         def __init__(self, *args, **kwargs): pass
         def embed(self, text):
             return [0.0] * 768  # Beispielvektor
     dummy_lmi.EmbeddingModel = EmbeddingModel
 
+    # Dummy für LiteLLMModel
     class LiteLLMModel(LLMModel): pass
     dummy_lmi.LiteLLMModel = LiteLLMModel
 
+    # Dummy für LiteLLMEmbeddingModel
     class LiteLLMEmbeddingModel(EmbeddingModel): pass
     dummy_lmi.LiteLLMEmbeddingModel = LiteLLMEmbeddingModel
 
+    # Dummy für HybridEmbeddingModel
     class HybridEmbeddingModel(EmbeddingModel): pass
     dummy_lmi.HybridEmbeddingModel = HybridEmbeddingModel
 
+    # Dummy für SentenceTransformerEmbeddingModel
     class SentenceTransformerEmbeddingModel(EmbeddingModel): pass
     dummy_lmi.SentenceTransformerEmbeddingModel = SentenceTransformerEmbeddingModel
 
+    # Dummy für SparseEmbeddingModel
     class SparseEmbeddingModel(EmbeddingModel): pass
     dummy_lmi.SparseEmbeddingModel = SparseEmbeddingModel
 
+    # Dummy für LLMResult
     class LLMResult:
         def __init__(self, text=""):
             self.text = text
@@ -114,6 +108,7 @@ except ImportError:
             return self.text
     dummy_lmi.LLMResult = LLMResult
 
+    # Dummy-Funktion für embedding_model_factory
     def embedding_model_factory(*args, **kwargs):
         return dummy_lmi.EmbeddingModel(*args, **kwargs)
     dummy_lmi.embedding_model_factory = embedding_model_factory
