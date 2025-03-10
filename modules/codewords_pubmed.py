@@ -30,12 +30,15 @@ try:
 except ImportError:
     st.warning("Modul 'lmi' nicht gefunden. Erstelle Dummy-Modul für 'lmi'.")
     dummy_lmi = types.ModuleType("lmi")
-    class DummyEmbeddingModel:
+    class DummyHybridEmbeddingModel:
         def __init__(self, *args, **kwargs):
-            st.warning("DummyEmbeddingModel wird verwendet. Funktionalität ist eingeschränkt.")
-        def __call__(self, *args, **kwargs):
+            st.warning("DummyHybridEmbeddingModel wird verwendet. Funktionalität ist eingeschränkt.")
+        def embed(self, *args, **kwargs):
             return None
-    dummy_lmi.EmbeddingModel = DummyEmbeddingModel
+        def __call__(self, *args, **kwargs):
+            return self.embed(*args, **kwargs)
+    dummy_lmi.HybridEmbeddingModel = DummyHybridEmbeddingModel
+    # Falls weitere Klassen benötigt werden, können Sie diese hier ergänzen
     sys.modules["lmi"] = dummy_lmi
 
 # ----------------------------------------------------------------------------
@@ -45,7 +48,7 @@ except ImportError:
 #
 # your_repo/
 # └── modules/
-#     ├── codewords_pubmed.py   <-- Dieses Skript
+#     ├── codewords_pubmed.py   (dieses Skript)
 #     └── paper-qa/
 #          └── paper-qa-main/
 #               └── paperqa/
@@ -101,7 +104,6 @@ def search_pubmed(query: str, max_results=100):
         idlist = data.get("esearchresult", {}).get("idlist", [])
         if not idlist:
             return out
-        
         esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
         sum_params = {"db": "pubmed", "id": ",".join(idlist), "retmode": "json"}
         r2 = requests.get(esummary_url, params=sum_params, timeout=10)
@@ -160,7 +162,7 @@ def paperqa_test_locally():
 # ----------------------------------------------------------------------------
 def module_codewords_pubmed():
     """
-    Diese Funktion demonstriert eine PubMed-Suche und einen anschließenden PaperQA2-Test.
+    Demonstriert eine PubMed-Suche und einen anschließenden PaperQA2-Test.
     """
     st.title("Multi-API-Suche + PaperQA2 (lokaler Import)")
     query = st.text_input("PubMed-Suchbegriff:", "Cancer")
