@@ -22,6 +22,6 @@ habanero
 semanticscholar
 pydantic
 sentence-transformers
-
+farm-haystack
 
 
