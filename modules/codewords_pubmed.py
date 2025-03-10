@@ -17,13 +17,13 @@ import openai
 try:
     from scholarly import scholarly
 except ImportError:
-    st.error("Bitte installieren Sie 'scholarly' (z.B. pip install scholarly)")
+    st.error("Bitte installiere 'scholarly' (z.B. via: pip install scholarly)")
     st.stop()
 
 try:
     from fpdf import FPDF
 except ImportError:
-    st.error("Bitte installieren Sie 'fpdf' (z.B. pip install fpdf)")
+    st.error("Bitte installiere 'fpdf' (z.B. via: pip install fpdf)")
     st.stop()
 
 # ----------------------------------------------------------------------------
@@ -52,15 +52,17 @@ except ImportError:
             return [0.0] * 768
     dummy_lmi.EmbeddingModel = EmbeddingModel
 
-    # Dummy für LiteLLMModel, LiteLLMEmbeddingModel und HybridEmbeddingModel
+    # Dummy für LiteLLMModel
     class LiteLLMModel(LLMModel):
         pass
     dummy_lmi.LiteLLMModel = LiteLLMModel
 
+    # Dummy für LiteLLMEmbeddingModel
     class LiteLLMEmbeddingModel(EmbeddingModel):
         pass
     dummy_lmi.LiteLLMEmbeddingModel = LiteLLMEmbeddingModel
 
+    # Dummy für HybridEmbeddingModel
     class HybridEmbeddingModel(EmbeddingModel):
         pass
     dummy_lmi.HybridEmbeddingModel = HybridEmbeddingModel
@@ -69,6 +71,11 @@ except ImportError:
     class SentenceTransformerEmbeddingModel(EmbeddingModel):
         pass
     dummy_lmi.SentenceTransformerEmbeddingModel = SentenceTransformerEmbeddingModel
+
+    # **Neu**: Dummy für SparseEmbeddingModel
+    class SparseEmbeddingModel(EmbeddingModel):
+        pass
+    dummy_lmi.SparseEmbeddingModel = SparseEmbeddingModel
 
     # Dummy für LLMResult
     class LLMResult:
@@ -92,7 +99,7 @@ Systempfad (sys.path): {sys.path}
 # ----------------------------------------------------------------------------
 # A) Dynamischer Import von PaperQA2 via direktem Pfad zur __init__.py
 # ----------------------------------------------------------------------------
-# Erwartete Struktur:
+# Erwartete Struktur im Repository:
 # your_repo/
 # └── modules/
 #     ├── codewords_pubmed.py   (dieses Skript)
@@ -132,15 +139,11 @@ Docs = paperqa_module.Docs
 # ----------------------------------------------------------------------------
 def search_pubmed(query: str, max_results=100):
     """
-    Sucht in PubMed per ESearch + ESummary und gibt eine Liste von Dicts zurück.
+    Sucht in PubMed per ESearch + ESummary.
+    Gibt eine Liste einfacher Dicts zurück.
     """
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-    params = {
-        "db": "pubmed",
-        "term": query,
-        "retmode": "json",
-        "retmax": max_results
-    }
+    params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": max_results}
     out = []
     try:
         r = requests.get(esearch_url, params=params, timeout=10)
