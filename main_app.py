@@ -5,6 +5,8 @@ import pandas as pd
 from io import BytesIO
 import re
 import datetime
+import os
+import importlib.util
 
 # Remove or comment out the direct module_online_filter import if you no longer need it here:
 # from modules.online_filter import module_online_filter
@@ -318,20 +320,78 @@ class SemanticScholarSearch:
 ################################################################################
 # 2) Neues Modul: "module_excel_online_search"
 ################################################################################
-
 # [unverändert, Belassen Sie hier, falls alles korrekt läuft...]
+
+################################################################################
+# PaperQA2 - Dynamischer Import / "Erik Kohlmeier"-Logik
+################################################################################
+# Wir verbinden nun dein Skript mit dem Ansatz, den Erik Kohlmeier verwendet hat,
+# um PaperQA via dynamischem Import lauffähig zu machen. Passen ggf. Pfade an.
+
+import importlib.util
+
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+# Beispielhafter Pfad zu paperqa/__init__.py:
+PAPERQA_INIT_FILE = os.path.join(
+    CURRENT_DIR,
+    "paper-qa",      # <-- ordner anpassen
+    "paper-qa-main", # <-- ordner anpassen
+    "paperqa",
+    "__init__.py"
+)
+
+if not os.path.isfile(PAPERQA_INIT_FILE):
+    st.error(f"Pfadfehler: {PAPERQA_INIT_FILE} existiert nicht! Bitte anpassen.")
+else:
+    try:
+        spec = importlib.util.spec_from_file_location("paperqa_custom", PAPERQA_INIT_FILE)
+        paperqa_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(paperqa_module)
+        if not hasattr(paperqa_module, "Docs"):
+            st.error("Im dynamisch geladenen PaperQA2-Modul ist kein 'Docs' definiert!")
+        else:
+            Docs = paperqa_module.Docs
+    except Exception as e:
+        st.error(f"Fehler beim Laden von PaperQA2 via {PAPERQA_INIT_FILE}: {e}")
+
+def paperqa_test_locally():
+    """
+    Demonstriert PaperQA2: PDFs hochladen und eine Frage stellen.
+    """
+    if 'Docs' not in globals():
+        st.error("PaperQA2-Modul wurde nicht korrekt geladen.")
+        return
+
+    st.subheader("Lokaler PaperQA2-Test")
+    docs = Docs()
+    pdfs = st.file_uploader("Lade PDF(s) hoch:", type=["pdf"], accept_multiple_files=True)
+    if pdfs:
+        for up in pdfs:
+            pdf_bytes = up.read()
+            try:
+                docs.add(pdf_bytes, metadata=up.name)
+                st.success(f"Datei '{up.name}' hinzugefügt.")
+            except Exception as e:
+                st.error(f"Fehler beim Hinzufügen von {up.name}: {e}")
+
+    question = st.text_area("Frage an PaperQA2:")
+    if st.button("PaperQA2-Abfrage starten"):
+        if not question.strip():
+            st.warning("Bitte eine Frage eingeben!")
+        else:
+            try:
+                answer_obj = docs.query(question)
+                st.markdown("### Antwort:")
+                st.write(answer_obj.answer)
+                with st.expander("Kontext / Belege"):
+                    st.write(answer_obj.context)
+            except Exception as e:
+                st.error(f"Fehler bei PaperQA2-Abfrage: {e}")
+
 
 ################################################################################
 # 3) Restliche Module + Seiten (Pages)
 ################################################################################
-
-def module_paperqa2():
-    st.subheader("PaperQA2 Module")
-    st.write("Dies ist das PaperQA2 Modul. Hier kannst du weitere Einstellungen und Funktionen für PaperQA2 implementieren.")
-    question = st.text_input("Bitte gib deine Frage ein:")
-    if st.button("Frage absenden"):
-        st.write("Antwort: Dies ist eine Dummy-Antwort auf die Frage:", question)
-
 
 def page_home():
     st.title("Welcome to the Main Menu")
@@ -369,8 +429,12 @@ def page_extended_topics():
 
 
 def page_paperqa2():
-    st.title("PaperQA2")
-    module_paperqa2()
+    """
+    Ersetzt die ursprüngliche Funktion 'module_paperqa2' durch den
+    dynamischen PaperQA-Ansatz.
+    """
+    st.title("PaperQA2 (Erik Kohlmeier Logic)")
+    paperqa_test_locally()
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
@@ -417,8 +481,6 @@ def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
     pages = {
         "Home": page_home,
-        # "1) API Selection": page_api_selection,     # <-- REMOVED
-        # "2) Online Filter": page_online_filter,     # <-- REMOVED
         "Online-API_Filter": page_online_api_filter,
         "3) Codewords & PubMed": page_codewords_pubmed,
         "4) Paper Selection": page_paper_selection,
@@ -426,7 +488,6 @@ def sidebar_module_navigation():
         "6) Extended Topics": page_extended_topics,
         "7) PaperQA2": page_paperqa2,
         "8) Excel Online Search": page_excel_online_search
-        # "9) Selenium Q&A": page_selenium_qa,       # <-- auskommentiert, damit der Fehler nicht auftritt
     }
     for label, page in pages.items():
         if st.sidebar.button(label, key=label):
