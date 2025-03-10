@@ -6,15 +6,6 @@ from io import BytesIO
 import re
 import datetime
 
-# Neu hinzugefügte Imports für PaperQA2 / Haystack / OpenAI
-import openai
-import pdfplumber
-from haystack.document_stores import FAISSDocumentStore
-from haystack.nodes import EmbeddingRetriever
-from haystack import Document
-import tempfile
-import os
-
 # Remove or comment out the direct module_online_filter import if you no longer need it here:
 # from modules.online_filter import module_online_filter
 
@@ -329,21 +320,27 @@ class SemanticScholarSearch:
 ################################################################################
 # [unverändert, Belassen Sie hier, falls alles korrekt läuft...]
 
-
 ################################################################################
 # 3) Restliche Module + Seiten (Pages)
 ################################################################################
 
 # ============================================================================
-# Neue PaperQA2-Logik
+# PaperQA2-Logik (neu eingebaut) - Nur diese Funktion wurde ersetzt!
 # ============================================================================
-
 def module_paperqa2():
-    # OpenAI-API-Key setzen (entweder aus Streamlit-Secrets oder Umgebungsvariable)
+    import openai
+    import pdfplumber
+    from haystack.document_stores import FAISSDocumentStore
+    from haystack.nodes import EmbeddingRetriever
+    from haystack import Document
+    import os
+    import tempfile
+
+    # OpenAI API-Key (aus Streamlit Secrets oder Umgebungsvariable)
     OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"] if "OPENAI_API_KEY" in st.secrets else os.getenv("OPENAI_API_KEY")
     openai.api_key = OPENAI_API_KEY
 
-    # FAISS-Dokument-Store zur Vektorsuche initialisieren (einmal pro Session)
+    # FAISS-Datenbank einmalig pro Session
     if "document_store" not in st.session_state:
         st.session_state.document_store = FAISSDocumentStore(embedding_dim=768)
 
@@ -354,21 +351,21 @@ def module_paperqa2():
             model_format="sentence_transformers"
         )
 
+    # PDF hochladen & indexieren
     def process_pdf(uploaded_file):
         with tempfile.NamedTemporaryFile(delete=False) as temp_file:
             temp_file.write(uploaded_file.read())
             temp_filename = temp_file.name
 
-        # PDF auslesen
+        # Text aus PDF extrahieren
         text_chunks = []
         with pdfplumber.open(temp_filename) as pdf:
             for page in pdf.pages:
                 text = page.extract_text()
                 if text:
-                    # Beispielhafter Split nach Doppel-Absätzen
-                    text_chunks.extend(text.split("\n\n"))
+                    text_chunks.extend(text.split("\n\n"))  # Aufteilung in Chunks
 
-        # Als Haystack-Dokumente speichern
+        # Dokumente in die FAISS-Datenbank
         docs = [Document(content=chunk) for chunk in text_chunks]
         st.session_state.document_store.write_documents(docs)
         st.session_state.document_store.update_embeddings(st.session_state.retriever)
@@ -377,16 +374,18 @@ def module_paperqa2():
         os.remove(temp_filename)
         st.success(f"PDF '{uploaded_file.name}' wurde erfolgreich verarbeitet und indexiert!")
 
-    # ---------------- UI -------------------
+    # UI
     st.title("📄 PaperQA2: Wissenschaftliche Q&A basierend auf Paper-Daten")
     st.write("Lade wissenschaftliche PDFs hoch, stelle Fragen und erhalte fundierte Antworten.")
 
+    # PDF Upload
     uploaded_file = st.file_uploader("📥 Lade ein PDF hoch", type=["pdf"])
     if uploaded_file:
         process_pdf(uploaded_file)
 
-    st.divider()
+    st.divider()  # visueller Trenner
 
+    # Frageeingabe
     question = st.text_input("🔎 Ihre Frage an das Paper:")
     num_matches = st.slider("🔢 Anzahl der relevanten Passagen", 1, 5, 3)
 
@@ -394,45 +393,43 @@ def module_paperqa2():
         if not question:
             st.warning("⚠ Bitte geben Sie eine Frage ein.")
         else:
-            # Dokumente abrufen
+            # Dokumente via EmbeddingRetriever
             results = st.session_state.retriever.retrieve(question, top_k=num_matches)
 
-            # Kontext zusammensetzen
+            # Prompt-Kontext erstellen
             context_text = ""
             for idx, doc in enumerate(results):
                 context_text += f"Abschnitt {idx+1}:\n{doc.content}\n\n"
 
-            # Prompt für OpenAI
+            # LLM-Prompt
             prompt = (
                 f"Lies die folgenden wissenschaftlichen Paper-Auszüge und beantworte anschließend die Frage.\n\n"
                 f"{context_text}"
                 f"Frage: {question}\nAntwort:"
             )
 
-            try:
-                # OpenAI-Aufruf
-                response = openai.Completion.create(
-                    engine="text-davinci-003",  # oder "gpt-3.5-turbo"
-                    prompt=prompt,
-                    temperature=0.7,
-                    max_tokens=300,
-                    n=1
-                )
-                answer = response['choices'][0]['text'].strip()
+            # OpenAI-API-Aufruf
+            response = openai.Completion.create(
+                engine="text-davinci-003",  # oder gpt-3.5-turbo
+                prompt=prompt,
+                temperature=0.7,
+                max_tokens=300,
+                n=1
+            )
+            answer = response['choices'][0]['text'].strip()
 
-                # Ausgabe
-                st.write("### ✅ Antwort:")
-                st.write(answer)
+            # Antwort ausgeben
+            st.write("### ✅ Antwort:")
+            st.write(answer)
 
-                with st.expander("📜 Genutzte Kontextstellen"):
-                    for doc in results:
-                        st.markdown(f"**Ähnlichkeits-Score {doc.score:.2f}:**\n\n{doc.content[:300]}…")
-
-            except Exception as e:
-                st.error(f"Fehler bei OpenAI-API: {e}")
+            # Kontextstellen anzeigen
+            with st.expander("📜 Genutzte Kontextstellen"):
+                for doc in results:
+                    st.markdown(f"**Ähnlichkeits-Score {doc.score:.2f}:**\n\n{doc.content[:300]}…")
 
     st.divider()
 
+    # Datenbank reset
     if st.button("🗑 Datenbank zurücksetzen"):
         st.session_state.document_store.delete_documents()
         st.success("🗃 FAISS-Datenbank wurde zurückgesetzt.")
@@ -474,8 +471,9 @@ def page_extended_topics():
 
 
 def page_paperqa2():
-    # Du kannst das hier ggf. auskommentieren, um den Doppel-Titel zu vermeiden:
     st.title("PaperQA2")
+    # <-- Bei Bedarf kannst du st.title("PaperQA2") auskommentieren, 
+    #     um den doppelten Titel zu vermeiden.
     module_paperqa2()
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
@@ -483,12 +481,14 @@ def page_paperqa2():
 
 def page_excel_online_search():
     st.title("Excel Online Search")
+    # Rufen Sie bei Bedarf weiterhin module_excel_online_search() auf,
+    # sofern dieses Modul funktioniert
     from modules.online_api_filter import module_online_api_filter
-    # Rufe hier dein Modul auf oder führe sonstige Logik aus
     # ...
+    # Oder was immer hier geplant war.
 
 
-# 4) Selenium Q&A: auskommentiert, um Fehler zu verhindern
+# 4) SEITE FÜR SELENIUM Q&A: auskommentiert, um Fehler zu verhindern
 # def page_selenium_qa():
 #     st.title("Selenium Q&A (Modul) - Example")
 #     st.write("Dies ruft das Modul 'my_selenium_qa_module' auf.")
@@ -522,7 +522,7 @@ def sidebar_module_navigation():
         "6) Extended Topics": page_extended_topics,
         "7) PaperQA2": page_paperqa2,
         "8) Excel Online Search": page_excel_online_search
-        # "9) Selenium Q&A": page_selenium_qa,       # <-- auskommentiert
+        # "9) Selenium Q&A": page_selenium_qa,       # <-- auskommentiert, damit der Fehler nicht auftritt
     }
     for label, page in pages.items():
         if st.sidebar.button(label, key=label):
