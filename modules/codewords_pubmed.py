@@ -15,6 +15,16 @@ import base64
 import openai
 
 # ----------------------------------------------------------------------------
+# Patch: Dummy-Modul für openai._models erstellen, falls nicht vorhanden
+# ----------------------------------------------------------------------------
+try:
+    import openai._models
+except ImportError:
+    st.warning("Modul 'openai._models' nicht gefunden – Dummy wird erstellt.")
+    dummy_models = types.ModuleType("openai._models")
+    sys.modules["openai._models"] = dummy_models
+
+# ----------------------------------------------------------------------------
 # Versuche, scholarly und fpdf zu importieren
 # ----------------------------------------------------------------------------
 try:
@@ -28,32 +38,6 @@ try:
 except ImportError:
     st.error("Bitte installiere 'fpdf' (z.B. via: pip install fpdf)")
     st.stop()
-
-# ----------------------------------------------------------------------------
-# Patch für OpenAI-Fehlerklassen (einschließlich APIConnectionError)
-# ----------------------------------------------------------------------------
-def patch_openai_errors():
-    error_names = [
-        "AuthenticationError",
-        "BadRequestError",
-        "RateLimitError",
-        "APIStatusError",
-        "APITimeoutError",
-        "APIConnectionError"
-    ]
-    for error_name in error_names:
-        try:
-            getattr(openai, error_name)
-        except AttributeError:
-            try:
-                module = importlib.import_module("openai.error")
-                setattr(openai, error_name, getattr(module, error_name))
-            except (ImportError, AttributeError):
-                st.warning(f"OpenAI-Fehlerklasse '{error_name}' wurde nicht gefunden. Dummy wird verwendet.")
-                dummy_error = type(error_name, (Exception,), {})
-                setattr(openai, error_name, dummy_error)
-
-patch_openai_errors()
 
 # ----------------------------------------------------------------------------
 # Dummy-Modul für lmi erstellen (falls nicht vorhanden)
