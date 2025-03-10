@@ -338,10 +338,6 @@ def page_home():
     st.write("Choose a module in the sidebar to proceed.")
     st.image("Bild1.jpg", caption="Willkommen!", use_container_width=False, width=600)
 
-    # NEU: Button, um direkt zur PaperQA2-Seite zu springen
-    if st.button("Go to PaperQA2"):
-        st.session_state["current_page"] = "7) PaperQA2"
-
 
 def page_codewords_pubmed():
     st.title("Codewords & PubMed Settings")
@@ -394,7 +390,9 @@ def page_excel_online_search():
 # def page_selenium_qa():
 #     st.title("Selenium Q&A (Modul) - Example")
 #     st.write("Dies ruft das Modul 'my_selenium_qa_module' auf.")
-#     # ...
+#     # Da hier 'my_selenium_qa_module.main()' aufgerufen wird, kommt es
+#     # ggf. zum Import-Fehler. Also entfernen/auskommentieren:
+#     # my_selenium_qa_module.main()
 #     if st.button("Back to Main Menu"):
 #         st.session_state["current_page"] = "Home"
 
@@ -456,3 +454,114 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+###############################################################################
+# AB HIER: Der unveränderte, nur angehängte Codeblock
+###############################################################################
+import streamlit as st
+import openai
+import pdfplumber
+from haystack.document_stores import FAISSDocumentStore
+from haystack.nodes import EmbeddingRetriever
+from haystack import Document
+import os
+import tempfile
+
+# OpenAI API-Key setzen (entweder aus Streamlit Secrets oder Umgebung)
+OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"] if "OPENAI_API_KEY" in st.secrets else os.getenv("OPENAI_API_KEY")
+openai.api_key = OPENAI_API_KEY
+
+# Initialisierung der FAISS-Datenbank für Vektorsuche
+if "document_store" not in st.session_state:
+    st.session_state.document_store = FAISSDocumentStore(embedding_dim=768)
+
+if "retriever" not in st.session_state:
+    st.session_state.retriever = EmbeddingRetriever(
+        document_store=st.session_state.document_store,
+        embedding_model="sentence-transformers/all-MiniLM-L6-v2",
+        model_format="sentence_transformers"
+    )
+
+# Funktion zur PDF-Verarbeitung und Indexierung
+def process_pdf(uploaded_file):
+    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+        temp_file.write(uploaded_file.read())
+        temp_filename = temp_file.name
+
+    # Extrahiere Text aus PDF
+    text_chunks = []
+    with pdfplumber.open(temp_filename) as pdf:
+        for page in pdf.pages:
+            text = page.extract_text()
+            if text:
+                text_chunks.extend(text.split("\n\n"))  # Aufteilung in Chunks
+
+    # Dokumente zur FAISS-Datenbank hinzufügen
+    docs = [Document(content=chunk) for chunk in text_chunks]
+    st.session_state.document_store.write_documents(docs)
+    st.session_state.document_store.update_embeddings(st.session_state.retriever)
+    
+    # Temporäre Datei löschen
+    os.remove(temp_filename)
+    st.success(f"PDF '{uploaded_file.name}' wurde erfolgreich verarbeitet und indexiert!")
+
+# Streamlit UI
+st.title("📄 PaperQA2: Wissenschaftliche Q&A basierend auf Paper-Daten")
+st.write("Lade wissenschaftliche PDFs hoch, stelle Fragen und erhalte fundierte Antworten.")
+
+# **PDF-Upload**
+uploaded_file = st.file_uploader("📥 Lade ein PDF hoch", type=["pdf"])
+if uploaded_file:
+    process_pdf(uploaded_file)
+
+st.divider()  # UI-Trenner
+
+# **Frageingabe**
+question = st.text_input("🔎 Ihre Frage an das Paper:")
+num_matches = st.slider("🔢 Anzahl der relevanten Passagen", 1, 5, 3)
+
+if st.button("💡 PaperQA2 starten"):
+    if not question:
+        st.warning("⚠ Bitte geben Sie eine Frage ein.")
+    else:
+        # **Relevante Passagen abrufen**
+        results = st.session_state.retriever.retrieve(question, top_k=num_matches)
+
+        # **Kontext aufbereiten**
+        context_text = ""
+        for idx, doc in enumerate(results):
+            context_text += f"Abschnitt {idx+1}:\n{doc.content}\n\n"
+
+        # **LLM-Prompt vorbereiten**
+        prompt = (
+            f"Lies die folgenden wissenschaftlichen Paper-Auszüge und beantworte anschließend die Frage.\n\n"
+            f"{context_text}"
+            f"Frage: {question}\nAntwort:"
+        )
+
+        # **OpenAI API-Aufruf**
+        response = openai.Completion.create(
+            engine="text-davinci-003",  # oder gpt-3.5-turbo
+            prompt=prompt,
+            temperature=0.7,  # Steuerung der Kreativität der Antwort
+            max_tokens=300,
+            n=1
+        )
+        answer = response['choices'][0]['text'].strip()
+
+        # **Antwort anzeigen**
+        st.write("### ✅ Antwort:")
+        st.write(answer)
+
+        # **Verwendete Kontextstellen anzeigen**
+        with st.expander("📜 Genutzte Kontextstellen"):
+            for doc in results:
+                st.markdown(f"**Ähnlichkeits-Score {doc.score:.2f}:**\n\n{doc.content[:300]}…")
+
+st.divider()
+
+# **Datenbank zurücksetzen**
+if st.button("🗑 Datenbank zurücksetzen"):
+    st.session_state.document_store.delete_documents()
+    st.success("🗃 FAISS-Datenbank wurde zurückgesetzt.")
