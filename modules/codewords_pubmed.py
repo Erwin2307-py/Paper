@@ -27,14 +27,14 @@ except ImportError:
     st.stop()
 
 # ----------------------------------------------------------------------------
-# Dummy-Modul für lmi erstellen (falls lmi nicht installiert/gefunden wird)
+# Dummy-Modul für lmi erstellen, falls lmi nicht installiert/gefunden wird
 # ----------------------------------------------------------------------------
 try:
     import lmi
 except ImportError:
     st.warning("Modul 'lmi' nicht gefunden – verwende Dummy-Implementierung.")
     dummy_lmi = types.ModuleType("lmi")
-
+    
     # Dummy für LLMModel
     class LLMModel:
         def __init__(self, *args, **kwargs):
@@ -48,7 +48,7 @@ except ImportError:
         def __init__(self, *args, **kwargs):
             pass
         def embed(self, text):
-            # Gibt einen Dummy-Vektor (z. B. 768 Dimensionen) zurück
+            # Rückgabe eines Dummy-Vektors (z. B. 768 Dimensionen)
             return [0.0] * 768
     dummy_lmi.EmbeddingModel = EmbeddingModel
 
@@ -72,7 +72,7 @@ except ImportError:
         pass
     dummy_lmi.SentenceTransformerEmbeddingModel = SentenceTransformerEmbeddingModel
 
-    # **Neu**: Dummy für SparseEmbeddingModel
+    # Dummy für SparseEmbeddingModel
     class SparseEmbeddingModel(EmbeddingModel):
         pass
     dummy_lmi.SparseEmbeddingModel = SparseEmbeddingModel
@@ -84,6 +84,11 @@ except ImportError:
         def __str__(self):
             return self.text
     dummy_lmi.LLMResult = LLMResult
+
+    # Dummy-Funktion für embedding_model_factory
+    def embedding_model_factory(*args, **kwargs):
+        return dummy_lmi.EmbeddingModel(*args, **kwargs)
+    dummy_lmi.embedding_model_factory = embedding_model_factory
 
     sys.modules["lmi"] = dummy_lmi
 
@@ -99,10 +104,10 @@ Systempfad (sys.path): {sys.path}
 # ----------------------------------------------------------------------------
 # A) Dynamischer Import von PaperQA2 via direktem Pfad zur __init__.py
 # ----------------------------------------------------------------------------
-# Erwartete Struktur im Repository:
+# Erwartete Repository-Struktur:
 # your_repo/
 # └── modules/
-#     ├── codewords_pubmed.py   (dieses Skript)
+#     ├── codewords_pubmed.py   <-- Dieses Skript
 #     └── paper-qa/
 #          └── paper-qa-main/
 #               └── paperqa/
@@ -139,8 +144,7 @@ Docs = paperqa_module.Docs
 # ----------------------------------------------------------------------------
 def search_pubmed(query: str, max_results=100):
     """
-    Sucht in PubMed per ESearch + ESummary.
-    Gibt eine Liste einfacher Dicts zurück.
+    Sucht in PubMed per ESearch + ESummary und gibt eine Liste einfacher Dicts zurück.
     """
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": max_results}
