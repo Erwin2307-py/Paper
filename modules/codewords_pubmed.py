@@ -28,6 +28,21 @@ except ImportError:
         st.stop()
 
 # ----------------------------------------------------------------------------
+# Patch: Sicherstellen, dass openai.BadRequestError verfügbar ist
+# ----------------------------------------------------------------------------
+try:
+    from openai import BadRequestError
+except ImportError:
+    try:
+        from openai.error import BadRequestError
+        openai.BadRequestError = BadRequestError
+    except ImportError:
+        # Dummy-Implementierung
+        class BadRequestError(Exception):
+            pass
+        openai.BadRequestError = BadRequestError
+
+# ----------------------------------------------------------------------------
 # Versuch, 'scholarly' und 'fpdf' zu importieren
 # ----------------------------------------------------------------------------
 try:
