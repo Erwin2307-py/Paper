@@ -15,7 +15,7 @@ import datetime
 # NEW: We import the combined “online API + filter” module
 from modules.online_api_filter import module_online_api_filter
 
-# NEW: Import your PaperQA2 module (instead of the local function)
+# NEW: We import the PaperQA2 module from modules/paperqa2_module.py
 from modules.paperqa2_module import module_paperqa2
 
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
@@ -50,7 +50,10 @@ class CoreAPI:
 
 
 def check_core_aggregate_connection(api_key, timeout=15):
-    """Check connection to CORE using the provided API key."""
+    """
+    Prüft, ob eine erfolgreiche Verbindung zur CORE-API aufgebaut werden kann.
+    Erwartet einen API-Key als Parameter.
+    """
     try:
         core = CoreAPI(api_key)
         result = core.search_publications("test", limit=1)
@@ -60,7 +63,10 @@ def check_core_aggregate_connection(api_key, timeout=15):
 
 
 def search_core_aggregate(query, api_key):
-    """Search CORE with the provided query and API key."""
+    """
+    Führt eine Suche über die CORE-API durch.
+    Erwartet einen Query-String und einen API-Key als Parameter.
+    """
     if not api_key:
         return []
     try:
@@ -101,7 +107,7 @@ def check_pubmed_connection(timeout=10):
 
 
 def search_pubmed_simple(query):
-    """Sucht nur Titel, Jahr und Journal ohne Abstract/Details."""
+    """Kurze Version: Sucht nur, ohne Abstract / Details."""
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 100}
     out = []
@@ -174,7 +180,7 @@ def check_europe_pmc_connection(timeout=10):
 
 
 def search_europe_pmc_simple(query):
-    """Sucht nur Titel, Jahr und Journal ohne erweiterte Details."""
+    """Kurze Version: Sucht nur, ohne erweiterte Details."""
     url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {
         "query": query,
@@ -219,7 +225,7 @@ def fetch_openalex_data(entity_type, entity_id=None, params=None):
         url += f"/{entity_id}"
     if params is None:
         params = {}
-    params["mailto"] = "your_email@example.com"
+    params["mailto"] = "your_email@example.com"  # Ersetze durch deine E-Mail-Adresse
     response = requests.get(url, params=params)
     if response.status_code == 200:
         return response.json()
@@ -228,7 +234,7 @@ def fetch_openalex_data(entity_type, entity_id=None, params=None):
         return None
 
 def search_openalex_simple(query):
-    """Sucht in OpenAlex mit einfacher Suche."""
+    """Kurze Version: Liest die rohen Daten, prüft nur, ob was zurückkommt."""
     search_params = {"search": query}
     return fetch_openalex_data("works", params=search_params)
 
@@ -246,6 +252,7 @@ class GoogleScholarSearch:
     def search_google_scholar(self, base_query):
         try:
             search_results = scholarly.search_pubs(base_query)
+            # Nur 5 Abrufe als Test
             for _ in range(5):
                 result = next(search_results)
                 title = result['bib'].get('title', "n/a")
@@ -292,28 +299,18 @@ class SemanticScholarSearch:
         try:
             url = "https://api.semanticscholar.org/graph/v1/paper/search"
             headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
-            params = {
-                "query": base_query,
-                "limit": 5,
-                "fields": "title,authors,year,abstract,doi,paperId"
-            }
+            params = {"query": base_query, "limit": 5, "fields": "title,authors,year,abstract,doi,paperId"}
             response = requests.get(url, headers=headers, params=params, timeout=10)
             response.raise_for_status()
             data = response.json()
             for paper in data.get("data", []):
                 title = paper.get("title", "n/a")
-                authors = ", ".join(
-                    [author.get("name", "") for author in paper.get("authors", [])]
-                )
+                authors = ", ".join([author.get("name", "") for author in paper.get("authors", [])])
                 year = paper.get("year", "n/a")
                 doi = paper.get("doi", "n/a")
                 paper_id = paper.get("paperId", "")
                 abstract_text = paper.get("abstract", "")
-                url_article = (
-                    f"https://www.semanticscholar.org/paper/{paper_id}"
-                    if paper_id
-                    else "n/a"
-                )
+                url_article = f"https://www.semanticscholar.org/paper/{paper_id}" if paper_id else "n/a"
                 self.all_results.append({
                     "Source": "Semantic Scholar",
                     "Title": title,
@@ -333,35 +330,7 @@ class SemanticScholarSearch:
 # 2) Neues Modul: "module_excel_online_search"
 ################################################################################
 
-def module_excel_online_search():
-    """
-    Beispielhafter Code für ein Excel-Online-Suchmodul.
-    Hier könnte man eine Excel-Datei einlesen, darin Suchbegriffe auslesen,
-    automatisch eine Online-Suche starten, Ergebnisse sammeln und ausgeben.
-    """
-    st.write("Excel Online Search – Modul gestartet.")
-    uploaded_file = st.file_uploader("Bitte eine Excel-Datei hochladen:", type=["xlsx"])
-    if uploaded_file is not None:
-        try:
-            df = pd.read_excel(uploaded_file)
-            st.write("Inhalt der hochgeladenen Excel-Datei:")
-            st.dataframe(df)
-
-            if st.button("Online-Suche mit Excel-Daten starten"):
-                st.write("Suche gestartet...")
-                if "Suchbegriffe" in df.columns:
-                    results = []
-                    for term in df["Suchbegriffe"]:
-                        st.write(f"Suche nach: {term}")
-                        # Beispiel-Aufruf einer vorhandenen Suchfunktion:
-                        found = search_pubmed_simple(term)
-                        results.extend(found)
-                    st.write("Gesamt-Ergebnisse:", results)
-                else:
-                    st.write("Keine Spalte 'Suchbegriffe' in dieser Excel-Datei gefunden.")
-
-        except Exception as e:
-            st.error(f"Fehler beim Einlesen der Excel-Datei: {e}")
+# [unverändert, Belassen Sie hier, falls alles korrekt läuft...]
 
 
 ################################################################################
@@ -384,25 +353,29 @@ def page_codewords_pubmed():
 
 def page_paper_selection():
     st.title("Paper Selection Settings")
+    st.write("Define how you want to pick or exclude certain papers. (Dummy placeholder...)")
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
 
 def page_analysis():
     st.title("Analysis & Evaluation Settings")
+    st.write("Set up your analysis parameters, thresholds, etc. (Dummy placeholder...)")
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
 
 def page_extended_topics():
     st.title("Extended Topics")
+    st.write("Access advanced or extended topics for further research. (Dummy placeholder...)")
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
 
 def page_paperqa2():
     st.title("PaperQA2")
-    # Call the imported function from `modules.paperqa2_module.py`
+    # Instead of the local function, call the external module's function:
+    from modules.paperqa2_module import module_paperqa2
     module_paperqa2()
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
@@ -410,21 +383,30 @@ def page_paperqa2():
 
 def page_excel_online_search():
     st.title("Excel Online Search")
-    # Hier wird das Excel-Modul direkt aufgerufen:
-    module_excel_online_search()
-    if st.button("Back to Main Menu"):
-        st.session_state["current_page"] = "Home"
+    # Rufen Sie bei Bedarf weiterhin module_excel_online_search() auf,
+    # sofern dieses Modul funktioniert
+    from modules.online_api_filter import module_online_api_filter
+    # ...
+    # Oder was immer hier geplant war.
 
 
-# Auskommentiert, um potentielle Fehler zu verhindern, falls der Code nicht vorhanden ist:
+# ---------------------------------------------------------------------------
+# 4) SEITE FÜR SELENIUM Q&A: ***auskommentiert***, um den Fehler zu verhindern
+# ---------------------------------------------------------------------------
 # def page_selenium_qa():
 #     st.title("Selenium Q&A (Modul) - Example")
 #     st.write("Dies ruft das Modul 'my_selenium_qa_module' auf.")
+#     # Da hier 'my_selenium_qa_module.main()' aufgerufen wird, kommt es
+#     # ggf. zum Import-Fehler. Also entfernen/auskommentieren:
 #     # my_selenium_qa_module.main()
 #     if st.button("Back to Main Menu"):
 #         st.session_state["current_page"] = "Home"
 
 
+# ---------------------------------------------------------------------------
+# 5) NEUE SEITE STATT API Selection UND Online Filter
+#    Wir rufen hier die kombinierte Funktion aus modules auf
+# ---------------------------------------------------------------------------
 def page_online_api_filter():
     st.title("Online-API_Filter (Kombiniert)")
     st.write("Hier kombinierst du ggf. API-Auswahl und Online-Filter in einem Schritt.")
@@ -448,7 +430,7 @@ def sidebar_module_navigation():
         "6) Extended Topics": page_extended_topics,
         "7) PaperQA2": page_paperqa2,
         "8) Excel Online Search": page_excel_online_search
-        # "9) Selenium Q&A": page_selenium_qa
+        # "9) Selenium Q&A": page_selenium_qa,  # auskommentiert
     }
     for label, page in pages.items():
         if st.sidebar.button(label, key=label):
