@@ -1,6 +1,3 @@
-import sys
-import types
-import importlib.util
 import streamlit as st
 import requests
 import feedparser
@@ -12,85 +9,37 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from collections import defaultdict
 import base64
-import openai
+import importlib.util  # Für den dynamischen Import von PaperQA2
+import sys
 
+# ----------------------------------------------------------------------------
+# Patch: Sicherstellen, dass openai.AuthenticationError existiert
+# ----------------------------------------------------------------------------
+import openai
+try:
+    from openai import AuthenticationError
+except ImportError:
+    try:
+        from openai.error import AuthenticationError
+        openai.AuthenticationError = AuthenticationError
+    except ImportError:
+        st.error("AuthenticationError konnte nicht gefunden werden. Bitte überprüfen Sie Ihre OpenAI-Installation.")
+        st.stop()
+
+# ----------------------------------------------------------------------------
+# Weitere Bibliotheken (scholarly, fpdf)
+# ----------------------------------------------------------------------------
 try:
     from scholarly import scholarly
 except ImportError:
-    st.error("Bitte installiere 'scholarly' (z.B. via: pip install scholarly)")
+    st.error("Bitte installiere 'scholarly', z.B. via: pip install scholarly")
     st.stop()
 
 try:
     from fpdf import FPDF
 except ImportError:
-    st.error("Bitte installiere 'fpdf' (z.B. via: pip install fpdf)")
+    st.error("Bitte installiere 'fpdf', z.B. via: pip install fpdf")
     st.stop()
-
-# ----------------------------------------------------------------------------
-# Dummy-Modul für lmi erstellen, falls lmi nicht installiert/gefunden wird
-# ----------------------------------------------------------------------------
-try:
-    import lmi
-except ImportError:
-    st.warning("Modul 'lmi' nicht gefunden – verwende Dummy-Implementierung.")
-    dummy_lmi = types.ModuleType("lmi")
-    
-    # Dummy für LLMModel
-    class LLMModel:
-        def __init__(self, *args, **kwargs):
-            pass
-        def __call__(self, *args, **kwargs):
-            return "Dummy LLMModel output"
-    dummy_lmi.LLMModel = LLMModel
-
-    # Dummy für EmbeddingModel
-    class EmbeddingModel:
-        def __init__(self, *args, **kwargs):
-            pass
-        def embed(self, text):
-            # Rückgabe eines Dummy-Vektors (z. B. 768 Dimensionen)
-            return [0.0] * 768
-    dummy_lmi.EmbeddingModel = EmbeddingModel
-
-    # Dummy für LiteLLMModel
-    class LiteLLMModel(LLMModel):
-        pass
-    dummy_lmi.LiteLLMModel = LiteLLMModel
-
-    # Dummy für LiteLLMEmbeddingModel
-    class LiteLLMEmbeddingModel(EmbeddingModel):
-        pass
-    dummy_lmi.LiteLLMEmbeddingModel = LiteLLMEmbeddingModel
-
-    # Dummy für HybridEmbeddingModel
-    class HybridEmbeddingModel(EmbeddingModel):
-        pass
-    dummy_lmi.HybridEmbeddingModel = HybridEmbeddingModel
-
-    # Dummy für SentenceTransformerEmbeddingModel
-    class SentenceTransformerEmbeddingModel(EmbeddingModel):
-        pass
-    dummy_lmi.SentenceTransformerEmbeddingModel = SentenceTransformerEmbeddingModel
-
-    # Dummy für SparseEmbeddingModel
-    class SparseEmbeddingModel(EmbeddingModel):
-        pass
-    dummy_lmi.SparseEmbeddingModel = SparseEmbeddingModel
-
-    # Dummy für LLMResult
-    class LLMResult:
-        def __init__(self, text=""):
-            self.text = text
-        def __str__(self):
-            return self.text
-    dummy_lmi.LLMResult = LLMResult
-
-    # Dummy-Funktion für embedding_model_factory
-    def embedding_model_factory(*args, **kwargs):
-        return dummy_lmi.EmbeddingModel(*args, **kwargs)
-    dummy_lmi.embedding_model_factory = embedding_model_factory
-
-    sys.modules["lmi"] = dummy_lmi
 
 # ----------------------------------------------------------------------------
 # Debug-Informationen (zur Überprüfung in Streamlit Cloud)
@@ -102,7 +51,7 @@ Systempfad (sys.path): {sys.path}
 """)
 
 # ----------------------------------------------------------------------------
-# A) Dynamischer Import von PaperQA2 via direktem Pfad zur __init__.py
+# A) Dynamischer Import von PaperQA2 via direktem Pfad zu __init__.py
 # ----------------------------------------------------------------------------
 # Erwartete Repository-Struktur:
 # your_repo/
@@ -144,7 +93,8 @@ Docs = paperqa_module.Docs
 # ----------------------------------------------------------------------------
 def search_pubmed(query: str, max_results=100):
     """
-    Sucht in PubMed per ESearch + ESummary und gibt eine Liste einfacher Dicts zurück.
+    Sucht in PubMed per ESearch + ESummary.
+    Gibt eine Liste einfacher Dicts zurück.
     """
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": max_results}
