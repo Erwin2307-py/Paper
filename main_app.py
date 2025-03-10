@@ -49,7 +49,8 @@ class CoreAPI:
         return r.json()
 
 
-def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", timeout=15):
+def check_core_aggregate_connection(api_key, timeout=15):
+    """Check connection to CORE using the provided API key."""
     try:
         core = CoreAPI(api_key)
         result = core.search_publications("test", limit=1)
@@ -58,7 +59,8 @@ def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", 
         return False
 
 
-def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
+def search_core_aggregate(query, api_key):
+    """Search CORE with the provided query and API key."""
     if not api_key:
         return []
     try:
@@ -346,9 +348,7 @@ def module_excel_online_search():
             st.dataframe(df)
 
             if st.button("Online-Suche mit Excel-Daten starten"):
-                st.write("Suche gestartet... (Hier könnte deine Suchlogik folgen.)")
-                # Beispiel: Spalte 'Suchbegriffe' durchgehen und pro Zeile
-                # einen Suchbegriff in einer Online-API verwenden.
+                st.write("Suche gestartet...")
                 if "Suchbegriffe" in df.columns:
                     results = []
                     for term in df["Suchbegriffe"]:
