@@ -2,40 +2,49 @@ import sys
 import types
 
 # ----------------------------------------------------------------------------
-# Dummy-Modul für lmi erstellen (falls lmi nicht vorhanden ist)
+# Dummy-Modul für lmi erstellen (falls lmi nicht installiert/gefunden wird)
 # ----------------------------------------------------------------------------
 try:
     import lmi
 except ImportError:
     dummy_lmi = types.ModuleType("lmi")
 
+    # Dummy-Implementierung für LLMModel
     class LLMModel:
         def __init__(self, *args, **kwargs):
             pass
-
         def __call__(self, *args, **kwargs):
-            return "Dummy LLMModel response"
-
+            return "Dummy LLMModel output"
     dummy_lmi.LLMModel = LLMModel
 
-    class LiteLLMModel(LLMModel):
-        pass
-
-    dummy_lmi.LiteLLMModel = LiteLLMModel
-
-    class LiteLLMEmbeddingModel:
+    # Dummy-Implementierung für EmbeddingModel
+    class EmbeddingModel:
+        def __init__(self, *args, **kwargs):
+            pass
         def embed(self, text):
             # Gibt einen Dummy-Vektor zurück (hier 768 Dimensionen)
             return [0.0] * 768
+    dummy_lmi.EmbeddingModel = EmbeddingModel
 
+    # Dummy-Implementierung für LiteLLMModel
+    class LiteLLMModel(LLMModel):
+        pass
+    dummy_lmi.LiteLLMModel = LiteLLMModel
+
+    # Dummy-Implementierung für LiteLLMEmbeddingModel
+    class LiteLLMEmbeddingModel(EmbeddingModel):
+        pass
     dummy_lmi.LiteLLMEmbeddingModel = LiteLLMEmbeddingModel
 
-    class HybridEmbeddingModel(LLMModel):
+    # Dummy-Implementierung für HybridEmbeddingModel
+    class HybridEmbeddingModel(EmbeddingModel):
         pass
-
     dummy_lmi.HybridEmbeddingModel = HybridEmbeddingModel
 
-    # Füge das Dummy-Modul zu sys.modules hinzu, sodass spätere Importe funktionieren
+    # Dummy-Implementierung für weitere ggf. benötigte Klassen
+    # (Falls weitere Fehler auftreten, können hier weitere Dummy-Klassen ergänzt werden)
+
+    # Füge das Dummy-Modul zu sys.modules hinzu
     sys.modules["lmi"] = dummy_lmi
 
 # ----------------------------------------------------------------------------
@@ -52,18 +61,18 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from collections import defaultdict
 import base64
-import importlib.util
+import importlib.util  # Für den dynamischen Import von PaperQA2
 import openai
 
 try:
     from scholarly import scholarly
 except ImportError:
-    st.error("Bitte installiere 'scholarly', z.B. via: pip install scholarly")
+    st.error("Bitte installiere 'scholarly' (z.B. via: pip install scholarly)")
 
 try:
     from fpdf import FPDF
 except ImportError:
-    st.error("Bitte installiere 'fpdf', z.B. mit: pip install fpdf")
+    st.error("Bitte installiere 'fpdf' (z.B. via: pip install fpdf)")
 
 # ----------------------------------------------------------------------------
 # Debug-Informationen in der Seitenleiste (zur Überprüfung in Streamlit Cloud)
@@ -78,13 +87,15 @@ Systempfad (sys.path): {sys.path}
 # A) Dynamischer Import von PaperQA2 via direktem Pfad zur __init__.py
 # ----------------------------------------------------------------------------
 # Erwartete Repository-Struktur:
+#
 # your_repo/
 # └── modules/
-#     ├── codewords_pubmed.py   (dieses Skript)
+#     ├── codewords_pubmed.py   <-- Dieses Skript
 #     └── paper-qa/
 #          └── paper-qa-main/
 #               └── paperqa/
 #                    └── __init__.py
+#
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 PAPERQA_INIT_FILE = os.path.join(
@@ -110,7 +121,6 @@ except Exception as e:
     st.error(f"Fehler beim Laden von PaperQA2 via {PAPERQA_INIT_FILE}: {e}")
     st.stop()
 
-# Zugriff auf die Docs-Klasse aus PaperQA2
 Docs = paperqa_module.Docs
 
 # ----------------------------------------------------------------------------
