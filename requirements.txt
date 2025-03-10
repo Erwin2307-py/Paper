@@ -22,7 +22,8 @@ paper-qa>=5
 habanero
 semanticscholar
 lmi
-
+litellm
+pydantic
 
 
 
