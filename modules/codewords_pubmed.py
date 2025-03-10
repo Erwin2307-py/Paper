@@ -11,6 +11,7 @@ from collections import defaultdict
 import base64
 import importlib.util  # Für den dynamischen Import von PaperQA2
 import sys
+import types
 
 # ----------------------------------------------------------------------------
 # Debug-Informationen (zur Überprüfung in Streamlit Cloud)
@@ -24,7 +25,7 @@ Systempfad (sys.path): {sys.path}
 # ----------------------------------------------------------------------------
 # A) Dynamischer Import von PaperQA2 via direktem Pfad zur __init__.py
 # ----------------------------------------------------------------------------
-# Wir gehen davon aus, dass Ihre Repository-Struktur so aussieht:
+# Annahme: Ihre Repository-Struktur sieht folgendermaßen aus:
 #
 # your_repo/
 # └── modules/
@@ -38,10 +39,10 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 PAPERQA_INIT_FILE = os.path.join(
     CURRENT_DIR,
-    "paper-qa",
-    "paper-qa-main",
-    "paperqa",
-    "__init__.py"
+    "paper-qa",        # Ordner 1
+    "paper-qa-main",   # Ordner 2
+    "paperqa",         # Ordner 3
+    "__init__.py"      # Datei
 )
 
 if not os.path.isfile(PAPERQA_INIT_FILE):
@@ -51,7 +52,18 @@ if not os.path.isfile(PAPERQA_INIT_FILE):
 try:
     spec = importlib.util.spec_from_file_location("paperqa_custom", PAPERQA_INIT_FILE)
     paperqa_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(paperqa_module)
+    try:
+        spec.loader.exec_module(paperqa_module)
+    except ImportError as e:
+        # Falls der Fehler "No module named 'lmi'" auftritt, erstellen wir ein Dummy-Modul
+        if "No module named 'lmi'" in str(e):
+            st.warning("Modul 'lmi' wurde nicht gefunden. Erstelle Dummy-Modul für 'lmi'.")
+            dummy_lmi = types.ModuleType("lmi")
+            sys.modules["lmi"] = dummy_lmi
+            # Erneut versuchen, das Modul zu laden
+            spec.loader.exec_module(paperqa_module)
+        else:
+            raise
     if not hasattr(paperqa_module, "Docs"):
         st.error("Im dynamisch geladenen PaperQA2-Modul ist kein 'Docs' definiert!")
         st.stop()
@@ -106,7 +118,7 @@ def search_pubmed(query: str, max_results=100):
         return out
 
 # ----------------------------------------------------------------------------
-# C) PaperQA2-Demo: PDFs hochladen und Frage stellen
+# C) PaperQA2-Demo: Dateien hochladen + Frage stellen
 # ----------------------------------------------------------------------------
 def paperqa_test_locally():
     """
@@ -114,7 +126,6 @@ def paperqa_test_locally():
     """
     st.subheader("Lokaler PaperQA2-Test")
     docs = Docs()
-
     pdfs = st.file_uploader("Lade PDF(s) hoch:", type=["pdf"], accept_multiple_files=True)
     if pdfs:
         for up in pdfs:
@@ -124,7 +135,6 @@ def paperqa_test_locally():
                 st.success(f"Datei '{up.name}' hinzugefügt.")
             except Exception as e:
                 st.error(f"Fehler beim Hinzufügen von {up.name}: {e}")
-
     question = st.text_area("Frage an PaperQA2:")
     if st.button("PaperQA2-Abfrage starten"):
         if not question.strip():
@@ -147,25 +157,22 @@ def module_codewords_pubmed():
     Diese Funktion demonstriert eine PubMed-Suche und einen anschließenden PaperQA2-Test.
     """
     st.title("Multi-API-Suche + PaperQA2 (lokaler Import)")
-    
-    # Beispiel: PubMed-Suche
     query = st.text_input("PubMed-Suchbegriff:", "Cancer")
     anzahl = st.number_input("Anzahl Treffer", min_value=1, max_value=200, value=10)
     if st.button("PubMed-Suche starten"):
         results = search_pubmed(query, max_results=anzahl)
         if results:
-            st.write(f"{len(results)} PubMed-Ergebnisse gefunden:")
+            st.write(f"{len(results)} Ergebnisse via PubMed:")
             df = pd.DataFrame(results)
             st.dataframe(df)
         else:
             st.info("Keine Treffer für PubMed.")
-
     st.write("---")
     st.subheader("PaperQA2 Test-Lauf (lokal)")
     paperqa_test_locally()
 
 # ----------------------------------------------------------------------------
-# E) Hauptprogramm
+# E) Hauptprogramm (Streamlit)
 # ----------------------------------------------------------------------------
 def main():
     st.set_page_config(layout="wide")
