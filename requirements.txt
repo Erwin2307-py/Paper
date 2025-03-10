@@ -19,7 +19,7 @@ pypdf==3.15.1
 litellm
 paper-qa==5.2.0
 habanero==1.2.0
-semanticscholar==1.2.2
+semanticscholar
 pydantic
 sentence-transformers==2.2.2
 haystack
