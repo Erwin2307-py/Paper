@@ -1,6 +1,5 @@
 import sys
 import types
-import importlib.util
 import streamlit as st
 import requests
 import feedparser
@@ -12,43 +11,37 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from collections import defaultdict
 import base64
+import importlib.util  # Für den dynamischen Import von PaperQA2
 import openai
 
-# Versuche zuerst, das Modul lmi zu importieren. Falls nicht vorhanden, erstelle ein Dummy-Modul.
-try:
-    import lmi
-except ImportError:
+# ----------------------------------------------------------------------------
+# Dummy-Modul für lmi
+# ----------------------------------------------------------------------------
+# Falls PaperQA2 noch versucht, aus "lmi" Klassen zu importieren, erstellen wir
+# hier ein Dummy-Modul, das die benötigten Klassen bereitstellt.
+if "lmi" not in sys.modules:
     dummy_lmi = types.ModuleType("lmi")
-    
-    class EmbeddingModel:
+
+    class LLMModel:
         def __init__(self, *args, **kwargs):
             pass
 
-        def embed(self, text):
-            # Gibt einen Dummy-Vektor zurück
-            return [0.0] * 768
+        def __call__(self, *args, **kwargs):
+            return "dummy LLM response"
 
-    dummy_lmi.EmbeddingModel = EmbeddingModel
+    dummy_lmi.LLMModel = LLMModel
 
-    class HybridEmbeddingModel(EmbeddingModel):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-
-    dummy_lmi.HybridEmbeddingModel = HybridEmbeddingModel
-
-    # Dummy-Klasse für LiteLLMEmbeddingModel
-    class LiteLLMEmbeddingModel(EmbeddingModel):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-
-    dummy_lmi.LiteLLMEmbeddingModel = LiteLLMEmbeddingModel
-
-    # Falls PaperQA2 auch LiteLLMModel benötigt:
-    class LiteLLMModel(EmbeddingModel):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
+    class LiteLLMModel(LLMModel):
+        pass
 
     dummy_lmi.LiteLLMModel = LiteLLMModel
+
+    class LiteLLMEmbeddingModel:
+        def embed(self, text):
+            # Gibt einen Dummy-Vektor zurück (z. B. 768 Dimensionen)
+            return [0.0] * 768
+
+    dummy_lmi.LiteLLMEmbeddingModel = LiteLLMEmbeddingModel
 
     sys.modules["lmi"] = dummy_lmi
 
@@ -64,10 +57,10 @@ Systempfad (sys.path): {sys.path}
 # ----------------------------------------------------------------------------
 # A) Dynamischer Import von PaperQA2 via direktem Pfad zur __init__.py
 # ----------------------------------------------------------------------------
-# Annahme: Ihre Repository-Struktur sieht so aus:
+# Erwartete Repository-Struktur:
 # your_repo/
 # └── modules/
-#     ├── codewords_pubmed.py   <-- Dieses Skript
+#     ├── codewords_pubmed.py  (dieses Skript)
 #     └── paper-qa/
 #          └── paper-qa-main/
 #               └── paperqa/
@@ -98,6 +91,7 @@ except Exception as e:
     st.error(f"Fehler beim Laden von PaperQA2 via {PAPERQA_INIT_FILE}: {e}")
     st.stop()
 
+# Zugriff auf PaperQA2's Docs-Klasse
 Docs = paperqa_module.Docs
 
 # ----------------------------------------------------------------------------
@@ -105,16 +99,11 @@ Docs = paperqa_module.Docs
 # ----------------------------------------------------------------------------
 def search_pubmed(query: str, max_results=100):
     """
-    Sucht in PubMed per ESearch und ESummary.
-    Gibt eine Liste von Dicts mit Title, PubMed-ID und Jahr zurück.
+    Sucht in PubMed per ESearch + ESummary.
+    Gibt eine Liste von Dicts mit einfachen Informationen zurück.
     """
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-    params = {
-        "db": "pubmed",
-        "term": query,
-        "retmode": "json",
-        "retmax": max_results
-    }
+    params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": max_results}
     out = []
     try:
         r = requests.get(esearch_url, params=params, timeout=10)
@@ -129,6 +118,7 @@ def search_pubmed(query: str, max_results=100):
         r2 = requests.get(esummary_url, params=sum_params, timeout=10)
         r2.raise_for_status()
         summary_data = r2.json().get("result", {})
+
         for pmid in idlist:
             info = summary_data.get(pmid, {})
             title = info.get("title", "n/a")
@@ -150,8 +140,8 @@ def search_pubmed(query: str, max_results=100):
 # ----------------------------------------------------------------------------
 def paperqa_test_locally():
     """
-    Ermöglicht das Hochladen von PDF-Dateien und das Stellen einer Frage
-    an das PaperQA2-System über die Docs-Klasse.
+    Beispiel-Funktion, die PaperQA2 (Docs) nutzt,
+    um PDFs hochzuladen und eine Frage zu stellen.
     """
     st.subheader("Lokaler PaperQA2-Test")
     docs = Docs()
@@ -181,17 +171,21 @@ def paperqa_test_locally():
                 st.error(f"Fehler bei PaperQA2-Abfrage: {e}")
 
 # ----------------------------------------------------------------------------
-# D) Multi-API-Suche + PaperQA2-Demo (Beispiel: PubMed-Suche + PaperQA2)
+# D) Haupt-Funktion (Streamlit-App)
 # ----------------------------------------------------------------------------
 def module_codewords_pubmed():
+    """
+    Diese Funktion demonstriert eine PubMed-Suche plus einen PaperQA2-Test.
+    """
     st.title("Multi-API-Suche + PaperQA2 (lokaler Import)")
 
+    # Beispiel: PubMed-Suche
     query = st.text_input("PubMed-Suchbegriff:", "Cancer")
     anzahl = st.number_input("Anzahl Treffer", min_value=1, max_value=200, value=10)
     if st.button("PubMed-Suche starten"):
         results = search_pubmed(query, max_results=anzahl)
         if results:
-            st.write(f"{len(results)} Ergebnisse via PubMed:")
+            st.write(f"{len(results)} PubMed-Ergebnisse gefunden:")
             df = pd.DataFrame(results)
             st.dataframe(df)
         else:
@@ -202,7 +196,7 @@ def module_codewords_pubmed():
     paperqa_test_locally()
 
 # ----------------------------------------------------------------------------
-# E) Hauptprogramm (Streamlit-App)
+# E) Haupt-App
 # ----------------------------------------------------------------------------
 def main():
     st.set_page_config(layout="wide")
