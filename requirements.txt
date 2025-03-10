@@ -23,5 +23,5 @@ semanticscholar
 pydantic
 sentence-transformers
 haystack
-farm-haystack==1.22.0
+
 
