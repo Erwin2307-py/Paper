@@ -14,54 +14,6 @@ from collections import defaultdict
 import base64
 import openai
 
-# ----------------------------------------------------------------------------
-# Dummy-Modul für lmi erstellen (falls lmi nicht installiert/gefunden wird)
-# ----------------------------------------------------------------------------
-try:
-    import lmi
-except ImportError:
-    st.warning("Modul 'lmi' nicht gefunden – verwende Dummy-Implementierung.")
-    dummy_lmi = types.ModuleType("lmi")
-    
-    class LLMModel:
-        def __init__(self, *args, **kwargs):
-            pass
-        def __call__(self, *args, **kwargs):
-            return "Dummy LLMModel output"
-    dummy_lmi.LLMModel = LLMModel
-
-    class EmbeddingModel:
-        def __init__(self, *args, **kwargs):
-            pass
-        def embed(self, text):
-            # Gibt einen Dummy-Vektor (z. B. 768 Dimensionen) zurück
-            return [0.0] * 768
-    dummy_lmi.EmbeddingModel = EmbeddingModel
-
-    class LiteLLMModel(LLMModel):
-        pass
-    dummy_lmi.LiteLLMModel = LiteLLMModel
-
-    class LiteLLMEmbeddingModel(EmbeddingModel):
-        pass
-    dummy_lmi.LiteLLMEmbeddingModel = LiteLLMEmbeddingModel
-
-    class HybridEmbeddingModel(EmbeddingModel):
-        pass
-    dummy_lmi.HybridEmbeddingModel = HybridEmbeddingModel
-
-    class LLMResult:
-        def __init__(self, text=""):
-            self.text = text
-        def __str__(self):
-            return self.text
-    dummy_lmi.LLMResult = LLMResult
-
-    sys.modules["lmi"] = dummy_lmi
-
-# ----------------------------------------------------------------------------
-# Weitere Importe
-# ----------------------------------------------------------------------------
 try:
     from scholarly import scholarly
 except ImportError:
@@ -75,6 +27,60 @@ except ImportError:
     st.stop()
 
 # ----------------------------------------------------------------------------
+# Dummy-Modul für lmi erstellen (falls lmi nicht installiert/gefunden wird)
+# ----------------------------------------------------------------------------
+try:
+    import lmi
+except ImportError:
+    st.warning("Modul 'lmi' nicht gefunden – verwende Dummy-Implementierung.")
+    dummy_lmi = types.ModuleType("lmi")
+
+    # Dummy für LLMModel
+    class LLMModel:
+        def __init__(self, *args, **kwargs):
+            pass
+        def __call__(self, *args, **kwargs):
+            return "Dummy LLMModel output"
+    dummy_lmi.LLMModel = LLMModel
+
+    # Dummy für EmbeddingModel
+    class EmbeddingModel:
+        def __init__(self, *args, **kwargs):
+            pass
+        def embed(self, text):
+            # Gibt einen Dummy-Vektor (z. B. 768 Dimensionen) zurück
+            return [0.0] * 768
+    dummy_lmi.EmbeddingModel = EmbeddingModel
+
+    # Dummy für LiteLLMModel, LiteLLMEmbeddingModel und HybridEmbeddingModel
+    class LiteLLMModel(LLMModel):
+        pass
+    dummy_lmi.LiteLLMModel = LiteLLMModel
+
+    class LiteLLMEmbeddingModel(EmbeddingModel):
+        pass
+    dummy_lmi.LiteLLMEmbeddingModel = LiteLLMEmbeddingModel
+
+    class HybridEmbeddingModel(EmbeddingModel):
+        pass
+    dummy_lmi.HybridEmbeddingModel = HybridEmbeddingModel
+
+    # Dummy für SentenceTransformerEmbeddingModel
+    class SentenceTransformerEmbeddingModel(EmbeddingModel):
+        pass
+    dummy_lmi.SentenceTransformerEmbeddingModel = SentenceTransformerEmbeddingModel
+
+    # Dummy für LLMResult
+    class LLMResult:
+        def __init__(self, text=""):
+            self.text = text
+        def __str__(self):
+            return self.text
+    dummy_lmi.LLMResult = LLMResult
+
+    sys.modules["lmi"] = dummy_lmi
+
+# ----------------------------------------------------------------------------
 # Debug-Informationen (zur Überprüfung in Streamlit Cloud)
 # ----------------------------------------------------------------------------
 st.sidebar.markdown("**[DEBUG-INFO]**")
@@ -86,10 +92,10 @@ Systempfad (sys.path): {sys.path}
 # ----------------------------------------------------------------------------
 # A) Dynamischer Import von PaperQA2 via direktem Pfad zur __init__.py
 # ----------------------------------------------------------------------------
-# Erwartete Struktur im Repository:
+# Erwartete Struktur:
 # your_repo/
 # └── modules/
-#     ├── codewords_pubmed.py   <-- Dieses Skript
+#     ├── codewords_pubmed.py   (dieses Skript)
 #     └── paper-qa/
 #          └── paper-qa-main/
 #               └── paperqa/
@@ -173,7 +179,6 @@ def paperqa_test_locally():
     """
     st.subheader("Lokaler PaperQA2-Test")
     docs = Docs()
-
     pdfs = st.file_uploader("Lade PDF(s) hoch:", type=["pdf"], accept_multiple_files=True)
     if pdfs:
         for up in pdfs:
@@ -183,7 +188,6 @@ def paperqa_test_locally():
                 st.success(f"Datei '{up.name}' hinzugefügt.")
             except Exception as e:
                 st.error(f"Fehler beim Hinzufügen von {up.name}: {e}")
-
     question = st.text_area("Frage an PaperQA2:")
     if st.button("PaperQA2-Abfrage starten"):
         if not question.strip():
@@ -203,7 +207,6 @@ def paperqa_test_locally():
 # ----------------------------------------------------------------------------
 def module_codewords_pubmed():
     st.title("Multi-API-Suche + PaperQA2 (lokaler Import)")
-    
     query = st.text_input("PubMed-Suchbegriff:", "Cancer")
     anzahl = st.number_input("Anzahl Treffer", min_value=1, max_value=200, value=10)
     if st.button("PubMed-Suche starten"):
@@ -214,7 +217,6 @@ def module_codewords_pubmed():
             st.dataframe(df)
         else:
             st.info("Keine Treffer für PubMed.")
-    
     st.write("---")
     st.subheader("PaperQA2 Test-Lauf (lokal)")
     paperqa_test_locally()
