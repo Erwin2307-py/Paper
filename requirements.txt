@@ -20,7 +20,7 @@ litellm
 paper-qa==5.2.0
 habanero==1.2.0
 semanticscholar
-pydantic
+pydantic>=2
 sentence-transformers==2.2.2
 haystack
 farm-haystack[faiss]>=1.15.0
