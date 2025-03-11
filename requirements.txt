@@ -8,7 +8,7 @@ scholarly==1.7.11
 selenium==4.10.0
 urllib3==2.1.0
 xlsxwriter==3.1.1
-pandas
+pandas>=2.1
 transformers==4.33.0
 # webdriver-manager==4.3.1
 feedparser==6.0.10
@@ -26,5 +26,5 @@ haystack
 farm-haystack[faiss]>=1.15.0
 torch>=1.9.0
 pillow
-numpy
+numpy>=1.26
 rank-bm25
