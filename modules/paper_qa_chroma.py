@@ -2,7 +2,7 @@ import streamlit as st
 import openai
 import PyPDF2
 
-from langchain.embeddings import OpenAIEmbeddings
+from langchain.embeddings.openai import OpenAIEmbeddings  # Angepasster Import
 from langchain.vectorstores import Chroma
 from langchain.docstore.document import Document
 from langchain.text_splitter import CharacterTextSplitter
