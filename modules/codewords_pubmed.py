@@ -257,7 +257,8 @@ def search_core(query: str, max_results=10):
 
 def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     """
-    Lässt ChatGPT jedes Paper scoren (0-100) basierend auf codewords + genes.
+    Lässt ChatGPT jedes Paper scoren (0-100) basierend auf Codewörtern + Genen.
+    Zeigt dabei an, welches Paper gerade verarbeitet wird.
     """
     if not papers:
         return []
@@ -270,10 +271,14 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     scored_results = []
     total = len(papers)
     progress = st.progress(0)
+    status_text = st.empty()  # Platzhalter für Status-Informationen
 
     genes_str = ", ".join(genes) if genes else ""
 
     for idx, paper in enumerate(papers, start=1):
+        # Update Status: Zeige an, welches Paper aktuell verarbeitet wird.
+        current_title = paper.get("Title", "n/a")
+        status_text.text(f"Verarbeite Paper {idx}/{total}: {current_title}")
         progress.progress(idx / total)
         title = paper.get("Title", "n/a")
         abstract = paper.get("Abstract", "n/a")
@@ -308,6 +313,8 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
         new_item["Relevance"] = score
         scored_results.append(new_item)
 
+    # Status-Platzhalter leeren, wenn fertig.
+    status_text.empty()
     progress.empty()
     scored_results.sort(key=lambda x: x["Relevance"], reverse=True)
     return scored_results[:top_k]
@@ -354,7 +361,7 @@ def module_codewords_pubmed():
     codewords_str = profile_data.get("codewords_str", "")
 
     # 2) Such-Logik
-    st.subheader("Such-Logik (AND / OR für Codewords/Gene)")
+    st.subheader("Such-Logik (AND / OR für Codewörter/Gene)")
     logic_option = st.radio("Logik:", ["AND", "OR"], index=1)
 
     if st.button("Suche starten"):
@@ -373,7 +380,7 @@ def module_codewords_pubmed():
                 query_str = genes_query
 
         if not query_str.strip():
-            st.warning("Leere Suchanfrage (keine Codewords + keine Gene). Abbruch.")
+            st.warning("Leere Suchanfrage (keine Codewörter + keine Gene). Abbruch.")
             return
 
         st.write(f"**Finale Query:** {query_str}")
