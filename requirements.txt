@@ -23,5 +23,5 @@ habanero
 semanticscholar
 litellm
 pydantic
-
+PyPDF2
 
