@@ -321,6 +321,7 @@ class SemanticScholarSearch:
 
 # [unverändert, Belassen Sie hier, falls alles korrekt läuft...]
 
+
 ################################################################################
 # 3) Restliche Module + Seiten (Pages)
 ################################################################################
@@ -409,6 +410,17 @@ def page_online_api_filter():
         st.session_state["current_page"] = "Home"
 
 
+# ---------------------------------------------------------------------------
+# 6) NEUE SEITE: Paper QA Chroma
+# ---------------------------------------------------------------------------
+def page_paper_qa_chroma():
+    st.title("Paper QA Chroma")
+    from modules.paper_qa_chroma import main as paper_qa_chroma_main
+    paper_qa_chroma_main()
+    if st.button("Back to Main Menu"):
+        st.session_state["current_page"] = "Home"
+
+
 ################################################################################
 # 6) Sidebar Module Navigation & Main
 ################################################################################
@@ -417,16 +429,15 @@ def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
     pages = {
         "Home": page_home,
-        # "1) API Selection": page_api_selection,     # <-- REMOVED
-        # "2) Online Filter": page_online_filter,     # <-- REMOVED
         "Online-API_Filter": page_online_api_filter,
         "3) Codewords & PubMed": page_codewords_pubmed,
         "4) Paper Selection": page_paper_selection,
         "5) Analysis & Evaluation": page_analysis,
         "6) Extended Topics": page_extended_topics,
         "7) PaperQA2": page_paperqa2,
-        "8) Excel Online Search": page_excel_online_search
-        # "9) Selenium Q&A": page_selenium_qa,       # <-- auskommentiert, damit der Fehler nicht auftritt
+        "8) Excel Online Search": page_excel_online_search,
+        "9) Paper QA Chroma": page_paper_qa_chroma
+        # "10) Selenium Q&A": page_selenium_qa,  # <-- auskommentiert, damit der Fehler nicht auftritt
     }
     for label, page in pages.items():
         if st.sidebar.button(label, key=label):
