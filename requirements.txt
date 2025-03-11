@@ -24,4 +24,5 @@ semanticscholar
 litellm
 pydantic
 PyPDF2
-
+chromadb
+tiktoken
