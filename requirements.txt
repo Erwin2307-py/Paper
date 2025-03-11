@@ -24,6 +24,6 @@ semanticscholar
 litellm
 pydantic
 PyPDF2
-chromadb>=0.3.21
+chromadb
 tiktoken
-langchain>=0.0.100
+langchain==0.0.177
