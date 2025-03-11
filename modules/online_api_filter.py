@@ -3,8 +3,6 @@ import requests
 import openai
 import pandas as pd
 import os
-import time
-import sys
 
 ##############################################################################
 # 1) Verbindungstest-Funktionen
@@ -94,7 +92,7 @@ def check_chatgpt_connection():
         return False
 
 ##############################################################################
-# 2) CORE-API-Beispiel
+# 2) CORE-API-Beispiel (optional)
 ##############################################################################
 
 class CoreAPI:
@@ -147,7 +145,7 @@ def search_core(query: str, max_results=10):
 
 def load_genes_from_excel(sheet_name: str) -> list:
     """
-    Liest ab Zelle C3 (Zeile 3, Spalte C) die Gene ein. Passt man an die echte Struktur an.
+    Liest ab Zeile 3 (Index 2), Spalte C (Index 2) die Gene ein.
     """
     excel_path = os.path.join("modules", "genes.xlsx")
     if not os.path.exists(excel_path):
@@ -155,7 +153,6 @@ def load_genes_from_excel(sheet_name: str) -> list:
         return []
     try:
         df = pd.read_excel(excel_path, sheet_name=sheet_name, header=None)
-        # Beispielsweise ab Zeile 3 (Index 2), Spalte C (Index 2)
         gene_series = df.iloc[2:, 2]
         return gene_series.dropna().astype(str).tolist()
     except Exception as e:
@@ -163,7 +160,7 @@ def load_genes_from_excel(sheet_name: str) -> list:
         return []
 
 ##############################################################################
-# 4) ChatGPT-Funktion zum Filtern
+# 4) ChatGPT-Funktion: Genes im Text filtern
 ##############################################################################
 
 def check_genes_in_text_with_chatgpt(text: str, genes: list, model="gpt-3.5-turbo") -> dict:
@@ -219,6 +216,7 @@ def save_current_settings(profile_name: str,
                           use_chatgpt: bool,
                           sheet_choice: str,
                           text_input: str):
+    """Speichert alle relevanten Einstellungen in st.session_state."""
     if "profiles" not in st.session_state:
         st.session_state["profiles"] = {}
 
@@ -232,6 +230,7 @@ def save_current_settings(profile_name: str,
         "use_chatgpt": use_chatgpt,
         "sheet_choice": sheet_choice,
         "text_input": text_input,
+
         # Erweiterte Felder:
         "selected_genes": st.session_state.get("selected_genes", []),
         "synonyms_selected": st.session_state.get("synonyms_selected", {}),
@@ -241,30 +240,17 @@ def save_current_settings(profile_name: str,
     st.success(f"Profil '{profile_name}' erfolgreich gespeichert.")
 
 def load_settings(profile_name: str):
+    """Auslesen eines gespeicherten Profils (falls vorhanden)."""
     if "profiles" in st.session_state:
-        loaded_profile = st.session_state["profiles"].get(profile_name, None)
-        if loaded_profile:
-            # Wiederherstellung
-            st.session_state["selected_genes"] = loaded_profile.get("selected_genes", [])
-            st.session_state["synonyms_selected"] = loaded_profile.get("synonyms_selected", {})
-            st.session_state["final_gene"] = loaded_profile.get("final_gene", "")
-            st.session_state["codewords_str"] = loaded_profile.get("codewords_str", "")
-            st.session_state["use_pubmed"] = loaded_profile.get("use_pubmed", True)
-            st.session_state["use_epmc"] = loaded_profile.get("use_epmc", True)
-            st.session_state["use_google"] = loaded_profile.get("use_google", False)
-            st.session_state["use_semantic"] = loaded_profile.get("use_semantic", False)
-            st.session_state["use_openalex"] = loaded_profile.get("use_openalex", False)
-            st.session_state["use_core"] = loaded_profile.get("use_core", False)
-            st.session_state["use_chatgpt"] = loaded_profile.get("use_chatgpt", False)
-        return loaded_profile
+        return st.session_state["profiles"].get(profile_name, None)
     return None
 
 ##############################################################################
-# 6) Haupt-Modul: Online API Filter & Gene-Filter
+# 6) Erstes Modul: Online API Filter & Gene-Filter
 ##############################################################################
 
 def module_online_api_filter():
-    st.title("API-Auswahl & Gene-Filter mit Profile-Speicherung + ChatGPT-Synonym-Fenster")
+    st.title("Modul 1: API-Auswahl & Gene-Filter mit Profile-Speicherung")
 
     # Profilverwaltung: Laden
     st.subheader("Profilverwaltung")
@@ -276,10 +262,24 @@ def module_online_api_filter():
             loaded = load_settings(selected_profile_to_load)
             if loaded:
                 st.success(f"Profil '{selected_profile_to_load}' geladen.")
+                # Wiederherstellen:
+                st.session_state["selected_genes"] = loaded.get("selected_genes", [])
+                st.session_state["synonyms_selected"] = loaded.get("synonyms_selected", {})
+                st.session_state["final_gene"] = loaded.get("final_gene", "")
+                st.session_state["codewords_str"] = loaded.get("codewords_str", "")
+                st.session_state["use_pubmed"] = loaded.get("use_pubmed", True)
+                st.session_state["use_epmc"] = loaded.get("use_epmc", True)
+                st.session_state["use_google"] = loaded.get("use_google", False)
+                st.session_state["use_semantic"] = loaded.get("use_semantic", False)
+                st.session_state["use_openalex"] = loaded.get("use_openalex", False)
+                st.session_state["use_core"] = loaded.get("use_core", False)
+                st.session_state["use_chatgpt"] = loaded.get("use_chatgpt", False)
+                st.session_state["sheet_choice"] = loaded.get("sheet_choice", "")
+                st.session_state["text_input"] = loaded.get("text_input", "")
         else:
             st.info("Kein Profil gewählt.")
 
-    # Default-Flags in Session
+    # Default-Flags
     if "use_pubmed" not in st.session_state:
         st.session_state["use_pubmed"] = True
     if "use_epmc" not in st.session_state:
@@ -296,8 +296,9 @@ def module_online_api_filter():
         st.session_state["use_chatgpt"] = False
     if "synonyms_selected" not in st.session_state:
         st.session_state["synonyms_selected"] = {"genotype": False, "phenotype": False, "snp": False, "inc_dec": False}
+    if "codewords_str" not in st.session_state:
+        st.session_state["codewords_str"] = ""
 
-    # A) API-Auswahl
     st.subheader("A) API-Auswahl + Verbindungstest")
     col1, col2 = st.columns(2)
     with col1:
@@ -308,7 +309,7 @@ def module_online_api_filter():
     with col2:
         use_openalex = st.checkbox("OpenAlex", value=st.session_state["use_openalex"])
         use_core = st.checkbox("CORE", value=st.session_state["use_core"])
-        use_chatgpt = st.checkbox("ChatGPT", value=st.session_state["use_chatgpt"])
+        use_chatgpt = st.checkbox("ChatGPT (z.B. für Gene-Check)", value=st.session_state["use_chatgpt"])
 
     if st.button("Verbindungen testen"):
         def green_dot():
@@ -371,6 +372,7 @@ def module_online_api_filter():
         st.error("Keine Sheets in genes.xlsx gefunden.")
         return
 
+    # Previously chosen sheet (if in session)
     current_sheet = st.session_state.get("sheet_choice", sheet_names[0])
     if current_sheet not in sheet_names:
         current_sheet = sheet_names[0]
@@ -395,44 +397,52 @@ def module_online_api_filter():
         st.warning("Keine Gene in diesem Sheet.")
         selected_gene = ""
 
-    custom_gene_input = st.text_input("Eigenes Gen eingeben (optional):")
+    custom_gene_input = st.text_input("Eigenes Gen eingeben (optional):", "")
     final_gene = custom_gene_input.strip() if custom_gene_input.strip() else selected_gene.strip()
     st.session_state["final_gene"] = final_gene
 
     st.write("---")
-    st.subheader("Text eingeben (z.B. Abstract)")
-    text_input = st.text_area("Abstract/Text hier:", height=200, value=st.session_state.get("text_input", ""))
+    st.subheader("C) Codewörter & Test-Text")
+    codewords_input = st.text_input("Codewörter (z.B. 'disease', 'drug', etc.):",
+                                    value=st.session_state.get("codewords_str", ""))
+    st.session_state["codewords_str"] = codewords_input
+
+    text_input = st.text_area("Hier ein Text eingeben (z.B. Abstract) für ChatGPT-Test:",
+                              height=200,
+                              value=st.session_state.get("text_input", ""))
+    st.session_state["text_input"] = text_input
 
     if st.button("Gene-Check mit ChatGPT"):
+        if not use_chatgpt:
+            st.warning("ChatGPT ist nicht aktiviert (Checkbox).")
+            return
         if not final_gene:
             st.warning("Kein Gen ausgewählt/eingegeben.")
         elif not text_input.strip():
             st.warning("Kein Text eingegeben.")
         else:
-            # Zusätzliche Synonyme anhängen, falls markiert
+            # Zusätzliche Synonyme anhängen
             gene_list = [final_gene]
             syns = st.session_state["synonyms_selected"]
-            if syns["genotype"]:
+            if syns.get("genotype"):
                 gene_list += ["genetic makeup", "genetic constitution", "DNA sequence", "Allele"]
-            if syns["phenotype"]:
+            if syns.get("phenotype"):
                 gene_list += ["observable traits", "physical appearance", "morphology"]
-            if syns["snp"]:
+            if syns.get("snp"):
                 gene_list += ["point mutation", "genetic variation", "DNA polymorphism"]
-            if syns["inc_dec"]:
+            if syns.get("inc_dec"):
                 gene_list += ["increase", "decrease"]
 
-            # Session State updaten
             st.session_state["selected_genes"] = gene_list
 
             result_map = check_genes_in_text_with_chatgpt(text_input, gene_list)
             if result_map:
-                st.markdown("### Ergebnis:")
+                st.markdown("### Ergebnis (Gene-Check):")
                 for gene_key, status in result_map.items():
                     st.write(f"- **{gene_key}**: {'Yes' if status else 'No'}")
             else:
                 st.info("Keine Ergebnisse oder ChatGPT-Fehler.")
 
-    # Beispiel: Speichern des Profils
     st.write("---")
     if st.button("Einstellungen als Profil speichern"):
         pname = profile_name_input.strip()
