@@ -21,7 +21,6 @@ paper-qa==4.6.1
 habanero
 semanticscholar
 litellm
-pydantic
 PyPDF2
 chromadb==0.3.21
 tiktoken>=0.4.0
