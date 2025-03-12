@@ -16,7 +16,6 @@ feedparser
 pdfplumber
 faiss-cpu
 pypdf
-litellm
 paper-qa==4.6.1
 habanero
 semanticscholar
