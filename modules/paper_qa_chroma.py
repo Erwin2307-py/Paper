@@ -6,19 +6,12 @@ from langchain.vectorstores import Chroma
 import openai
 import logging
 
-# Anforderungen umgesetzt:
-# 1. LLM-Integration (OpenAI ChatCompletion mit gpt-3.5-turbo)
-# 2. UI-Funktionen: st.file_uploader, st.chat_input, st.feedback
-# 3. Datenverarbeitung: PyPDF2 (PDF-Text), CharacterTextSplitter, Chroma, OpenAIEmbeddings
-# 4. Chat-Flow: st.session_state (Verlauf), similarity_search(k=4), kontextbasierte Antwort via ChatCompletion
-# 5. Optimierungen: modulare Funktionen, Statusmeldungen (st.success, st.error), Logging für Debugging
-
-# Hinweis: Erfordert Streamlit >= 1.42.0 (für st.chat_input und st.feedback) 
-# sowie installierte Pakete: PyPDF2, langchain, chromadb, openai
+# Wichtig: Import für streamlit-feedback
+from streamlit_feedback import streamlit_feedback
 
 logging.basicConfig(level=logging.INFO)
 
-# Optional: OpenAI API-Key setzen, falls nicht über Umgebungsvariable/Secrets konfiguriert
+# Optional: OpenAI API-Key, falls du ihn nicht per Umgebungsvariable oder Secrets verwaltest:
 # openai.api_key = st.secrets["OPENAI_API_KEY"]
 
 def extract_text_from_pdf(file) -> str:
@@ -40,12 +33,11 @@ def create_vectorstore_from_text(text: str):
     Zerteilt den Text in Chunks und erstellt eine Chroma Vektor-Datenbank mit OpenAI-Embeddings.
     Gibt das erstellte Vektorstore-Objekt zurück.
     """
-    # Text in überlappende Abschnitte aufteilen (Chunking)
     text_splitter = CharacterTextSplitter(separator="\n", chunk_size=1000, chunk_overlap=100)
     chunks = text_splitter.split_text(text)
     logging.info(f"Text in {len(chunks)} Chunks aufgeteilt.")
-    # Vektorstore mit Chroma und OpenAI Embeddings erstellen
-    embeddings = OpenAIEmbeddings()  # nutzt standardmäßig das OpenAI Embedding-Modell
+
+    embeddings = OpenAIEmbeddings()  # Standard-OpenAI-Embeddings
     vectorstore = Chroma.from_texts(chunks, embedding=embeddings, persist_directory=None)
     return vectorstore
 
@@ -55,12 +47,10 @@ def answer_question(query: str, vectorstore):
     auf die Nutzerfrage mittels OpenAI ChatCompletion.
     Gibt die erzeugte Antwort als String zurück.
     """
-    # Relevante Dokument-Passagen per Semantik-Suche abrufen
     docs = vectorstore.similarity_search(query, k=4)
     logging.info(f"{len(docs)} relevante Textstellen für die Anfrage gefunden.")
-    # Kontext aus den gefundenen Passagen zusammenstellen
+
     context = "\n".join([d.page_content for d in docs])
-    # Nachrichten für das Chat-Modell vorbereiten
     system_message = {
         "role": "system",
         "content": (
@@ -92,20 +82,22 @@ def save_feedback(index):
     st.session_state.history[index]["feedback"] = feedback_value
     logging.info(f"Feedback für Nachricht {index}: {feedback_value}")
 
-# Streamlit App UI
+# ---------------------------
+# STREAMLIT-APP START
+# ---------------------------
+
 st.title("📄 Paper-QA Chatbot")
 
 # PDF Upload
 uploaded_files = st.file_uploader("PDF-Dokumente hochladen", type=["pdf"], accept_multiple_files=True)
 if uploaded_files:
-    # Gesamten Text aus allen hochgeladenen PDFs extrahieren
     all_text = ""
     for file in uploaded_files:
         file_text = extract_text_from_pdf(file)
         if file_text:
             all_text += file_text + "\n"
+
     if all_text:
-        # Vektor-Datenbank einmalig erstellen und im Session State speichern
         vectorstore = create_vectorstore_from_text(all_text)
         st.session_state.vectorstore = vectorstore
         st.success("Wissensdatenbank aus den hochgeladenen Papers wurde erfolgreich erstellt.")
@@ -125,34 +117,39 @@ for i, msg in enumerate(st.session_state.history):
             # Feedback-Widget für KI-Antwort anzeigen (Daumen hoch/runter)
             feedback = msg.get("feedback")
             st.session_state[f"feedback_{i}"] = feedback  # aktuellen Feedback-Wert setzen
-            st.feedback(
-                "thumbs",
+
+            # Wichtig: statt st.feedback(...) => streamlit_feedback(...)
+            streamlit_feedback(
+                feedback_type="thumbs",
                 key=f"feedback_{i}",
                 disabled=feedback is not None,
                 on_change=save_feedback,
-                args=(i,)
+                args=(i,),
             )
 
-# Neue Frage-Eingabe (Chat-Eingabefeld)
+# Eingabe per Chat-Input
 if prompt := st.chat_input("Frage zu den hochgeladenen Papers stellen..."):
-    # Nutzerfrage anzeigen und zum Verlauf hinzufügen
+    # Chat-Nachricht "user"
     with st.chat_message("user"):
         st.write(prompt)
     st.session_state.history.append({"role": "user", "content": prompt})
-    # Prüfen, ob bereits eine Vektor-Datenbank erstellt wurde
+
+    # Prüfen, ob ein Vectorstore existiert
     if "vectorstore" not in st.session_state:
-        st.error("Bitte laden Sie zuerst ein PDF hoch, bevor Sie Fragen stellen.")
+        st.error("Bitte zuerst ein PDF hochladen, bevor Fragen gestellt werden.")
     else:
-        # KI-Antwort unter Verwendung des Paper-Kontextes generieren
+        # Antwort generieren
         answer = answer_question(prompt, st.session_state.vectorstore)
-        # KI-Antwort im Chat anzeigen
+
+        # Chat-Nachricht "assistant"
         with st.chat_message("assistant"):
             st.write(answer)
-            st.feedback(
-                "thumbs", 
+            streamlit_feedback(
+                feedback_type="thumbs", 
                 key=f"feedback_{len(st.session_state.history)}", 
                 on_change=save_feedback, 
-                args=(len(st.session_state.history),)
+                args=(len(st.session_state.history),),
             )
+
         # Antwort im Verlauf speichern
         st.session_state.history.append({"role": "assistant", "content": answer})
