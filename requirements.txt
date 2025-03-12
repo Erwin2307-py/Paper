@@ -17,7 +17,7 @@ pdfplumber
 faiss-cpu
 pypdf
 litellm
-paper-qa==4.6.3
+paper-qa==4.6.1
 habanero
 semanticscholar
 litellm
