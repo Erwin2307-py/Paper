@@ -15,7 +15,6 @@ pandas
 feedparser
 pdfplumber
 faiss-cpu
-langchain
 pypdf
 litellm
 paper-qa==5.0.3
