@@ -30,7 +30,6 @@ duckduckgo-search
 anthropic>=0.3.0
 trubrics>=1.4.3
 streamlit-feedback
-langchain>=0.0.217
 pdfplumber
 pytesseract
 Pillow
