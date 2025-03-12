@@ -17,7 +17,7 @@ pdfplumber
 faiss-cpu
 pypdf
 litellm
-paper-qa==5.0.3
+paper-qa==4.6.3
 habanero
 semanticscholar
 litellm
@@ -25,7 +25,7 @@ pydantic
 PyPDF2
 chromadb==0.3.21
 tiktoken>=0.4.0
-langchain>=0.0.217
+langchain==0.0.210
 duckduckgo-search
 anthropic>=0.3.0
 trubrics>=1.4.3
