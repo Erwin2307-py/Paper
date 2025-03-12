@@ -5,7 +5,7 @@ import pytesseract
 import openai
 import logging
 
-from PIL import Image  # Für OCR
+from PIL import Image
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.vectorstores import Chroma
@@ -42,13 +42,16 @@ def extract_text_ocr(pdf_file) -> str:
     ocr_text = ""
     try:
         with pdfplumber.open(pdf_file) as pdf:
-            for page in pdf.pages:
-                # Seite als Bild rendern
+            for page_index, page in enumerate(pdf.pages, start=1):
+                # Seite als Bild rendern (resolution kann je nach Bedarf angepasst werden)
                 pil_img = page.to_image(resolution=200).original
                 # OCR mit pytesseract
                 page_text = pytesseract.image_to_string(pil_img)
                 if page_text.strip():
+                    logging.debug(f"OCR auf Seite {page_index}: {len(page_text.strip())} Zeichen erkannt.")
                     ocr_text += page_text + "\n"
+                else:
+                    logging.debug(f"OCR auf Seite {page_index} lieferte keinen Text.")
     except Exception as e:
         logging.error(f"Fehler bei OCR via pdfplumber/pytesseract: {e}")
     return ocr_text.strip()
@@ -60,20 +63,19 @@ def extract_text_from_pdf(pdf_file) -> str:
       2) Falls kein Text -> OCR-Fallback mit pdfplumber + pytesseract
     """
     text_pypdf = extract_text_pypdf2(pdf_file)
-    text_ocr = ""
-
     if text_pypdf:
         logging.info("Erfolgreich Text mit PyPDF2 extrahiert.")
+        return text_pypdf
+    
+    # PyPDF2 hat keinen oder nur leeren Text gefunden → OCR
+    logging.info("Kein Text via PyPDF2 gefunden. Versuche OCR-Fallback ...")
+    text_ocr = extract_text_ocr(pdf_file)
+    if text_ocr:
+        logging.info("OCR-Fallback war erfolgreich (pytesseract).")
+        return text_ocr
     else:
-        logging.info("Kein Text via PyPDF2 gefunden. Versuche OCR-Fallback ...")
-        text_ocr = extract_text_ocr(pdf_file)
-        if text_ocr:
-            logging.info("OCR-Fallback war erfolgreich.")
-        else:
-            logging.warning("OCR-Fallback hat ebenfalls keinen Text gefunden.")
-
-    # Wenn beide leer sind, bleibt's leer:
-    return text_pypdf + "\n" + text_ocr
+        logging.warning("OCR-Fallback hat ebenfalls keinen Text gefunden.")
+        return ""
 
 ##############################################
 # 2) Chroma + OpenAI Q&A
@@ -88,7 +90,7 @@ def create_vectorstore_from_text(text: str):
     chunks = text_splitter.split_text(text)
     logging.info(f"Text in {len(chunks)} Chunks aufgeteilt.")
 
-    embeddings = OpenAIEmbeddings()  # nutzt standardmäßig OpenAI-Embeddings
+    embeddings = OpenAIEmbeddings()
     vectorstore = Chroma.from_texts(chunks, embedding=embeddings)
     return vectorstore
 
@@ -144,42 +146,42 @@ def save_feedback(index):
 def main():
     st.title("📄 Paper-QA Chatbot mit OCR-Fallback")
 
+    # Optional: OpenAI-API-Key
+    # openai.api_key = st.secrets["OPENAI_API_KEY"]
+
     # PDF Upload
     uploaded_files = st.file_uploader(
-        "PDF-Dokumente hochladen (auch gescannte):", 
+        "PDF-Dokument(e) hochladen (auch gescannte):", 
         type=["pdf"], 
         accept_multiple_files=True
     )
 
-    # Falls der User PDFs hochlädt
     if uploaded_files:
         all_text = ""
         for file in uploaded_files:
             file_text = extract_text_from_pdf(file)
-            # Minimale Länge, um wirklich extrahierten Text zu erkennen
-            if len(file_text.strip()) > 5:
+            if file_text.strip():
                 all_text += file_text + "\n"
-        
+
         if all_text.strip():
             vectorstore = create_vectorstore_from_text(all_text)
             st.session_state.vectorstore = vectorstore
-            st.success("Wissensdatenbank aus den hochgeladenen Papers wurde erfolgreich erstellt.")
+            st.success("Wissensdatenbank aus den hochgeladenen PDFs wurde erfolgreich erstellt!")
         else:
-            # Erweiterte Fehlermeldung mit Hinweisen:
             st.error(
-                "Es konnte kein Text aus den PDFs extrahiert werden. "
+                "Es konnte kein Text aus den PDFs extrahiert werden.\n\n"
                 "Mögliche Ursachen:\n"
-                "- PDF ist gescannt und Tesseract nicht korrekt installiert oder konfiguriert.\n"
+                "- PDF ist rein gescannt und Tesseract ist nicht oder falsch installiert.\n"
                 "- PDF ist verschlüsselt oder geschützt.\n"
-                "- OCR erkennt nur leere Ergebnisse.\n\n"
-                "Bitte überprüfen Sie die Dateien oder installieren/configurieren Sie ggf. Tesseract."
+                "- OCR erkennt nur leere Ergebnisse (z. B. sehr schlechte Scanqualität).\n\n"
+                "Bitte überprüfen Sie die Dateien oder konfigurieren Sie Tesseract."
             )
 
     # Chatverlauf initialisieren
     if "history" not in st.session_state:
         st.session_state.history = []
 
-    # Existierenden Chatverlauf anzeigen
+    # Bisherigen Chat-Verlauf anzeigen
     for i, msg in enumerate(st.session_state.history):
         with st.chat_message(msg["role"]):
             st.write(msg["content"])
@@ -213,6 +215,7 @@ def main():
                     args=(len(st.session_state.history),),
                 )
             st.session_state.history.append({"role": "assistant", "content": answer})
+
 
 if __name__ == "__main__":
     main()
