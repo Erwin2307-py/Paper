@@ -1,4 +1,4 @@
-streamlit
+streamlit==1.18.1
 openai==0.28.0
 requests
 openpyxl
@@ -18,12 +18,12 @@ faiss-cpu
 langchain
 pypdf
 litellm
-paper-qa>=5
+paper-qa==5.0.3
 habanero
 semanticscholar
 litellm
 pydantic
 PyPDF2
 chromadb
-tiktoken
-langchain
+tiktoken==0.3.3
+langchain==0.0.200
