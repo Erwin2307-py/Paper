@@ -25,4 +25,4 @@ pydantic
 PyPDF2
 chromadb
 tiktoken==0.3.3
-langchain==0.0.200
+langchain
