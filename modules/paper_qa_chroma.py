@@ -8,7 +8,10 @@ import logging
 from PIL import Image
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import Chroma
+
+# Hier der Community-Import
+from langchain_community.vectorstores import Chroma
+
 from streamlit_feedback import streamlit_feedback
 
 logging.basicConfig(level=logging.INFO)
@@ -83,7 +86,8 @@ def extract_text_from_pdf(pdf_file) -> str:
 
 def create_vectorstore_from_text(text: str):
     """
-    Teilt den Text in Chunks und erstellt eine Chroma-Datenbank mit OpenAI-Embeddings.
+    Teilt den Text in Chunks und erstellt eine Chroma-Datenbank
+    (hier aus langchain_community.vectorstores) mit OpenAI-Embeddings.
     Gibt das VectorStore-Objekt zurück.
     """
     text_splitter = CharacterTextSplitter(separator="\n", chunk_size=1000, chunk_overlap=100)
@@ -91,6 +95,7 @@ def create_vectorstore_from_text(text: str):
     logging.info(f"Text in {len(chunks)} Chunks aufgeteilt.")
 
     embeddings = OpenAIEmbeddings()
+    # Wichtig: Wir rufen das Chroma aus langchain_community auf
     vectorstore = Chroma.from_texts(chunks, embedding=embeddings)
     return vectorstore
 
@@ -144,7 +149,7 @@ def save_feedback(index):
 ##############################################
 
 def main():
-    st.title("📄 Paper-QA Chatbot mit OCR-Fallback")
+    st.title("📄 Paper-QA Chatbot mit OCR-Fallback (Community-Chroma)")
 
     # Optional: OpenAI-API-Key
     # openai.api_key = st.secrets["OPENAI_API_KEY"]
