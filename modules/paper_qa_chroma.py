@@ -8,7 +8,7 @@ import logging
 from PIL import Image
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import Chroma  # <- Offizielle LangChain-Chroma
+from langchain.vectorstores import Chroma  # <-- Offizielle Chroma (ohne community)
 from streamlit_feedback import streamlit_feedback
 
 logging.basicConfig(level=logging.INFO)
@@ -59,7 +59,7 @@ def extract_text_from_pdf(pdf_file) -> str:
     if text_pypdf:
         logging.info("Erfolgreich Text mit PyPDF2 extrahiert.")
         return text_pypdf
-    
+
     logging.info("Kein Text via PyPDF2 gefunden. Versuche OCR-Fallback ...")
     text_ocr = extract_text_ocr(pdf_file)
     if text_ocr:
@@ -78,7 +78,11 @@ def create_vectorstore_from_text(text: str):
     Teilt den Text in Chunks und erstellt eine Chroma-Datenbank
     mit OpenAI-Embeddings. Gibt das VectorStore-Objekt zurück.
     """
-    text_splitter = CharacterTextSplitter(separator="\n", chunk_size=1000, chunk_overlap=100)
+    text_splitter = CharacterTextSplitter(
+        separator="\n",
+        chunk_size=1000,
+        chunk_overlap=100
+    )
     chunks = text_splitter.split_text(text)
     logging.info(f"Text in {len(chunks)} Chunks aufgeteilt.")
 
@@ -138,11 +142,13 @@ def save_feedback(index):
 def main():
     st.title("📄 Paper-QA Chatbot mit OCR-Fallback (Offizielle Chroma)")
 
-    # Optional: openai.api_key = st.secrets["OPENAI_API_KEY"]
+    # Falls du deinen OpenAI-Key nicht per Umgebungsvariable setzt,
+    # kannst du auch unten auskommentierte Zeile verwenden:
+    # openai.api_key = st.secrets["OPENAI_API_KEY"]
 
     uploaded_files = st.file_uploader(
-        "PDF-Dokument(e) hochladen (auch gescannte):", 
-        type=["pdf"], 
+        "PDF-Dokument(e) hochladen (auch gescannte):",
+        type=["pdf"],
         accept_multiple_files=True
     )
 
@@ -192,6 +198,7 @@ def main():
             st.write(prompt)
         st.session_state.history.append({"role": "user", "content": prompt})
 
+        # Wenn noch keine Vektordatenbank erzeugt wurde
         if "vectorstore" not in st.session_state:
             st.error("Bitte lade mindestens ein PDF hoch, bevor du Fragen stellst.")
         else:
