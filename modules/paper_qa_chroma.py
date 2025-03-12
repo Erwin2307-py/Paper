@@ -8,10 +8,7 @@ import logging
 from PIL import Image
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.embeddings import OpenAIEmbeddings
-
-# Hier der Community-Import
-from langchain_community.vectorstores import Chroma
-
+from langchain.vectorstores import Chroma  # <- Offizielle LangChain-Chroma
 from streamlit_feedback import streamlit_feedback
 
 logging.basicConfig(level=logging.INFO)
@@ -21,10 +18,7 @@ logging.basicConfig(level=logging.INFO)
 ##############################################
 
 def extract_text_pypdf2(pdf_file) -> str:
-    """
-    Versucht, Text mit PyPDF2 auszulesen.
-    Gibt einen String zurück (ggf. leer, wenn kein Text gefunden wurde).
-    """
+    """Versucht, Text mit PyPDF2 auszulesen."""
     text = ""
     try:
         reader = PyPDF2.PdfReader(pdf_file)
@@ -39,16 +33,13 @@ def extract_text_pypdf2(pdf_file) -> str:
 def extract_text_ocr(pdf_file) -> str:
     """
     Fallback-OCR mittels pdfplumber + pytesseract.
-    Wandelt jede Seite in ein Bild um und wendet Tesseract an.
-    ACHTUNG: Funktioniert nur, wenn Tesseract installiert ist.
+    Wandelt jede Seite in ein Bild um und nutzt Tesseract für Texterkennung.
     """
     ocr_text = ""
     try:
         with pdfplumber.open(pdf_file) as pdf:
             for page_index, page in enumerate(pdf.pages, start=1):
-                # Seite als Bild rendern (resolution kann je nach Bedarf angepasst werden)
                 pil_img = page.to_image(resolution=200).original
-                # OCR mit pytesseract
                 page_text = pytesseract.image_to_string(pil_img)
                 if page_text.strip():
                     logging.debug(f"OCR auf Seite {page_index}: {len(page_text.strip())} Zeichen erkannt.")
@@ -61,16 +52,14 @@ def extract_text_ocr(pdf_file) -> str:
 
 def extract_text_from_pdf(pdf_file) -> str:
     """
-    Kombinierter Workflow:
-      1) Versuch PyPDF2 (digitaler Text)
-      2) Falls kein Text -> OCR-Fallback mit pdfplumber + pytesseract
+    1) Versuche PyPDF2 (digitaler Text)
+    2) Falls kein Text -> OCR-Fallback mit pdfplumber + pytesseract
     """
     text_pypdf = extract_text_pypdf2(pdf_file)
     if text_pypdf:
         logging.info("Erfolgreich Text mit PyPDF2 extrahiert.")
         return text_pypdf
     
-    # PyPDF2 hat keinen oder nur leeren Text gefunden → OCR
     logging.info("Kein Text via PyPDF2 gefunden. Versuche OCR-Fallback ...")
     text_ocr = extract_text_ocr(pdf_file)
     if text_ocr:
@@ -87,22 +76,20 @@ def extract_text_from_pdf(pdf_file) -> str:
 def create_vectorstore_from_text(text: str):
     """
     Teilt den Text in Chunks und erstellt eine Chroma-Datenbank
-    (hier aus langchain_community.vectorstores) mit OpenAI-Embeddings.
-    Gibt das VectorStore-Objekt zurück.
+    mit OpenAI-Embeddings. Gibt das VectorStore-Objekt zurück.
     """
     text_splitter = CharacterTextSplitter(separator="\n", chunk_size=1000, chunk_overlap=100)
     chunks = text_splitter.split_text(text)
     logging.info(f"Text in {len(chunks)} Chunks aufgeteilt.")
 
     embeddings = OpenAIEmbeddings()
-    # Wichtig: Wir rufen das Chroma aus langchain_community auf
     vectorstore = Chroma.from_texts(chunks, embedding=embeddings)
     return vectorstore
 
 def answer_question(query: str, vectorstore):
     """
-    Sucht in der Vektordatenbank nach relevantem Kontext und erzeugt eine Antwort 
-    auf die Nutzerfrage mit openai.ChatCompletion.
+    Sucht in der Vektordatenbank nach relevantem Kontext und
+    erzeugt eine Antwort mit openai.ChatCompletion.
     """
     docs = vectorstore.similarity_search(query, k=4)
     logging.info(f"{len(docs)} relevante Textstellen für die Anfrage gefunden.")
@@ -138,7 +125,7 @@ def answer_question(query: str, vectorstore):
 
 def save_feedback(index):
     """
-    Callback-Funktion für Feedback: Speichert die Benutzerbewertung (Daumen hoch/runter) im Chat-Verlauf.
+    Callback-Funktion für Feedback (Daumen hoch/runter).
     """
     feedback_value = st.session_state.get(f"feedback_{index}")
     st.session_state.history[index]["feedback"] = feedback_value
@@ -149,12 +136,10 @@ def save_feedback(index):
 ##############################################
 
 def main():
-    st.title("📄 Paper-QA Chatbot mit OCR-Fallback (Community-Chroma)")
+    st.title("📄 Paper-QA Chatbot mit OCR-Fallback (Offizielle Chroma)")
 
-    # Optional: OpenAI-API-Key
-    # openai.api_key = st.secrets["OPENAI_API_KEY"]
+    # Optional: openai.api_key = st.secrets["OPENAI_API_KEY"]
 
-    # PDF Upload
     uploaded_files = st.file_uploader(
         "PDF-Dokument(e) hochladen (auch gescannte):", 
         type=["pdf"], 
@@ -182,7 +167,7 @@ def main():
                 "Bitte überprüfen Sie die Dateien oder konfigurieren Sie Tesseract."
             )
 
-    # Chatverlauf initialisieren
+    # Chat-Verlauf initialisieren
     if "history" not in st.session_state:
         st.session_state.history = []
 
@@ -220,7 +205,6 @@ def main():
                     args=(len(st.session_state.history),),
                 )
             st.session_state.history.append({"role": "assistant", "content": answer})
-
 
 if __name__ == "__main__":
     main()
