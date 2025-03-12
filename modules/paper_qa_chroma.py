@@ -8,7 +8,7 @@ import easyocr
 
 from PIL import Image
 from langchain.text_splitter import CharacterTextSplitter
-from langchain.embeddings.openai import OpenAIEmbeddings  # Korrekt: aus dem "openai"-Modul
+from langchain.embeddings import OpenAIEmbeddings  # Angepasster Importpfad
 from langchain.vectorstores import FAISS  # Wir verwenden FAISS als Vektorstore
 from streamlit_feedback import streamlit_feedback
 
