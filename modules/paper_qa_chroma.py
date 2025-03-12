@@ -1,128 +1,158 @@
 import streamlit as st
-import openai
 import PyPDF2
-
-from langchain.embeddings.openai import OpenAIEmbeddings  # Angepasster Import
-from langchain.vectorstores import Chroma
-from langchain.docstore.document import Document
 from langchain.text_splitter import CharacterTextSplitter
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.vectorstores import Chroma
+import openai
+import logging
 
-openai.api_key = st.secrets["OPENAI_API_KEY"]
+# Anforderungen umgesetzt:
+# 1. LLM-Integration (OpenAI ChatCompletion mit gpt-3.5-turbo)
+# 2. UI-Funktionen: st.file_uploader, st.chat_input, st.feedback
+# 3. Datenverarbeitung: PyPDF2 (PDF-Text), CharacterTextSplitter, Chroma, OpenAIEmbeddings
+# 4. Chat-Flow: st.session_state (Verlauf), similarity_search(k=4), kontextbasierte Antwort via ChatCompletion
+# 5. Optimierungen: modulare Funktionen, Statusmeldungen (st.success, st.error), Logging für Debugging
 
-# Hilfsfunktion zum Laden eines Profils aus st.session_state
-def load_profile(profile_name: str):
-    if "profiles" in st.session_state:
-        return st.session_state["profiles"].get(profile_name, None)
-    return None
+# Hinweis: Erfordert Streamlit >= 1.42.0 (für st.chat_input und st.feedback) 
+# sowie installierte Pakete: PyPDF2, langchain, chromadb, openai
 
-# Erzeugt eine Vektor-Datenbank aus einem langen Text (z. B. aus einem PDF)
-def build_vectorstore_from_text(text: str):
-    text_splitter = CharacterTextSplitter(
-        separator="\n",
-        chunk_size=1000,  # Länge in Zeichen
-        chunk_overlap=100
-    )
+logging.basicConfig(level=logging.INFO)
+
+# Optional: OpenAI API-Key setzen, falls nicht über Umgebungsvariable/Secrets konfiguriert
+# openai.api_key = st.secrets["OPENAI_API_KEY"]
+
+def extract_text_from_pdf(file) -> str:
+    """
+    Extrahiert den gesamten Text einer PDF-Datei mittels PyPDF2.
+    """
+    try:
+        reader = PyPDF2.PdfReader(file)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() or ""
+        return text
+    except Exception as e:
+        logging.error(f"Fehler beim Lesen der PDF: {e}")
+        return ""
+
+def create_vectorstore_from_text(text: str):
+    """
+    Zerteilt den Text in Chunks und erstellt eine Chroma Vektor-Datenbank mit OpenAI-Embeddings.
+    Gibt das erstellte Vektorstore-Objekt zurück.
+    """
+    # Text in überlappende Abschnitte aufteilen (Chunking)
+    text_splitter = CharacterTextSplitter(separator="\n", chunk_size=1000, chunk_overlap=100)
     chunks = text_splitter.split_text(text)
-    docs = [Document(page_content=chunk) for chunk in chunks]
-    embeddings = OpenAIEmbeddings(openai_api_key=openai.api_key)
-    vectorstore = Chroma.from_documents(docs, embeddings)
+    logging.info(f"Text in {len(chunks)} Chunks aufgeteilt.")
+    # Vektorstore mit Chroma und OpenAI Embeddings erstellen
+    embeddings = OpenAIEmbeddings()  # nutzt standardmäßig das OpenAI Embedding-Modell
+    vectorstore = Chroma.from_texts(chunks, embedding=embeddings, persist_directory=None)
     return vectorstore
 
-# Erzeugt eine Vektor-Datenbank aus einer Liste von Paper-Dictionaries (z. B. aus dem Profil)
-def build_vectorstore_from_papers(papers: list):
-    docs = []
-    for paper in papers:
-        # Hier werden Titel und Abstract kombiniert – anpassbar nach Bedarf
-        content = f"Title: {paper.get('Title', 'n/a')}\nAbstract: {paper.get('Abstract', 'n/a')}"
-        docs.append(Document(page_content=content))
-    embeddings = OpenAIEmbeddings(openai_api_key=openai.api_key)
-    vectorstore = Chroma.from_documents(docs, embeddings)
-    return vectorstore
+def answer_question(query: str, vectorstore):
+    """
+    Sucht in der Vektordatenbank nach relevantem Kontext und erzeugt eine Antwort 
+    auf die Nutzerfrage mittels OpenAI ChatCompletion.
+    Gibt die erzeugte Antwort als String zurück.
+    """
+    # Relevante Dokument-Passagen per Semantik-Suche abrufen
+    docs = vectorstore.similarity_search(query, k=4)
+    logging.info(f"{len(docs)} relevante Textstellen für die Anfrage gefunden.")
+    # Kontext aus den gefundenen Passagen zusammenstellen
+    context = "\n".join([d.page_content for d in docs])
+    # Nachrichten für das Chat-Modell vorbereiten
+    system_message = {
+        "role": "system",
+        "content": (
+            "You are a helpful research assistant. You answer questions based on the provided paper excerpts. "
+            "If the context is insufficient, say you don't have enough information. Answer concisely and helpfully."
+        )
+    }
+    user_message = {
+        "role": "user",
+        "content": f"Context:\n{context}\n\nQuestion: {query}"
+    }
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[system_message, user_message],
+            temperature=0.2,
+        )
+        answer = response["choices"][0]["message"]["content"].strip()
+        return answer
+    except Exception as e:
+        logging.error(f"Fehler bei der OpenAI-Anfrage: {e}")
+        return "Entschuldigung, es gab ein Problem bei der Beantwortung durch die KI."
 
-# Extrahiert den Text aus einer hochgeladenen PDF-Datei
-def extract_text_from_pdf(pdf_file) -> str:
-    reader = PyPDF2.PdfReader(pdf_file)
-    all_text = []
-    for page in reader.pages:
-        text = page.extract_text()
-        if text:
-            all_text.append(text)
-    return "\n".join(all_text)
+def save_feedback(index):
+    """
+    Callback-Funktion für Feedback: Speichert die Benutzerbewertung (Daumen hoch/runter) im Chat-Verlauf.
+    """
+    feedback_value = st.session_state.get(f"feedback_{index}")
+    st.session_state.history[index]["feedback"] = feedback_value
+    logging.info(f"Feedback für Nachricht {index}: {feedback_value}")
 
-# Stellt eine Frage unter Einbeziehung eines gegebenen Kontextes an OpenAI
-def ask_openai_context(question: str, context: str) -> str:
-    system_prompt = (
-        "Du bist ein hilfreicher KI-Assistent. "
-        "Nutze den gegebenen Kontext, um die Frage bestmöglich zu beantworten. "
-        "Wenn der Kontext unzureichend ist, sage 'Kann nicht sicher beantworten'."
-    )
-    user_prompt = f"KONTEXT:\n{context}\n\nFRAGE: {question}"
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        max_tokens=600,
-        temperature=0.2,
-    )
-    return response.choices[0].message["content"].strip()
+# Streamlit App UI
+st.title("📄 Paper-QA Chatbot")
 
-def main():
-    st.title("Paper-QA mit Chroma (Vektor-Datenbank) + OpenAI")
-    st.write("Untersuchen Sie Paper entweder per PDF-Upload oder anhand der im Profil gespeicherten Paper.")
+# PDF Upload
+uploaded_files = st.file_uploader("PDF-Dokumente hochladen", type=["pdf"], accept_multiple_files=True)
+if uploaded_files:
+    # Gesamten Text aus allen hochgeladenen PDFs extrahieren
+    all_text = ""
+    for file in uploaded_files:
+        file_text = extract_text_from_pdf(file)
+        if file_text:
+            all_text += file_text + "\n"
+    if all_text:
+        # Vektor-Datenbank einmalig erstellen und im Session State speichern
+        vectorstore = create_vectorstore_from_text(all_text)
+        st.session_state.vectorstore = vectorstore
+        st.success("Wissensdatenbank aus den hochgeladenen Papers wurde erfolgreich erstellt.")
+        logging.info("Vektorstore erstellt und im Session-State gespeichert.")
+    else:
+        st.error("Es konnte kein Text aus den PDFs extrahiert werden. Bitte überprüfen Sie die Dateien.")
 
-    # Auswahl, ob man ein PDF hochladen oder die im Profil gespeicherten Paper nutzen möchte
-    source_option = st.radio("Wählen Sie die Quelle der Paper:", ["PDF hochladen", "Profil gespeicherte Paper"])
+# Chat-Verlauf initialisieren
+if "history" not in st.session_state:
+    st.session_state.history = []
 
-    if source_option == "PDF hochladen":
-        pdf_file = st.file_uploader("Bitte PDF hochladen", type=["pdf"])
-        if pdf_file:
-            pdf_text = extract_text_from_pdf(pdf_file)
-            if pdf_text.strip():
-                st.success("Text extrahiert! Erstelle Vektor-Datenbank ...")
-                vectorstore = build_vectorstore_from_text(pdf_text)
-                st.success("Vektor-Datenbank ist bereit! Stelle nun deine Frage.")
-                question = st.text_input("Deine Frage:")
-                if question and st.button("Antwort generieren"):
-                    similar_docs = vectorstore.similarity_search(question, k=4)
-                    with st.expander("Angefragte Chunks anzeigen"):
-                        for i, d in enumerate(similar_docs, start=1):
-                            st.markdown(f"**Chunk {i}**:\n{d.page_content}")
-                    context_text = "\n\n".join([d.page_content for d in similar_docs])
-                    answer = ask_openai_context(question, context_text)
-                    st.write("### Antwort:")
-                    st.write(answer)
-            else:
-                st.error("Konnte keinen Text aus der PDF extrahieren.")
+# Bisherigen Chat-Verlauf anzeigen
+for i, msg in enumerate(st.session_state.history):
+    with st.chat_message(msg["role"]):
+        st.write(msg["content"])
+        if msg["role"] == "assistant":
+            # Feedback-Widget für KI-Antwort anzeigen (Daumen hoch/runter)
+            feedback = msg.get("feedback")
+            st.session_state[f"feedback_{i}"] = feedback  # aktuellen Feedback-Wert setzen
+            st.feedback(
+                "thumbs",
+                key=f"feedback_{i}",
+                disabled=feedback is not None,
+                on_change=save_feedback,
+                args=(i,)
+            )
 
-    elif source_option == "Profil gespeicherte Paper":
-        if "profiles" not in st.session_state or not st.session_state["profiles"]:
-            st.error("Keine Profile vorhanden. Bitte erstellen Sie zuerst ein Profil mit gespeicherten Paper (z. B. via ChatGPT-Scoring).")
-        else:
-            profile_list = list(st.session_state["profiles"].keys())
-            chosen_profile = st.selectbox("Profil wählen:", profile_list)
-            profile_data = load_profile(chosen_profile)
-            if not profile_data:
-                st.error("Profil nicht gefunden oder leer.")
-            else:
-                if "selected_papers" in profile_data and profile_data["selected_papers"]:
-                    papers = profile_data["selected_papers"]
-                    st.write(f"Es wurden {len(papers)} Paper im Profil gefunden.")
-                    vectorstore = build_vectorstore_from_papers(papers)
-                    st.success("Vektor-Datenbank aus den Profil-Papern erstellt. Stellen Sie nun Ihre Frage.")
-                    question = st.text_input("Deine Frage an die Profil-Paper:")
-                    if question and st.button("Antwort generieren (Profil)"):
-                        similar_docs = vectorstore.similarity_search(question, k=4)
-                        with st.expander("Gefundene Dokumente anzeigen"):
-                            for i, d in enumerate(similar_docs, start=1):
-                                st.markdown(f"**Dokument {i}**:\n{d.page_content}")
-                        context_text = "\n\n".join([d.page_content for d in similar_docs])
-                        answer = ask_openai_context(question, context_text)
-                        st.write("### Antwort:")
-                        st.write(answer)
-                else:
-                    st.error("In diesem Profil sind keine gespeicherten Paper vorhanden. Bitte führen Sie zuerst das ChatGPT-Scoring aus, um Paper im Profil zu speichern.")
-
-if __name__ == "__main__":
-    main()
+# Neue Frage-Eingabe (Chat-Eingabefeld)
+if prompt := st.chat_input("Frage zu den hochgeladenen Papers stellen..."):
+    # Nutzerfrage anzeigen und zum Verlauf hinzufügen
+    with st.chat_message("user"):
+        st.write(prompt)
+    st.session_state.history.append({"role": "user", "content": prompt})
+    # Prüfen, ob bereits eine Vektor-Datenbank erstellt wurde
+    if "vectorstore" not in st.session_state:
+        st.error("Bitte laden Sie zuerst ein PDF hoch, bevor Sie Fragen stellen.")
+    else:
+        # KI-Antwort unter Verwendung des Paper-Kontextes generieren
+        answer = answer_question(prompt, st.session_state.vectorstore)
+        # KI-Antwort im Chat anzeigen
+        with st.chat_message("assistant"):
+            st.write(answer)
+            st.feedback(
+                "thumbs", 
+                key=f"feedback_{len(st.session_state.history)}", 
+                on_change=save_feedback, 
+                args=(len(st.session_state.history),)
+            )
+        # Antwort im Verlauf speichern
+        st.session_state.history.append({"role": "assistant", "content": answer})
