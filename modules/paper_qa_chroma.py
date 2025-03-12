@@ -13,8 +13,9 @@ from streamlit_feedback import streamlit_feedback
 
 logging.basicConfig(level=logging.INFO)
 
-# Wenn du deinen OpenAI-Key aus st.secrets nutzen möchtest:
-# openai.api_key = st.secrets["OPENAI_API_KEY"]
+##############################################
+# 1) PDF-Extraktion (PyPDF2 + OCR-Fallback)
+##############################################
 
 def extract_text_pypdf2(pdf_file) -> str:
     """
@@ -46,7 +47,7 @@ def extract_text_ocr(pdf_file) -> str:
                 pil_img = page.to_image(resolution=200).original
                 # OCR mit pytesseract
                 page_text = pytesseract.image_to_string(pil_img)
-                if page_text:
+                if page_text.strip():
                     ocr_text += page_text + "\n"
     except Exception as e:
         logging.error(f"Fehler bei OCR via pdfplumber/pytesseract: {e}")
@@ -58,19 +59,25 @@ def extract_text_from_pdf(pdf_file) -> str:
       1) Versuch PyPDF2 (digitaler Text)
       2) Falls kein Text -> OCR-Fallback mit pdfplumber + pytesseract
     """
-    text = extract_text_pypdf2(pdf_file)
-    if text:
+    text_pypdf = extract_text_pypdf2(pdf_file)
+    text_ocr = ""
+
+    if text_pypdf:
         logging.info("Erfolgreich Text mit PyPDF2 extrahiert.")
-        return text
     else:
         logging.info("Kein Text via PyPDF2 gefunden. Versuche OCR-Fallback ...")
         text_ocr = extract_text_ocr(pdf_file)
         if text_ocr:
             logging.info("OCR-Fallback war erfolgreich.")
-            return text_ocr
         else:
             logging.warning("OCR-Fallback hat ebenfalls keinen Text gefunden.")
-            return ""
+
+    # Wenn beide leer sind, bleibt's leer:
+    return text_pypdf + "\n" + text_ocr
+
+##############################################
+# 2) Chroma + OpenAI Q&A
+##############################################
 
 def create_vectorstore_from_text(text: str):
     """
@@ -118,6 +125,10 @@ def answer_question(query: str, vectorstore):
         logging.error(f"Fehler bei der OpenAI-Anfrage: {e}")
         return "Entschuldigung, es gab ein Problem bei der Beantwortung durch die KI."
 
+##############################################
+# 3) Feedback
+##############################################
+
 def save_feedback(index):
     """
     Callback-Funktion für Feedback: Speichert die Benutzerbewertung (Daumen hoch/runter) im Chat-Verlauf.
@@ -125,6 +136,10 @@ def save_feedback(index):
     feedback_value = st.session_state.get(f"feedback_{index}")
     st.session_state.history[index]["feedback"] = feedback_value
     logging.info(f"Feedback für Nachricht {index}: {feedback_value}")
+
+##############################################
+# 4) Haupt-App
+##############################################
 
 def main():
     st.title("📄 Paper-QA Chatbot mit OCR-Fallback")
@@ -141,15 +156,24 @@ def main():
         all_text = ""
         for file in uploaded_files:
             file_text = extract_text_from_pdf(file)
-            if file_text:
+            # Minimale Länge, um wirklich extrahierten Text zu erkennen
+            if len(file_text.strip()) > 5:
                 all_text += file_text + "\n"
-
+        
         if all_text.strip():
             vectorstore = create_vectorstore_from_text(all_text)
             st.session_state.vectorstore = vectorstore
             st.success("Wissensdatenbank aus den hochgeladenen Papers wurde erfolgreich erstellt.")
         else:
-            st.error("Es konnte kein Text aus den PDFs extrahiert werden (auch OCR blieb erfolglos).")
+            # Erweiterte Fehlermeldung mit Hinweisen:
+            st.error(
+                "Es konnte kein Text aus den PDFs extrahiert werden. "
+                "Mögliche Ursachen:\n"
+                "- PDF ist gescannt und Tesseract nicht korrekt installiert oder konfiguriert.\n"
+                "- PDF ist verschlüsselt oder geschützt.\n"
+                "- OCR erkennt nur leere Ergebnisse.\n\n"
+                "Bitte überprüfen Sie die Dateien oder installieren/configurieren Sie ggf. Tesseract."
+            )
 
     # Chatverlauf initialisieren
     if "history" not in st.session_state:
@@ -189,7 +213,6 @@ def main():
                     args=(len(st.session_state.history),),
                 )
             st.session_state.history.append({"role": "assistant", "content": answer})
-
 
 if __name__ == "__main__":
     main()
