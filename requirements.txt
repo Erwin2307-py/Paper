@@ -27,3 +27,7 @@ Pillow
 loguru
 pydantic>=2
 litellm
+faiss-cpu
+easyocr
+numpy
+torch
