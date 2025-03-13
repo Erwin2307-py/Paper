@@ -1,17 +1,35 @@
+import openai
+
+# Sicherstellen, dass openai.error existiert. Falls nicht, erstellen wir ein Dummy-Objekt.
+if not hasattr(openai, "error"):
+    class DummyOpenAIError:
+        Timeout = Exception
+        TimeoutError = Exception
+    openai.error = DummyOpenAIError
+
 import streamlit as st
 import PyPDF2
+import pdfplumber
+import pytesseract
 import logging
-from io import BytesIO
 
-from haystack.document_stores import FAISSDocumentStore
-from haystack.nodes import DensePassageRetriever, FARMReader
-from haystack.pipelines import ExtractiveQAPipeline
-from haystack.schema import Document
+from PIL import Image
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.embeddings.openai import OpenAIEmbeddings  # Expliziter Importpfad
+from langchain.vectorstores import Chroma  # Offizielle Chroma-Implementierung
+from streamlit_feedback import streamlit_feedback
 
 logging.basicConfig(level=logging.INFO)
 
-# Funktion zur PDF-Extraktion (nur digitale PDFs)
+##############################################
+# 1) PDF-Extraktion (nur digitale PDFs mit PyPDF2)
+##############################################
+
 def extract_text_from_pdf(pdf_file) -> str:
+    """
+    Versucht, digitalen Text mit PyPDF2 auszulesen.
+    Gibt einen String zurück (ggf. leer, wenn kein Text gefunden wurde).
+    """
     text = ""
     try:
         reader = PyPDF2.PdfReader(pdf_file)
@@ -23,51 +41,142 @@ def extract_text_from_pdf(pdf_file) -> str:
         logging.error(f"Fehler beim Lesen mit PyPDF2: {e}")
     return text.strip()
 
-st.title("Medizinische Paper QA mit Haystack")
+##############################################
+# 2) Chroma + OpenAI Q&A
+##############################################
 
-uploaded_files = st.file_uploader("Lade digitale PDF-Dateien hoch:", type=["pdf"], accept_multiple_files=True)
+def create_vectorstore_from_text(text: str):
+    """
+    Teilt den Text in Chunks und erstellt eine Chroma-Datenbank
+    mit OpenAI-Embeddings. Gibt das VectorStore-Objekt zurück.
+    """
+    text_splitter = CharacterTextSplitter(separator="\n", chunk_size=1000, chunk_overlap=100)
+    chunks = text_splitter.split_text(text)
+    logging.info(f"Text in {len(chunks)} Chunks aufgeteilt.")
 
-if uploaded_files:
-    # Erstelle Haystack-Dokumente aus den hochgeladenen PDFs
-    docs = []
-    for file in uploaded_files:
-        text = extract_text_from_pdf(file)
-        if text:
-            docs.append(Document(content=text, meta={"name": file.name}))
-    if not docs:
-        st.error("Aus den hochgeladenen PDFs konnte kein Text extrahiert werden. Bitte lade maschinenlesbare PDFs hoch.")
-    else:
-        st.success(f"Text aus {len(docs)} PDFs extrahiert.")
+    embeddings = OpenAIEmbeddings()
+    vectorstore = Chroma.from_texts(chunks, embedding=embeddings)
+    return vectorstore
 
-        # Erstelle einen FAISS-Dokumentenspeicher (in-memory)
-        document_store = FAISSDocumentStore(embedding_dim=768, faiss_index_factory_str="Flat")
-        document_store.write_documents([doc.to_dict() for doc in docs])
-        
-        # Initialisiere Dense Passage Retriever
-        retriever = DensePassageRetriever(
-            document_store=document_store,
-            query_embedding_model="facebook/dpr-question_encoder-single-nq-base",
-            passage_embedding_model="facebook/dpr-ctx_encoder-single-nq-base",
-            use_gpu=False,
-            embed_title=True,
+def answer_question(query: str, vectorstore):
+    """
+    Sucht in der Vektordatenbank nach relevantem Kontext und
+    erzeugt eine Antwort mit openai.ChatCompletion.
+    """
+    docs = vectorstore.similarity_search(query, k=4)
+    logging.info(f"{len(docs)} relevante Textstellen für die Anfrage gefunden.")
+
+    context = "\n".join([d.page_content for d in docs])
+    system_message = {
+        "role": "system",
+        "content": (
+            "You are a helpful research assistant. You answer questions based on the provided paper excerpts. "
+            "If the context is insufficient, say you don't have enough information. Answer concisely and helpfully."
         )
-        # Aktualisiere die Embeddings im DocumentStore
-        document_store.update_embeddings(retriever)
-        
-        # Initialisiere einen Reader (z. B. FARMReader)
-        reader = FARMReader(model_name_or_path="deepset/roberta-base-squad2", use_gpu=False)
-        
-        # Erstelle die QA-Pipeline
-        qa_pipeline = ExtractiveQAPipeline(reader, retriever)
-        
-        query = st.text_input("Stelle eine Frage zu den hochgeladenen Papers:")
-        if query:
-            result = qa_pipeline.run(query=query, params={"Retriever": {"top_k": 10}, "Reader": {"top_k": 5}})
-            if result["answers"]:
-                st.markdown("### Antwort:")
-                st.write(result["answers"][0].answer)
-                st.markdown("### Kontext:")
-                for ans in result["answers"]:
-                    st.write(ans.context)
-            else:
-                st.error("Keine Antwort gefunden.")
+    }
+    user_message = {
+        "role": "user",
+        "content": f"Context:\n{context}\n\nQuestion: {query}"
+    }
+
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[system_message, user_message],
+            temperature=0.2,
+        )
+        answer = response.choices[0].message.content.strip()
+        return answer
+    except Exception as e:
+        logging.error(f"Fehler bei der OpenAI-Anfrage: {e}")
+        return "Entschuldigung, es gab ein Problem bei der Beantwortung durch die KI."
+
+##############################################
+# 3) Feedback
+##############################################
+
+def save_feedback(index):
+    """
+    Callback-Funktion für Feedback (Daumen hoch/runter).
+    """
+    feedback_value = st.session_state.get(f"feedback_{index}")
+    st.session_state.history[index]["feedback"] = feedback_value
+    logging.info(f"Feedback für Nachricht {index}: {feedback_value}")
+
+##############################################
+# 4) Haupt-App
+##############################################
+
+def main():
+    st.title("📄 Paper-QA Chatbot (Nur digitale PDFs, Offizielle Chroma)")
+    
+    # Optionale API-Key-Konfiguration:
+    # openai.api_key = st.secrets["OPENAI_API_KEY"]
+
+    uploaded_files = st.file_uploader(
+        "PDF-Dokument(e) hochladen (nur digitale PDFs):",
+        type=["pdf"],
+        accept_multiple_files=True
+    )
+
+    if uploaded_files:
+        all_text = ""
+        for file in uploaded_files:
+            file_text = extract_text_from_pdf(file)
+            if file_text.strip():
+                all_text += file_text + "\n"
+
+        if all_text.strip():
+            vectorstore = create_vectorstore_from_text(all_text)
+            st.session_state.vectorstore = vectorstore
+            st.success("Wissensdatenbank aus den hochgeladenen PDFs wurde erfolgreich erstellt!")
+        else:
+            st.error(
+                "Es konnte kein Text aus den PDFs extrahiert werden.\n\n"
+                "Mögliche Ursachen:\n"
+                "- Das PDF enthält keinen maschinenlesbaren Text (z.B. gescannte Bilder).\n"
+                "- Das PDF ist verschlüsselt oder geschützt.\n\n"
+                "Bitte laden Sie nur digitale PDFs hoch."
+            )
+
+    # Chat-Verlauf initialisieren
+    if "history" not in st.session_state:
+        st.session_state.history = []
+
+    # Bisherigen Chat-Verlauf anzeigen
+    for i, msg in enumerate(st.session_state.history):
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
+            if msg["role"] == "assistant":
+                feedback = msg.get("feedback")
+                st.session_state[f"feedback_{i}"] = feedback
+                streamlit_feedback(
+                    feedback_type="thumbs",
+                    key=f"feedback_{i}",
+                    disabled=feedback is not None,
+                    on_change=save_feedback,
+                    args=(i,),
+                )
+
+    # Neue Chat-Eingabe
+    if prompt := st.chat_input("Frage zu den hochgeladenen Papern stellen..."):
+        with st.chat_message("user"):
+            st.write(prompt)
+        st.session_state.history.append({"role": "user", "content": prompt})
+
+        if "vectorstore" not in st.session_state:
+            st.error("Bitte lade mindestens ein PDF hoch, bevor du Fragen stellst.")
+        else:
+            answer = answer_question(prompt, st.session_state.vectorstore)
+            with st.chat_message("assistant"):
+                st.write(answer)
+                streamlit_feedback(
+                    feedback_type="thumbs",
+                    key=f"feedback_{len(st.session_state.history)}",
+                    on_change=save_feedback,
+                    args=(len(st.session_state.history),),
+                )
+            st.session_state.history.append({"role": "assistant", "content": answer})
+
+if __name__ == "__main__":
+    main()
