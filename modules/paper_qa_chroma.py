@@ -5,6 +5,12 @@ import pytesseract
 import openai
 import logging
 
+# Workaround: Falls openai.error.Timeout nicht existiert, setze es auf TimeoutError.
+try:
+    _ = openai.error.Timeout
+except AttributeError:
+    openai.error.Timeout = openai.error.TimeoutError
+
 from PIL import Image
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.embeddings.openai import OpenAIEmbeddings  # Expliziter Importpfad
@@ -12,11 +18,6 @@ from langchain.vectorstores import Chroma  # Offizielle Chroma-Implementierung
 from streamlit_feedback import streamlit_feedback
 
 logging.basicConfig(level=logging.INFO)
-
-# Workaround: Falls openai.error.Timeout nicht vorhanden ist, setze es auf TimeoutError
-if not hasattr(openai.error, "Timeout"):
-    if hasattr(openai.error, "TimeoutError"):
-        openai.error.Timeout = openai.error.TimeoutError
 
 ##############################################
 # 1) PDF-Extraktion (nur digitale PDFs mit PyPDF2)
@@ -106,7 +107,7 @@ def save_feedback(index):
 
 def main():
     st.title("📄 Paper-QA Chatbot (Nur digitale PDFs, Offizielle Chroma)")
-    
+
     # Optionale API-Key-Konfiguration:
     # openai.api_key = st.secrets["OPENAI_API_KEY"]
 
