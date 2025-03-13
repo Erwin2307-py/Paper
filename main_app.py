@@ -9,7 +9,7 @@ import datetime
 from modules.online_api_filter import module_online_api_filter
 
 # ------------------------------------------------------------
-# EINMALIGE set_page_config(...) 
+# EINMALIGE set_page_config(...)
 # ------------------------------------------------------------
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
@@ -18,8 +18,11 @@ st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 ###############################################################################
 
 def show_login():
-    """Zeigt das Login-Formular und das Willkommensbild an (nebeneinander)."""
-    # Du kannst columns anlegen, wenn du Bild/Eingabe nebeneinander haben möchtest:
+    """
+    Zeigt das Login-Formular und das Willkommensbild nebeneinander an.
+    Nutzt columns, damit Bild links und Formular rechts angezeigt werden.
+    """
+
     col_img, col_form = st.columns([1,1])
 
     with col_img:
@@ -32,16 +35,15 @@ def show_login():
         pw = st.text_input("Passwort:", type="password")
 
         if st.button("Einloggen"):
-            # Beispielhafter Check der Zugangsdaten (hier noch hartkodiert!)
-            # Ersetze das durch st.secrets["login"]["username"] / ["password"], wenn gewünscht
+            # Hier der Beispiel-Check (hartkodiert).
+            # Ersetze dies durch z.B. st.secrets["login"]["username"] / ["password"]
             if user == "demo" and pw == "secret":
                 st.session_state["logged_in"] = True
                 st.success("Erfolgreich eingeloggt! Navigationsleiste wird eingeblendet ...")
-                # Durch rerun wird das Skript neu geladen => Sidebar angezeigt
+                # Rerun => Seite wird neu geladen, wodurch das Sidebar-Menü erscheint
                 st.experimental_rerun()
             else:
                 st.error("Falsche Anmeldedaten. Bitte erneut versuchen.")
-
 
 ###############################################################################
 # 1) Gemeinsame Funktionen & Klassen
@@ -102,7 +104,6 @@ def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
         st.error(f"CORE search error: {e}")
         return []
 
-
 ###############################################################################
 # (PubMed-Funktionen, EuropePMC, etc. bleiben unverändert)
 # ...
@@ -141,7 +142,6 @@ def page_analyze_paper():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-
 ###############################################################################
 # 4) Sidebar Module Navigation & Main
 ###############################################################################
@@ -174,25 +174,22 @@ def sidebar_module_navigation():
     return pages[st.session_state["current_page"]]
 
 def main():
-    # Wenn wir keinen Login-Status haben, init
     if "logged_in" not in st.session_state:
         st.session_state["logged_in"] = False
 
     # 1) Falls nicht eingeloggt => zeige Login
     if not st.session_state["logged_in"]:
         show_login()
-        # Hier NICHT return, sondern st.stop(), damit kein weiterer Code kommt
+        # Stop => kein weiterer Code
         st.stop()
 
     # 2) Navigation
     page_fn = sidebar_module_navigation()
-    # Falls None => st.stop()
     if page_fn is None:
         st.stop()
 
     # 3) Ausführen
     page_fn()
-
 
 if __name__ == "__main__":
     main()
