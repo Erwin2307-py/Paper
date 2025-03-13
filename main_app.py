@@ -145,7 +145,7 @@ def module_paperqa_chroma():
                 st.write(answer)
 
 ################################################################################
-# 5) Haupt-App mit Navigation
+# 5) Haupt-App mit Navigation & Online-Suche
 ################################################################################
 
 def main():
@@ -173,6 +173,8 @@ def main():
         st.session_state["current_page"] = "paperqa2"
     if st.sidebar.button("🧠 PaperQA Chroma starten"):
         st.session_state["current_page"] = "paperqa_chroma"
+    if st.sidebar.button("🔍 Online API-Suche starten"):
+        st.session_state["current_page"] = "online_api_filter"
     if st.sidebar.button("⬅ Zurück zum Hauptmenü"):
         st.session_state["current_page"] = "home"
 
@@ -186,6 +188,8 @@ def main():
         module_paperqa2()
     elif st.session_state["current_page"] == "paperqa_chroma":
         module_paperqa_chroma()
+    elif st.session_state["current_page"] == "online_api_filter":
+        module_online_api_filter()
 
 if __name__ == "__main__":
     main()
