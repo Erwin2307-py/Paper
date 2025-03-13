@@ -18,20 +18,32 @@ st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 ################################################################################
 
 def show_login():
-    """Zeigt das Login-Formular und das Willkommensbild an."""
-    st.title("Bitte zuerst einloggen")
-    st.image("Bild1.jpg", caption="Willkommen!", use_container_width=False, width=600)
+    """Zeigt Login-Bild links und Eingabefelder rechts, prüft Credentials via st.secrets."""
+    # 1) Lese Benutzer/Passwort aus den Secrets:
+    SECRET_USER = st.secrets["login"]["username"]
+    SECRET_PASS = st.secrets["login"]["password"]
 
-    user = st.text_input("Benutzername:")
-    pw = st.text_input("Passwort:", type="password")
+    # Erzeuge zwei Spalten für Bild (links) und Formular (rechts)
+    col1, col2 = st.columns([1,1])  # zwei gleich breite Spalten
 
-    if st.button("Einloggen"):
-        # Beispielhaftes Checken der Zugangsdaten
-        if user == "demo" and pw == "secret":
-            st.session_state["logged_in"] = True
-            st.success("Erfolgreich eingeloggt! Wähle nun im Seitenmenü eine Funktion.")
-        else:
-            st.error("Falsche Anmeldedaten. Bitte erneut versuchen.")
+    with col1:
+        # Linke Spalte: Bild + Titel
+        st.title("Bitte zuerst einloggen")
+        st.image("Bild1.jpg", caption="Willkommen!", use_container_width=True)
+
+    with col2:
+        # Rechte Spalte: Eingabefelder
+        st.write("## Login-Daten eingeben:")
+        user = st.text_input("Benutzername:")
+        pw = st.text_input("Passwort:", type="password")
+
+        if st.button("Einloggen"):
+            # Vergleiche die Eingaben mit den Secrets
+            if user == SECRET_USER and pw == SECRET_PASS:
+                st.session_state["logged_in"] = True
+                st.success("Erfolgreich eingeloggt! Wähle nun im Seitenmenü eine Funktion.")
+            else:
+                st.error("Falsche Anmeldedaten. Bitte erneut versuchen.")
 
 
 ################################################################################
@@ -62,6 +74,7 @@ class CoreAPI:
         r.raise_for_status()
         return r.json()
 
+
 def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", timeout=15):
     try:
         core = CoreAPI(api_key)
@@ -69,6 +82,7 @@ def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", 
         return "results" in result
     except Exception:
         return False
+
 
 def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
     if not api_key:
@@ -136,6 +150,7 @@ def page_analyze_paper():
              "oder integriere den Code aus 'analyze_paper.py' direkt.")
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
+
 
 ################################################################################
 # 4) Sidebar Module Navigation & Main
