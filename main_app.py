@@ -6,15 +6,18 @@ from io import BytesIO
 import re
 import datetime
 
-# Remove or comment out the direct module_online_filter import if you no longer need it here:
+# Wenn du dieses Modul noch brauchst, kannst du es einkommentieren
 # from modules.online_filter import module_online_filter
 
 # ENTFERNT: Hier importieren wir dein Selenium-Modul aus modules/
 # from modules import my_selenium_qa_module
 
 # NEW: We import the combined “online API + filter” module
-from modules.online_api_filter import module_online_api_filter  # <-- CHANGED HERE
+from modules.online_api_filter import module_online_api_filter
 
+# ------------------------------------------------------------
+# EINMALIGE set_page_config(...) hier ganz am Anfang aufrufen
+# ------------------------------------------------------------
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
 ################################################################################
@@ -77,7 +80,6 @@ def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
     except Exception as e:
         st.error(f"CORE search error: {e}")
         return []
-
 
 ################################################################################
 # PubMed Connection Check + (Basis) Search
@@ -151,7 +153,6 @@ def fetch_pubmed_abstract(pmid):
     except Exception as e:
         return f"(Error: {e})"
 
-
 ################################################################################
 # Europe PMC Connection Check + (Basis) Search
 ################################################################################
@@ -201,7 +202,6 @@ def search_europe_pmc_simple(query):
         st.error(f"Europe PMC search error: {e}")
         return []
 
-
 ################################################################################
 # OpenAlex API Communication
 ################################################################################
@@ -226,7 +226,6 @@ def search_openalex_simple(query):
     """Kurze Version: Liest die rohen Daten, prüft nur, ob was zurückkommt."""
     search_params = {"search": query}
     return fetch_openalex_data("works", params=search_params)
-
 
 ################################################################################
 # Google Scholar (Basis) Test
@@ -263,7 +262,6 @@ class GoogleScholarSearch:
         except Exception as e:
             st.error(f"Fehler bei der Google Scholar-Suche: {e}")
 
-
 ################################################################################
 # Semantic Scholar API Communication
 ################################################################################
@@ -278,7 +276,6 @@ def check_semantic_scholar_connection(timeout=10):
         return response.status_code == 200
     except Exception:
         return False
-
 
 class SemanticScholarSearch:
     def __init__(self):
@@ -314,12 +311,10 @@ class SemanticScholarSearch:
         except Exception as e:
             st.error(f"Semantic Scholar: {e}")
 
-
 ################################################################################
 # 2) Neues Modul: "module_excel_online_search"
 ################################################################################
-
-# [unverändert, Belassen Sie hier, falls alles korrekt läuft...]
+# [unverändert...]
 
 ################################################################################
 # 3) Restliche Module + Seiten (Pages)
@@ -327,17 +322,16 @@ class SemanticScholarSearch:
 
 def module_paperqa2():
     st.subheader("PaperQA2 Module")
-    st.write("Dies ist das PaperQA2 Modul. Hier kannst du weitere Einstellungen und Funktionen für PaperQA2 implementieren.")
+    st.write("Dies ist das PaperQA2 Modul. Hier kannst du weitere Einstellungen "
+             "und Funktionen für PaperQA2 implementieren.")
     question = st.text_input("Bitte gib deine Frage ein:")
     if st.button("Frage absenden"):
         st.write("Antwort: Dies ist eine Dummy-Antwort auf die Frage:", question)
-
 
 def page_home():
     st.title("Welcome to the Main Menu")
     st.write("Choose a module in the sidebar to proceed.")
     st.image("Bild1.jpg", caption="Willkommen!", use_container_width=False, width=600)
-
 
 def page_codewords_pubmed():
     st.title("Codewords & PubMed Settings")
@@ -346,13 +340,11 @@ def page_codewords_pubmed():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-
 def page_paper_selection():
     st.title("Paper Selection Settings")
     st.write("Define how you want to pick or exclude certain papers. (Dummy placeholder...)")
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
-
 
 def page_analysis():
     st.title("Analysis & Evaluation Settings")
@@ -360,13 +352,11 @@ def page_analysis():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-
 def page_extended_topics():
     st.title("Extended Topics")
     st.write("Access advanced or extended topics for further research. (Dummy placeholder...)")
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
-
 
 def page_paperqa2():
     st.title("PaperQA2")
@@ -374,55 +364,48 @@ def page_paperqa2():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-
 def page_excel_online_search():
     st.title("Excel Online Search")
-    # Rufen Sie bei Bedarf weiterhin module_excel_online_search() auf,
-    # sofern dieses Modul funktioniert
+    # Rufe bei Bedarf weiterhin module_excel_online_search() auf
     from modules.online_api_filter import module_online_api_filter
     # ...
-    # Oder was immer hier geplant war.
 
-
-# ---------------------------------------------------------------------------
-# 4) SEITE FÜR SELENIUM Q&A: ***auskommentiert***, um den Fehler zu verhindern
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# 4) SEITE FÜR SELENIUM Q&A: auskommentiert, um Fehler zu vermeiden
+# -----------------------------------------------------------------------------
 # def page_selenium_qa():
 #     st.title("Selenium Q&A (Modul) - Example")
-#     st.write("Dies ruft das Modul 'my_selenium_qa_module' auf.")
-#     # Da hier 'my_selenium_qa_module.main()' aufgerufen wird, kommt es
-#     # ggf. zum Import-Fehler. Also entfernen/auskommentieren:
-#     # my_selenium_qa_module.main()
+#     ...
 #     if st.button("Back to Main Menu"):
 #         st.session_state["current_page"] = "Home"
 
-
-# ---------------------------------------------------------------------------
-# 5) NEUE SEITE STATT API Selection UND Online Filter
-#    Wir rufen hier die kombinierte Funktion aus modules auf
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# 5) NEUE SEITE: Kombinierte Online API + Filter
+# -----------------------------------------------------------------------------
 def page_online_api_filter():
     st.title("Online-API_Filter (Kombiniert)")
     st.write("Hier kombinierst du ggf. API-Auswahl und Online-Filter in einem Schritt.")
-    module_online_api_filter()  # This function is presumably the combined logic
+    module_online_api_filter()  # Das kombinierte Modul
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-# ---------------------------------------------------------------------------
-# NEUE SEITE: "Analyze Paper" - Button ruft modules.analyze_paper auf
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# NEUE SEITE: "Analyze Paper" - hier importieren wir das 2. Skript (PaperAnalyzer)
+# -----------------------------------------------------------------------------
 def page_analyze_paper():
     st.title("Analyze Paper")
     st.write("Hier kannst du das Modul `analyze_paper.py` ausführen.")
-    from modules.analyze_paper import analyze_paper
 
-    if st.button("Jetzt analyze_paper ausführen"):
-        analyze_paper()  # Call your function as needed
-        st.write("Analyze-Paper-Funktion wurde ausgeführt.")
-    
+    # Wir importieren das *ganze* Skript (speziell die main-Funktion),
+    # das in modules/analyze_paper.py liegt.
+    from modules.analyze_paper import main as analyze_paper_main
+
+    st.write("Klicke auf den Button, um das PaperAnalyzer-Interface aufzurufen.")
+    if st.button("Jetzt PaperAnalyzer starten"):
+        analyze_paper_main()  # Führt die main()-Funktion aus analyze_paper.py aus
+
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
-
 
 ################################################################################
 # 6) Sidebar Module Navigation & Main
@@ -434,14 +417,14 @@ def sidebar_module_navigation():
         "Home": page_home,
         "Online-API_Filter": page_online_api_filter,
         "3) Codewords & PubMed": page_codewords_pubmed,
-        # The following lines are commented out to "remove" them from the sidebar:
+        # Auskommentiert, um sie nicht im Sidebar-Menü zu zeigen:
         # "4) Paper Selection": page_paper_selection,
         # "5) Analysis & Evaluation": page_analysis,
         # "6) Extended Topics": page_extended_topics,
         # "7) PaperQA2": page_paperqa2,
-        # "8) Excel Online Search": page_excel_online_search
-        # "9) Selenium Q&A": page_selenium_qa,   # <-- also out-commented
-        "Analyze Paper": page_analyze_paper,    # <--- Our new button
+        # "8) Excel Online Search": page_excel_online_search,
+        # "9) Selenium Q&A": page_selenium_qa,
+        "Analyze Paper": page_analyze_paper,  # Neuer Menüpunkt
     }
     for label, page in pages.items():
         if st.sidebar.button(label, key=label):
@@ -450,8 +433,8 @@ def sidebar_module_navigation():
         st.session_state["current_page"] = "Home"
     return pages[st.session_state["current_page"]]
 
-
 def main():
+    # Kleines Style-Element, kann man weglassen
     st.markdown(
         """
         <style>
@@ -463,9 +446,9 @@ def main():
         """,
         unsafe_allow_html=True
     )
+
     page_fn = sidebar_module_navigation()
     page_fn()
-
 
 if __name__ == '__main__':
     main()
