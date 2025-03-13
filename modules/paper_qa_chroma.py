@@ -1,11 +1,8 @@
 import streamlit as st
 import PyPDF2
-import pdfplumber
-import pytesseract
 import openai
 import logging
 
-from PIL import Image
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.embeddings.openai import OpenAIEmbeddings  # Expliziter Importpfad
 from langchain.vectorstores import Chroma  # Offizielle Chroma-Implementierung
@@ -14,11 +11,14 @@ from streamlit_feedback import streamlit_feedback
 logging.basicConfig(level=logging.INFO)
 
 ##############################################
-# 1) PDF-Extraktion (PyPDF2 + OCR-Fallback)
+# 1) PDF-Extraktion (nur digitale PDFs mit PyPDF2)
 ##############################################
 
-def extract_text_pypdf2(pdf_file) -> str:
-    """Versucht, Text mit PyPDF2 auszulesen."""
+def extract_text_from_pdf(pdf_file) -> str:
+    """
+    Versucht, digitalen Text mit PyPDF2 auszulesen.
+    Gibt einen String zurück (ggf. leer, wenn kein Text gefunden wurde).
+    """
     text = ""
     try:
         reader = PyPDF2.PdfReader(pdf_file)
@@ -29,45 +29,6 @@ def extract_text_pypdf2(pdf_file) -> str:
     except Exception as e:
         logging.error(f"Fehler beim Lesen mit PyPDF2: {e}")
     return text.strip()
-
-def extract_text_ocr(pdf_file) -> str:
-    """
-    Fallback-OCR mittels pdfplumber + pytesseract.
-    Wandelt jede Seite in ein Bild um und nutzt Tesseract für die Texterkennung.
-    """
-    ocr_text = ""
-    try:
-        with pdfplumber.open(pdf_file) as pdf:
-            for page_index, page in enumerate(pdf.pages, start=1):
-                pil_img = page.to_image(resolution=200).original
-                page_text = pytesseract.image_to_string(pil_img)
-                if page_text.strip():
-                    logging.debug(f"OCR auf Seite {page_index}: {len(page_text.strip())} Zeichen erkannt.")
-                    ocr_text += page_text + "\n"
-                else:
-                    logging.debug(f"OCR auf Seite {page_index} lieferte keinen Text.")
-    except Exception as e:
-        logging.error(f"Fehler bei OCR via pdfplumber/pytesseract: {e}")
-    return ocr_text.strip()
-
-def extract_text_from_pdf(pdf_file) -> str:
-    """
-    1) Versuche, mit PyPDF2 digitalen Text auszulesen.
-    2) Falls kein Text gefunden wird, OCR-Fallback mit pdfplumber + pytesseract.
-    """
-    text_pypdf = extract_text_pypdf2(pdf_file)
-    if text_pypdf:
-        logging.info("Erfolgreich Text mit PyPDF2 extrahiert.")
-        return text_pypdf
-
-    logging.info("Kein Text via PyPDF2 gefunden. Versuche OCR-Fallback ...")
-    text_ocr = extract_text_ocr(pdf_file)
-    if text_ocr:
-        logging.info("OCR-Fallback war erfolgreich (pytesseract).")
-        return text_ocr
-    else:
-        logging.warning("OCR-Fallback hat ebenfalls keinen Text gefunden.")
-        return ""
 
 ##############################################
 # 2) Chroma + OpenAI Q&A
@@ -136,13 +97,13 @@ def save_feedback(index):
 ##############################################
 
 def main():
-    st.title("📄 Paper-QA Chatbot mit OCR-Fallback (Offizielle Chroma)")
-
-    # Optionale API-Key-Konfiguration:
+    st.title("📄 Paper-QA Chatbot (nur digitale PDFs)")
+    
+    # Optional: OpenAI-API-Key aus st.secrets nutzen:
     # openai.api_key = st.secrets["OPENAI_API_KEY"]
 
     uploaded_files = st.file_uploader(
-        "PDF-Dokument(e) hochladen (auch gescannte):",
+        "PDF-Dokument(e) hochladen (nur digitale PDFs):",
         type=["pdf"],
         accept_multiple_files=True
     )
@@ -162,10 +123,9 @@ def main():
             st.error(
                 "Es konnte kein Text aus den PDFs extrahiert werden.\n\n"
                 "Mögliche Ursachen:\n"
-                "- PDF ist rein gescannt und Tesseract ist nicht oder falsch installiert.\n"
-                "- PDF ist verschlüsselt oder geschützt.\n"
-                "- OCR erkennt nur leere Ergebnisse (z. B. sehr schlechte Scanqualität).\n\n"
-                "Bitte überprüfen Sie die Dateien oder konfigurieren Sie Tesseract."
+                "- PDF enthält keinen maschinenlesbaren Text (z.B. gescannte Bilder).\n"
+                "- PDF ist verschlüsselt oder geschützt.\n\n"
+                "Bitte laden Sie nur digitale PDFs hoch."
             )
 
     # Chat-Verlauf initialisieren
