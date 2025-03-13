@@ -18,16 +18,20 @@ st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 ################################################################################
 
 def show_login():
-    """Zeigt das Login-Formular und das Willkommensbild an."""
+    """Zeigt das Login-Formular und das Willkommensbild an, prüft mit secrets."""
     st.title("Bitte zuerst einloggen")
     st.image("Bild1.jpg", caption="Willkommen!", use_container_width=False, width=600)
+
+    # Lies die Zugangsdaten aus st.secrets (Sektion [login]) ein:
+    SECRET_USER = st.secrets["login"]["username"]
+    SECRET_PASS = st.secrets["login"]["password"]
 
     user = st.text_input("Benutzername:")
     pw = st.text_input("Passwort:", type="password")
 
     if st.button("Einloggen"):
-        # Beispielhaftes Checken der Zugangsdaten
-        if user == "demo" and pw == "secret":
+        # Vergleiche die Eingaben mit den hinterlegten Secrets
+        if user == SECRET_USER and pw == SECRET_PASS:
             st.session_state["logged_in"] = True
             st.success("Erfolgreich eingeloggt! Wähle nun im Seitenmenü eine Funktion.")
         else:
@@ -93,10 +97,9 @@ def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
         st.error(f"CORE search error: {e}")
         return []
 
-
 ################################################################################
 # (PubMed-Funktionen, EuropePMC, OpenAlex usw. bleiben unverändert)
-# ... Code analog deinem Beispiel ...
+# ... Dein restlicher Code ...
 ################################################################################
 
 ################################################################################
@@ -148,7 +151,7 @@ def sidebar_module_navigation():
 
     # Falls NICHT eingeloggt => kein Seitenmenü anzeigen
     if not st.session_state["logged_in"]:
-        return None  # Damit man im main() merkt: Keine "richtige" Seite gewählt
+        return None  # Keine Seitenauswahl möglich
 
     # Wenn eingeloggt, normales Seitenmenü
     st.sidebar.title("Modul-Navigation")
@@ -157,7 +160,7 @@ def sidebar_module_navigation():
         "Online-API_Filter": page_online_api_filter,
         "Codewords & PubMed": page_codewords_pubmed,
         "Analyze Paper": page_analyze_paper,
-        # Weitere Seite-Funktionen hier ...
+        # Ggf. weitere Seite-Funktionen hier ...
     }
 
     for label, page in pages.items():
@@ -170,30 +173,21 @@ def sidebar_module_navigation():
     return pages.get(st.session_state["current_page"], page_home)
 
 def main():
-    # -------------------------
     # 1) LOGIN PRÜFEN
-    # -------------------------
     if "logged_in" not in st.session_state:
         st.session_state["logged_in"] = False
 
     if not st.session_state["logged_in"]:
-        # Wenn nicht eingeloggt: Zeige das Login
-        show_login()
-        return  # Danach Abbruch => Login-Seite bleibt stehen
+        show_login()  # Nutzer sieht nur das Login
+        return  # Danach Abbruch => keine weiteren Seiten
 
-    # -------------------------
     # 2) NAVIGATION
-    # -------------------------
     page_fn = sidebar_module_navigation()
     if page_fn is None:
-        # Falls noch keine Seite
-        st.stop()
+        st.stop()  # Abbrechen, falls kein Zugriff
 
-    # -------------------------
     # 3) GEWÄHLTE SEITE AUSFÜHREN
-    # -------------------------
     page_fn()
-
 
 if __name__ == '__main__':
     main()
