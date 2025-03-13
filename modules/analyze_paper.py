@@ -4,8 +4,9 @@ import openai
 import streamlit as st
 from dotenv import load_dotenv
 
-# Seitentitel und Layout nur einmalig aufrufen
-st.set_page_config(page_title="PaperAnalyzer", layout="wide")
+# Entferne oder kommentiere aus, wenn du das Skript
+# als Untermodul in einer größeren App verwendest:
+# st.set_page_config(page_title="PaperAnalyzer", layout="wide")
 
 # Umgebungsvariablen aus .env-Datei laden
 load_dotenv()
@@ -37,19 +38,24 @@ class PaperAnalyzer:
 
     def analyze_with_openai(self, text, prompt_template, api_key):
         """
-        Analysiert Text mit (vermutlich) einem Wrapper-Client, 
-        in dem openai.OpenAI(api_key=...) funktioniert.
+        Analysiert den gegebenen Text mit OpenAI über dein
+        (vermutlich) eigenes Wrapper-Objekt openai.OpenAI(api_key=...).
+
+        Wenn du die offizielle 'openai'-Bibliothek von PyPI nutzt,
+        ersetze das hier durch:
         
-        Falls du die offizielle openai-Bibliothek nutzt, 
-        ersetze das durch openai.api_key = api_key, 
-        und dann openai.ChatCompletion.create(...)
+            openai.api_key = api_key
+            response = openai.ChatCompletion.create(...)
+        
+        statt openai.OpenAI(api_key=...).
         """
+        # Tokenlimit-Schutz
         if len(text) > 15000:
             text = text[:15000] + "..."
 
         prompt = prompt_template.format(text=text)
 
-        # Wenn du einen speziellen Wrapper nutzt:
+        # Beispiel: Wrapper-Client, NICHT offizielle openai-Bibliothek
         client = openai.OpenAI(api_key=api_key)
 
         response = client.chat.completions.create(
@@ -57,7 +63,10 @@ class PaperAnalyzer:
             messages=[
                 {
                     "role": "system",
-                    "content": "Du bist ein Experte für die Analyse wissenschaftlicher Paper, besonders im Bereich Side-Channel Analysis."
+                    "content": (
+                        "Du bist ein Experte für die Analyse wissenschaftlicher Paper, "
+                        "besonders im Bereich Side-Channel Analysis."
+                    )
                 },
                 {"role": "user", "content": prompt}
             ],
@@ -108,36 +117,36 @@ def main():
     # Seitenmenü
     st.sidebar.header("Einstellungen")
     
-    # API-Key aus .env oder Eingabe
+    # 1) API-Key erfassen
     api_key = st.sidebar.text_input("OpenAI API Key", type="password", value=OPENAI_API_KEY or "")
     
-    # Modell-Auswahl
+    # 2) Modell-Auswahl
     model = st.sidebar.selectbox(
         "OpenAI-Modell",
         options=["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4o"],
         index=0
     )
     
-    # Analyseart
+    # 3) Analyseart
     action = st.sidebar.radio(
         "Analyseart",
         ["Zusammenfassung", "Wichtigste Erkenntnisse", "Methoden & Techniken", "Relevanz-Bewertung"],
         index=0
     )
     
-    # Thema (nur falls Relevanz-Bewertung)
+    # 4) Thema bei Relevanz-Bewertung
     topic = ""
     if action == "Relevanz-Bewertung":
         topic = st.sidebar.text_input("Thema für Relevanz-Bewertung")
     
-    # PDF-Upload
+    # 5) PDF-Upload
     uploaded_file = st.file_uploader("PDF-Datei hochladen", type="pdf")
     
     # Analyzer-Objekt erstellen
     analyzer = PaperAnalyzer(model=model)
     
+    # 6) Wenn Datei hochgeladen und API-KEY vorhanden => Analyse
     if uploaded_file and api_key:
-        # Button, um PDF zu verarbeiten
         if st.button("Analyse starten"):
             with st.spinner("Extrahiere Text aus PDF..."):
                 text = analyzer.extract_text_from_pdf(uploaded_file)
@@ -159,7 +168,6 @@ def main():
                         st.stop()
                     result = analyzer.evaluate_relevance(text, topic, api_key)
                 
-                # Ergebnis anzeigen
                 st.subheader("Ergebnis der Analyse")
                 st.markdown(result)
     else:
