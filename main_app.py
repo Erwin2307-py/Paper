@@ -12,7 +12,7 @@ import datetime
 # ENTFERNT: Hier importieren wir dein Selenium-Modul aus modules/
 # from modules import my_selenium_qa_module
 
-# NEW: We import the combined “online API + filter” module
+# NEW: We import the combined "online API + filter" module
 from modules.online_api_filter import module_online_api_filter  # <-- CHANGED HERE
 
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
@@ -131,7 +131,6 @@ def search_pubmed_simple(query):
         st.error(f"Error searching PubMed: {e}")
         return []
 
-
 def fetch_pubmed_abstract(pmid):
     """Holt den Abstract via efetch für eine gegebene PubMed-ID."""
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
@@ -226,7 +225,6 @@ def search_openalex_simple(query):
     """Kurze Version: Liest die rohen Daten, prüft nur, ob was zurückkommt."""
     search_params = {"search": query}
     return fetch_openalex_data("works", params=search_params)
-
 
 ################################################################################
 # Google Scholar (Basis) Test
@@ -353,7 +351,6 @@ def page_paper_selection():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-
 def page_analysis():
     st.title("Analysis & Evaluation Settings")
     st.write("Set up your analysis parameters, thresholds, etc. (Dummy placeholder...)")
@@ -450,7 +447,6 @@ def main():
     )
     page_fn = sidebar_module_navigation()
     page_fn()
-
 
 if __name__ == '__main__':
     main()
