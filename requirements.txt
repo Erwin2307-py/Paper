@@ -32,3 +32,5 @@ easyocr
 numpy
 torch
 langchain-community>=0.0.10
+haystack
+logging
