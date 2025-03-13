@@ -31,4 +31,3 @@ faiss-cpu
 easyocr
 numpy
 torch
-langchain-community>=0.0.10
