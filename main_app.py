@@ -1,214 +1,191 @@
+import os
+import PyPDF2
+import openai
 import streamlit as st
-import requests
-import xml.etree.ElementTree as ET
-import pandas as pd
-from io import BytesIO
-import re
-import datetime
+from dotenv import load_dotenv
 
-from modules.online_api_filter import module_online_api_filter  # Falls noch benötigt
+# Seitentitel und Layout
+st.set_page_config(page_title="PaperAnalyzer", layout="wide")
 
-# ------------------------------------------------------------
-# EINMALIGE set_page_config(...) hier ganz am Anfang aufrufen
-# ------------------------------------------------------------
-st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
+# Umgebungsvariablen aus .env-Datei laden
+load_dotenv()
 
-################################################################################
-# 0) LOGIN-FUNKTION
-################################################################################
+# OpenAI API-Key aus Umgebungsvariablen
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-def show_login():
-    """Zeigt Login-Bild links und Eingabefelder rechts, prüft Credentials via st.secrets."""
-    # 1) Lese Benutzer/Passwort aus den Secrets:
-    SECRET_USER = st.secrets["login"]["username"]
-    SECRET_PASS = st.secrets["login"]["password"]
+class PaperAnalyzer:
+    def __init__(self, model="gpt-3.5-turbo"):
+        """
+        Initialisiert den Paper-Analyzer
+        
+        :param model: OpenAI-Modell für die Analyse
+        """
+        self.model = model
+    
+    def extract_text_from_pdf(self, pdf_file):
+        """
+        Extrahiert Text aus einem PDF-Dokument
+        
+        :param pdf_file: PDF-Datei als FileUploader-Objekt
+        :return: Extrahierter Text
+        """
+        reader = PyPDF2.PdfReader(pdf_file)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() + "\n"
+        return text
 
-    # Erzeuge zwei Spalten für Bild (links) und Formular (rechts)
-    col1, col2 = st.columns([1,1])  # zwei gleich breite Spalten
-
-    with col1:
-        # Linke Spalte: Bild + Titel
-        st.title("Bitte zuerst einloggen")
-        st.image("Bild1.jpg", caption="Willkommen!", use_container_width=True)
-
-    with col2:
-        # Rechte Spalte: Eingabefelder
-        st.write("## Login-Daten eingeben:")
-        user = st.text_input("Benutzername:")
-        pw = st.text_input("Passwort:", type="password")
-
-        if st.button("Einloggen"):
-            # Vergleiche die Eingaben mit den Secrets
-            if user == SECRET_USER and pw == SECRET_PASS:
-                st.session_state["logged_in"] = True
-                st.success("Erfolgreich eingeloggt! Wähle nun im Seitenmenü eine Funktion.")
-            else:
-                st.error("Falsche Anmeldedaten. Bitte erneut versuchen.")
-
-
-################################################################################
-# 1) Gemeinsame Funktionen & Klassen
-################################################################################
-
-class CoreAPI:
-    def __init__(self, api_key):
-        self.base_url = "https://api.core.ac.uk/v3/"
-        self.headers = {"Authorization": f"Bearer {api_key}"}
-
-    def search_publications(self, query, filters=None, sort=None, limit=100):
-        endpoint = "search/works"
-        params = {"q": query, "limit": limit}
-        if filters:
-            filter_expressions = []
-            for key, value in filters.items():
-                filter_expressions.append(f"{key}:{value}")
-            params["filter"] = ",".join(filter_expressions)
-        if sort:
-            params["sort"] = sort
-        r = requests.get(
-            self.base_url + endpoint,
-            headers=self.headers,
-            params=params,
-            timeout=15
+    def analyze_with_dummy_logic(self, text, task_info):
+        """
+        Dummy-Analyse, falls kein gültiger OpenAI-API-Key vorliegt.
+        
+        :param text: Extrahierter Volltext aus dem PDF
+        :param task_info: Kurze Beschreibung der Aufgabe (z.B. "Zusammenfassung" usw.)
+        :return: Simulierter Ergebnis-String
+        """
+        # Beispielhafter "Dummy"-Ansatz: Zeichen- und Wortanzahl ermitteln
+        num_chars = len(text)
+        num_words = len(text.split())
+        dummy_response = (
+            f"**DUMMY-Analyse für: {task_info}**\n\n"
+            f"Anzahl Zeichen im Text: {num_chars}\n"
+            f"Anzahl Wörter im Text: {num_words}\n\n"
+            f"Dies ist eine simulierte Ausgabe, da kein OpenAI API-Key vorhanden ist "
+            f"oder die KI-Analyse nicht aufgerufen wurde."
         )
-        r.raise_for_status()
-        return r.json()
+        return dummy_response
 
+    def analyze_with_openai(self, text, prompt_template, api_key):
+        """
+        Analysiert Text mit OpenAI API
+        
+        :param text: Zu analysierender Text
+        :param prompt_template: Vorlage für den Prompt
+        :param api_key: OpenAI API Key
+        :return: Antwort von OpenAI
+        """
+        # Text kürzen, falls er zu lang ist (Token-Limit beachten)
+        if len(text) > 15000:
+            text = text[:15000] + "..."
+        
+        prompt = prompt_template.format(text=text)
 
-def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", timeout=15):
-    try:
-        core = CoreAPI(api_key)
-        result = core.search_publications("test", limit=1)
-        return "results" in result
-    except Exception:
-        return False
-
-
-def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
-    if not api_key:
-        return []
-    try:
-        core = CoreAPI(api_key)
-        raw = core.search_publications(query, limit=100)
-        out = []
-        results = raw.get("results", [])
-        for item in results:
-            title = item.get("title", "n/a")
-            year = str(item.get("yearPublished", "n/a"))
-            journal = item.get("publisher", "n/a")
-            out.append({
-                "PMID": "n/a",
-                "Title": title,
-                "Year": year,
-                "Journal": journal
-            })
-        return out
-    except Exception as e:
-        st.error(f"CORE search error: {e}")
-        return []
-
-
-################################################################################
-# (PubMed-Funktionen, EuropePMC, OpenAlex usw. bleiben unverändert)
-# ... Code analog deinem Beispiel ...
-################################################################################
-
-################################################################################
-# 3) Pages
-################################################################################
-
-def module_paperqa2():
-    st.subheader("PaperQA2 Module")
-    st.write("Dies ist das PaperQA2 Modul. Hier kannst du weitere Einstellungen "
-             "und Funktionen für PaperQA2 implementieren.")
-    question = st.text_input("Bitte gib deine Frage ein:")
-    if st.button("Frage absenden"):
-        st.write("Antwort: Dies ist eine Dummy-Antwort auf die Frage:", question)
-
-def page_home():
-    st.title("Welcome to the Main Menu")
-    st.write("Du bist erfolgreich eingeloggt! Wähle ein Modul in der Sidebar aus, um fortzufahren.")
-
-def page_codewords_pubmed():
-    st.title("Codewords & PubMed Settings")
-    from modules.codewords_pubmed import module_codewords_pubmed
-    module_codewords_pubmed()
-    if st.button("Back to Main Menu"):
-        st.session_state["current_page"] = "Home"
-
-def page_online_api_filter():
-    st.title("Online-API_Filter (Kombiniert)")
-    st.write("Hier kombinierst du ggf. API-Auswahl und Online-Filter in einem Schritt.")
-    module_online_api_filter()
-    if st.button("Back to Main Menu"):
-        st.session_state["current_page"] = "Home"
-
-# Beispiel: "Analyze Paper" Seite
-def page_analyze_paper():
-    st.title("Analyze Paper")
-    st.write("Füge hier deinen Code für das Analysieren eines Papers ein, "
-             "oder integriere den Code aus 'analyze_paper.py' direkt.")
-    if st.button("Back to Main Menu"):
-        st.session_state["current_page"] = "Home"
-
-
-################################################################################
-# 4) Sidebar Module Navigation & Main
-################################################################################
-
-def sidebar_module_navigation():
-    # Falls wir noch keinen Login-Status haben, definieren wir ihn hier.
-    if "logged_in" not in st.session_state:
-        st.session_state["logged_in"] = False
-
-    # Falls NICHT eingeloggt => kein Seitenmenü anzeigen
-    if not st.session_state["logged_in"]:
-        return None  # Damit man im main() merkt: Keine "richtige" Seite gewählt
-
-    # Wenn eingeloggt, normales Seitenmenü
-    st.sidebar.title("Modul-Navigation")
-    pages = {
-        "Home": page_home,
-        "Online-API_Filter": page_online_api_filter,
-        "Codewords & PubMed": page_codewords_pubmed,
-        "Analyze Paper": page_analyze_paper,
-        # Weitere Seite-Funktionen hier ...
-    }
-
-    for label, page in pages.items():
-        if st.sidebar.button(label, key=label):
-            st.session_state["current_page"] = label
-
-    if "current_page" not in st.session_state:
-        st.session_state["current_page"] = "Home"
-
-    return pages.get(st.session_state["current_page"], page_home)
+        # Wichtig: openai muss mit openai.api_key=... genutzt werden
+        openai.api_key = api_key
+        
+        response = openai.ChatCompletion.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": "Du bist ein Experte für die Analyse wissenschaftlicher Paper, besonders im Bereich Side-Channel Analysis."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=1500
+        )
+        
+        return response.choices[0].message.content
+    
+    def summarize(self, text, api_key):
+        """Erstellt eine Zusammenfassung des Papers"""
+        prompt = (
+            "Erstelle eine strukturierte Zusammenfassung des folgenden wissenschaftlichen Papers. "
+            "Gliedere es in: Hintergrund, Methodik, Ergebnisse und Schlussfolgerungen. "
+            "Verwende maximal 500 Wörter:\n\n{text}"
+        )
+        return self.analyze_with_openai(text, prompt, api_key)
+    
+    def extract_key_findings(self, text, api_key):
+        """Extrahiert die wichtigsten Erkenntnisse"""
+        prompt = (
+            "Extrahiere die 5 wichtigsten Erkenntnisse aus diesem wissenschaftlichen Paper "
+            "im Bereich Side-Channel Analysis. Liste sie mit Bulletpoints auf:\n\n{text}"
+        )
+        return self.analyze_with_openai(text, prompt, api_key)
+    
+    def identify_methods(self, text, api_key):
+        """Identifiziert verwendete Methoden und Techniken"""
+        prompt = (
+            "Identifiziere und beschreibe die im Paper verwendeten Methoden und Techniken zur Side-Channel-Analyse. "
+            "Gib zu jeder Methode eine kurze Erklärung:\n\n{text}"
+        )
+        return self.analyze_with_openai(text, prompt, api_key)
+    
+    def evaluate_relevance(self, text, topic, api_key):
+        """Bewertet die Relevanz des Papers für ein bestimmtes Thema"""
+        prompt = (
+            f"Bewerte die Relevanz dieses Papers für das Thema '{topic}' auf einer Skala von 1-10. "
+            "Begründe deine Bewertung:\n\n{text}"
+        )
+        return self.analyze_with_openai(text, prompt, api_key)
 
 def main():
-    # -------------------------
-    # 1) LOGIN PRÜFEN
-    # -------------------------
-    if "logged_in" not in st.session_state:
-        st.session_state["logged_in"] = False
+    st.title("📄 PaperAnalyzer - Analyse wissenschaftlicher Papers mit KI")
+    
+    # Seitenmenü
+    st.sidebar.header("Einstellungen")
+    
+    # OpenAI API Key
+    api_key = st.sidebar.text_input("OpenAI API Key", type="password", value=OPENAI_API_KEY or "")
+    
+    # Modellauswahl
+    model = st.sidebar.selectbox(
+        "OpenAI-Modell",
+        options=["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4o"],
+        index=0
+    )
+    
+    # Analyseart
+    action = st.sidebar.radio(
+        "Analyseart",
+        options=["Zusammenfassung", "Wichtigste Erkenntnisse", "Methoden & Techniken", "Relevanz-Bewertung"],
+        index=0
+    )
+    
+    # Thema für Relevanz-Bewertung
+    topic = ""
+    if action == "Relevanz-Bewertung":
+        topic = st.sidebar.text_input("Thema für Relevanz-Bewertung")
+    
+    # PDF-Upload
+    uploaded_file = st.file_uploader("PDF-Datei hochladen", type="pdf")
+    
+    # Initialize analyzer
+    analyzer = PaperAnalyzer(model=model)
+    
+    if uploaded_file:
+        # Button zum Starten der Analyse
+        if st.button("Analyse starten"):
+            # Schritt 1: PDF-Text extrahieren
+            with st.spinner("Extrahiere Text aus PDF..."):
+                text = analyzer.extract_text_from_pdf(uploaded_file)
+                st.success("Text wurde erfolgreich extrahiert!")
+            
+            # Schritt 2: Prüfen, ob API-Key vorhanden -> AI oder Dummy
+            if not api_key:
+                st.warning("Kein gültiger OpenAI API-Key eingegeben. Es wird eine Dummy-Analyse durchgeführt.")
+                # Dummy-Analyse durchführen
+                task_info = action if action != "Relevanz-Bewertung" else f"{action} (Topic: {topic})"
+                result = analyzer.analyze_with_dummy_logic(text, task_info)
+            else:
+                # OpenAI-Analyse
+                with st.spinner(f"Führe {action}-Analyse durch..."):
+                    if action == "Zusammenfassung":
+                        result = analyzer.summarize(text, api_key)
+                    elif action == "Wichtigste Erkenntnisse":
+                        result = analyzer.extract_key_findings(text, api_key)
+                    elif action == "Methoden & Techniken":
+                        result = analyzer.identify_methods(text, api_key)
+                    elif action == "Relevanz-Bewertung":
+                        if not topic:
+                            st.error("Bitte geben Sie ein Thema für die Relevanz-Bewertung an!")
+                            st.stop()
+                        result = analyzer.evaluate_relevance(text, topic, api_key)
 
-    if not st.session_state["logged_in"]:
-        # Wenn nicht eingeloggt: Zeige das Login
-        show_login()
-        return  # Danach Abbruch => Login-Seite bleibt stehen
+            # Schritt 3: Ergebnis anzeigen
+            st.subheader("Ergebnis der Analyse")
+            st.markdown(result)
+    else:
+        st.info("Bitte laden Sie eine PDF-Datei hoch, um zu starten.")
 
-    # -------------------------
-    # 2) NAVIGATION
-    # -------------------------
-    page_fn = sidebar_module_navigation()
-    if page_fn is None:
-        # Falls noch keine Seite
-        st.stop()
-
-    # -------------------------
-    # 3) GEWÄHLTE SEITE AUSFÜHREN
-    # -------------------------
-    page_fn()
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
