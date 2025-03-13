@@ -4,19 +4,34 @@ import openai
 import streamlit as st
 from dotenv import load_dotenv
 
-# Nur einmal aufrufen, wenn dieses Skript das "Hauptskript" ist.
-# st.set_page_config(page_title="PaperAnalyzer", layout="wide")
+# Nur verwenden, wenn es ein eigenständiges Skript ist.
+# Falls es in eine andere App importiert wird, bitte auskommentieren!
+st.set_page_config(page_title="PaperAnalyzer", layout="wide")
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+# ------------------------------------------------------
+# Session State: Wir halten hier den extrahierten PDF-Text
+# und das letzte geladene Dateiname fest
+# ------------------------------------------------------
+if "pdf_text" not in st.session_state:
+    st.session_state["pdf_text"] = None
+
+if "last_uploaded_filename" not in st.session_state:
+    st.session_state["last_uploaded_filename"] = None
+
+if "analysis_result" not in st.session_state:
+    st.session_state["analysis_result"] = None
+
+
 class PaperAnalyzer:
     def __init__(self, model="gpt-3.5-turbo"):
-        """Initialisiert den Paper-Analyzer."""
+        """Initialisiert den PaperAnalyzer."""
         self.model = model
 
     def extract_text_from_pdf(self, pdf_file):
-        """Extrahiert Text aus einem PDF-Dokument."""
+        """Extrahiert Text aus einem PDF-Dokument und gibt ihn zurück."""
         reader = PyPDF2.PdfReader(pdf_file)
         text = ""
         for page in reader.pages:
@@ -26,17 +41,17 @@ class PaperAnalyzer:
         return text
 
     def analyze_with_openai(self, text, prompt_template, api_key):
-        """Analysiert den gegebenen Text via OpenAI (Wrapper oder offizielle Lib)."""
-        # Tokenlimit-Schutz
+        """
+        Analysiert den gegebenen Text via (vermutlich) openai.OpenAI(api_key=...).
+        Falls du die offizielle openai-Bibliothek verwendest, musst du 
+        openai.api_key = api_key setzen und ChatCompletion.create(...) aufrufen.
+        """
         if len(text) > 15000:
             text = text[:15000] + "..."
 
         prompt = prompt_template.format(text=text)
-        # Wenn du offiziell openai benutzt:
-        # openai.api_key = api_key
-        # response = openai.ChatCompletion.create(...)
-        client = openai.OpenAI(api_key=api_key)
 
+        client = openai.OpenAI(api_key=api_key)
         response = client.chat.completions.create(
             model=self.model,
             messages=[
@@ -55,7 +70,6 @@ class PaperAnalyzer:
         return response.choices[0].message.content
 
     def summarize(self, text, api_key):
-        """Erstellt eine Zusammenfassung."""
         prompt = (
             "Erstelle eine strukturierte Zusammenfassung des folgenden "
             "wissenschaftlichen Papers. Gliedere es in: Hintergrund, Methodik, "
@@ -88,9 +102,8 @@ class PaperAnalyzer:
 
 
 def main():
-    st.title("📄 PaperAnalyzer - Immer mit Analyse-Button")
+    st.title("PaperAnalyzer – PDF hochladen & Analyse starten")
 
-    # Seitenmenü
     st.sidebar.header("Einstellungen")
     api_key = st.sidebar.text_input("OpenAI API Key", type="password", value=OPENAI_API_KEY or "")
     model = st.sidebar.selectbox(
@@ -107,55 +120,61 @@ def main():
     if action == "Relevanz-Bewertung":
         topic = st.sidebar.text_input("Thema für Relevanz-Bewertung")
 
-    # PDF-Upload
     uploaded_file = st.file_uploader("PDF-Datei hochladen", type="pdf")
 
-    # Analyzer
     analyzer = PaperAnalyzer(model=model)
 
-    # Immer Button anzeigen
-    st.write("Klicke auf den Button, um die Analyse zu starten (unabhängig vom Upload/API-Key).")
-
+    # Wenn eine neue Datei hochgeladen wurde (oder gar keine in session_state war),
+    # dann extrahiere sofort den Text und speichere ihn in session_state["pdf_text"].
+    if uploaded_file is not None:
+        # Prüfe, ob es eine andere Datei als die zuletzt geladene ist
+        if (
+            uploaded_file.name != st.session_state["last_uploaded_filename"]
+            or st.session_state["pdf_text"] is None
+        ):
+            with st.spinner(f"PDF '{uploaded_file.name}' wird gelesen..."):
+                text = analyzer.extract_text_from_pdf(uploaded_file)
+                st.session_state["pdf_text"] = text
+                st.session_state["last_uploaded_filename"] = uploaded_file.name
+                st.session_state["analysis_result"] = None  # ggf. altes Ergebnis löschen
+            if text.strip():
+                st.success("PDF-Text erfolgreich extrahiert.")
+            else:
+                st.warning("Die PDF scheint keinen auslesbaren Text zu enthalten.")
+    
+    # Button zum Starten der Analyse
     if st.button("Analyse starten"):
-        st.write("Analyse-Button geklickt!")
-        
-        # 1) Check: API Key
+        # Falls kein Key eingegeben
         if not api_key:
-            st.error("Kein OpenAI API-Key eingetragen!")
+            st.error("Kein OpenAI API-Key vorhanden!")
             st.stop()
 
-        # 2) Check: PDF
-        if not uploaded_file:
-            st.error("Keine PDF-Datei hochgeladen!")
+        # Falls keine PDF (bzw. kein Text) vorhanden
+        if not st.session_state["pdf_text"] or not st.session_state["pdf_text"].strip():
+            st.error("Kein Text vorhanden – bitte eine valide PDF hochladen!")
             st.stop()
 
-        # 3) Extrahiere Text
-        with st.spinner("Extrahiere Text aus PDF..."):
-            text = analyzer.extract_text_from_pdf(uploaded_file)
-            if not text.strip():
-                st.error("Keine oder nur leere Inhalte im PDF! Evtl. gescannt?")
-                st.stop()
-            st.success("Text wurde erfolgreich extrahiert!")
-
-        # 4) Analyse ausführen
+        # Analyse durchführen
         with st.spinner(f"Führe {action}-Analyse durch..."):
             if action == "Zusammenfassung":
-                result = analyzer.summarize(text, api_key)
+                result = analyzer.summarize(st.session_state["pdf_text"], api_key)
             elif action == "Wichtigste Erkenntnisse":
-                result = analyzer.extract_key_findings(text, api_key)
+                result = analyzer.extract_key_findings(st.session_state["pdf_text"], api_key)
             elif action == "Methoden & Techniken":
-                result = analyzer.identify_methods(text, api_key)
+                result = analyzer.identify_methods(st.session_state["pdf_text"], api_key)
             elif action == "Relevanz-Bewertung":
                 if not topic:
                     st.error("Bitte ein Thema für die Relevanz-Bewertung angeben!")
                     st.stop()
-                result = analyzer.evaluate_relevance(text, topic, api_key)
+                result = analyzer.evaluate_relevance(st.session_state["pdf_text"], topic, api_key)
 
-            st.subheader("Ergebnis der Analyse")
-            st.markdown(result)
+        # Ergebnis in Session-State merken, um es auch nach Rerun noch zu haben
+        st.session_state["analysis_result"] = result
 
-    else:
-        st.info("Noch keine Analyse gestartet. Bitte Button klicken.")
+    # Falls bereits ein Analyseergebnis vorliegt, anzeigen
+    if st.session_state["analysis_result"]:
+        st.subheader("Ergebnis der Analyse")
+        st.markdown(st.session_state["analysis_result"])
 
 
 if __name__ == "__main__":
