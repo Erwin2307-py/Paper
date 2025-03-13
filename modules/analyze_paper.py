@@ -4,8 +4,10 @@ import openai
 import streamlit as st
 from dotenv import load_dotenv
 
-# Seitentitel und Layout
-st.set_page_config(page_title="PaperAnalyzer", layout="wide")
+# --------------------------------------------
+# REMOVED the st.set_page_config(...) call here
+# so it doesn't conflict with the main script.
+# --------------------------------------------
 
 # Umgebungsvariablen aus .env-Datei laden
 load_dotenv()
@@ -66,23 +68,39 @@ class PaperAnalyzer:
     
     def summarize(self, text, api_key):
         """Erstellt eine Zusammenfassung des Papers"""
-        prompt = "Erstelle eine strukturierte Zusammenfassung des folgenden wissenschaftlichen Papers. Gliedere es in: Hintergrund, Methodik, Ergebnisse und Schlussfolgerungen. Verwende maximal 500 Wörter:\n\n{text}"
+        prompt = (
+            "Erstelle eine strukturierte Zusammenfassung des folgenden "
+            "wissenschaftlichen Papers. Gliedere es in: Hintergrund, Methodik, "
+            "Ergebnisse und Schlussfolgerungen. Verwende maximal 500 Wörter:\n\n{text}"
+        )
         return self.analyze_with_openai(text, prompt, api_key)
     
     def extract_key_findings(self, text, api_key):
         """Extrahiert die wichtigsten Erkenntnisse"""
-        prompt = "Extrahiere die 5 wichtigsten Erkenntnisse aus diesem wissenschaftlichen Paper im Bereich Side-Channel Analysis. Liste sie mit Bulletpoints auf:\n\n{text}"
+        prompt = (
+            "Extrahiere die 5 wichtigsten Erkenntnisse aus diesem "
+            "wissenschaftlichen Paper im Bereich Side-Channel Analysis. "
+            "Liste sie mit Bulletpoints auf:\n\n{text}"
+        )
         return self.analyze_with_openai(text, prompt, api_key)
     
     def identify_methods(self, text, api_key):
         """Identifiziert verwendete Methoden und Techniken"""
-        prompt = "Identifiziere und beschreibe die im Paper verwendeten Methoden und Techniken zur Side-Channel-Analyse. Gib zu jeder Methode eine kurze Erklärung:\n\n{text}"
+        prompt = (
+            "Identifiziere und beschreibe die im Paper verwendeten Methoden "
+            "und Techniken zur Side-Channel-Analyse. Gib zu jeder Methode "
+            "eine kurze Erklärung:\n\n{text}"
+        )
         return self.analyze_with_openai(text, prompt, api_key)
     
     def evaluate_relevance(self, text, topic, api_key):
         """Bewertet die Relevanz des Papers für ein bestimmtes Thema"""
-        prompt = f"Bewerte die Relevanz dieses Papers für das Thema '{topic}' auf einer Skala von 1-10. Begründe deine Bewertung:\n\n{{text}}"
+        prompt = (
+            f"Bewerte die Relevanz dieses Papers für das Thema '{topic}' "
+            f"auf einer Skala von 1-10. Begründe deine Bewertung:\n\n{{text}}"
+        )
         return self.analyze_with_openai(text, prompt, api_key)
+
 
 def main():
     st.title("📄 PaperAnalyzer - Analyse wissenschaftlicher Papers mit KI")
@@ -147,6 +165,7 @@ def main():
         st.warning("Bitte geben Sie Ihren OpenAI API-Key ein!")
     elif not uploaded_file:
         st.info("Bitte laden Sie eine PDF-Datei hoch!")
+
 
 if __name__ == "__main__":
     main()
