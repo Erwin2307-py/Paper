@@ -25,7 +25,7 @@ streamlit-feedback
 pytesseract
 Pillow
 loguru
-pydantic>=2
+pydantic>=1,<2
 litellm
 faiss-cpu
 easyocr
