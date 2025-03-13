@@ -6,46 +6,49 @@ from io import BytesIO
 import re
 import datetime
 
-from modules.online_api_filter import module_online_api_filter
+from modules.online_api_filter import module_online_api_filter  # Falls noch benötigt
 
 # ------------------------------------------------------------
-# EINMALIGE set_page_config(...) 
+# EINMALIGE set_page_config(...) hier ganz am Anfang aufrufen
 # ------------------------------------------------------------
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
-###############################################################################
+################################################################################
 # 0) LOGIN-FUNKTION
-###############################################################################
+################################################################################
 
 def show_login():
-    """Zeigt das Login-Formular und das Willkommensbild an (nebeneinander)."""
-    # Du kannst columns anlegen, wenn du Bild/Eingabe nebeneinander haben möchtest:
-    col_img, col_form = st.columns([1,1])
+    """Zeigt Login-Bild links und Eingabefelder rechts, prüft Credentials via st.secrets."""
+    # 1) Lese Benutzer/Passwort aus den Secrets:
+    SECRET_USER = st.secrets["login"]["username"]
+    SECRET_PASS = st.secrets["login"]["password"]
 
-    with col_img:
+    # Erzeuge zwei Spalten für Bild (links) und Formular (rechts)
+    col1, col2 = st.columns([1,1])  # zwei gleich breite Spalten
+
+    with col1:
+        # Linke Spalte: Bild + Titel
         st.title("Bitte zuerst einloggen")
         st.image("Bild1.jpg", caption="Willkommen!", use_container_width=True)
 
-    with col_form:
-        st.write("## Login eingeben:")
+    with col2:
+        # Rechte Spalte: Eingabefelder
+        st.write("## Login-Daten eingeben:")
         user = st.text_input("Benutzername:")
         pw = st.text_input("Passwort:", type="password")
 
         if st.button("Einloggen"):
-            # Beispielhafter Check der Zugangsdaten (hier noch hartkodiert!)
-            # Ersetze das durch st.secrets["login"]["username"] / ["password"], wenn gewünscht
-            if user == "demo" and pw == "secret":
+            # Vergleiche die Eingaben mit den Secrets
+            if user == SECRET_USER and pw == SECRET_PASS:
                 st.session_state["logged_in"] = True
-                st.success("Erfolgreich eingeloggt! Navigationsleiste wird eingeblendet ...")
-                # Durch rerun wird das Skript neu geladen => Sidebar angezeigt
-                st.experimental_rerun()
+                st.success("Erfolgreich eingeloggt! Wähle nun im Seitenmenü eine Funktion.")
             else:
                 st.error("Falsche Anmeldedaten. Bitte erneut versuchen.")
 
 
-###############################################################################
+################################################################################
 # 1) Gemeinsame Funktionen & Klassen
-###############################################################################
+################################################################################
 
 class CoreAPI:
     def __init__(self, api_key):
@@ -71,6 +74,7 @@ class CoreAPI:
         r.raise_for_status()
         return r.json()
 
+
 def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", timeout=15):
     try:
         core = CoreAPI(api_key)
@@ -78,6 +82,7 @@ def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", 
         return "results" in result
     except Exception:
         return False
+
 
 def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
     if not api_key:
@@ -103,19 +108,22 @@ def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
         return []
 
 
-###############################################################################
-# (PubMed-Funktionen, EuropePMC, etc. bleiben unverändert)
-# ...
+################################################################################
+# (PubMed-Funktionen, EuropePMC, OpenAlex usw. bleiben unverändert)
+# ... Code analog deinem Beispiel ...
+################################################################################
 
-###############################################################################
+################################################################################
 # 3) Pages
-###############################################################################
+################################################################################
 
 def module_paperqa2():
     st.subheader("PaperQA2 Module")
+    st.write("Dies ist das PaperQA2 Modul. Hier kannst du weitere Einstellungen "
+             "und Funktionen für PaperQA2 implementieren.")
     question = st.text_input("Bitte gib deine Frage ein:")
     if st.button("Frage absenden"):
-        st.write("Antwort: (Dummy) ...", question)
+        st.write("Antwort: Dies ist eine Dummy-Antwort auf die Frage:", question)
 
 def page_home():
     st.title("Welcome to the Main Menu")
@@ -135,33 +143,36 @@ def page_online_api_filter():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
+# Beispiel: "Analyze Paper" Seite
 def page_analyze_paper():
     st.title("Analyze Paper")
-    st.write("Code für das Analysieren eines Papers. (Beispiel)")
+    st.write("Füge hier deinen Code für das Analysieren eines Papers ein, "
+             "oder integriere den Code aus 'analyze_paper.py' direkt.")
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
 
-###############################################################################
+################################################################################
 # 4) Sidebar Module Navigation & Main
-###############################################################################
+################################################################################
 
 def sidebar_module_navigation():
-    # Prüfen, ob der Login-Status existiert
+    # Falls wir noch keinen Login-Status haben, definieren wir ihn hier.
     if "logged_in" not in st.session_state:
         st.session_state["logged_in"] = False
 
-    # Falls NICHT eingeloggt => Abbruch
+    # Falls NICHT eingeloggt => kein Seitenmenü anzeigen
     if not st.session_state["logged_in"]:
-        return None
+        return None  # Damit man im main() merkt: Keine "richtige" Seite gewählt
 
-    # Eingeloggt => Navigation anzeigen
+    # Wenn eingeloggt, normales Seitenmenü
     st.sidebar.title("Modul-Navigation")
     pages = {
         "Home": page_home,
         "Online-API_Filter": page_online_api_filter,
         "Codewords & PubMed": page_codewords_pubmed,
         "Analyze Paper": page_analyze_paper,
+        # Weitere Seite-Funktionen hier ...
     }
 
     for label, page in pages.items():
@@ -171,28 +182,33 @@ def sidebar_module_navigation():
     if "current_page" not in st.session_state:
         st.session_state["current_page"] = "Home"
 
-    return pages[st.session_state["current_page"]]
+    return pages.get(st.session_state["current_page"], page_home)
 
 def main():
-    # Wenn wir keinen Login-Status haben, init
+    # -------------------------
+    # 1) LOGIN PRÜFEN
+    # -------------------------
     if "logged_in" not in st.session_state:
         st.session_state["logged_in"] = False
 
-    # 1) Falls nicht eingeloggt => zeige Login
     if not st.session_state["logged_in"]:
+        # Wenn nicht eingeloggt: Zeige das Login
         show_login()
-        # Hier NICHT return, sondern st.stop(), damit kein weiterer Code kommt
-        st.stop()
+        return  # Danach Abbruch => Login-Seite bleibt stehen
 
-    # 2) Navigation
+    # -------------------------
+    # 2) NAVIGATION
+    # -------------------------
     page_fn = sidebar_module_navigation()
-    # Falls None => st.stop()
     if page_fn is None:
+        # Falls noch keine Seite
         st.stop()
 
-    # 3) Ausführen
+    # -------------------------
+    # 3) GEWÄHLTE SEITE AUSFÜHREN
+    # -------------------------
     page_fn()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
