@@ -1,7 +1,8 @@
 import openai
 
-# Sicherstellen, dass openai.error existiert; falls nicht, ein Dummy-Objekt erstellen.
-if not hasattr(openai, "error"):
+try:
+    _ = getattr(openai, "error")
+except AttributeError:
     class DummyError:
         Timeout = getattr(openai, "TimeoutError", Exception)
     openai.error = DummyError
