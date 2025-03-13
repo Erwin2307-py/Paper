@@ -1,177 +1,182 @@
-import streamlit as st
-import os
-import re
-import time
-import requests
-import feedparser
-import pandas as pd
-import xml.etree.ElementTree as ET
-from datetime import datetime
-from collections import defaultdict
-import base64
-import importlib.util
-import sys
 import openai
 
-# ----------------------------------------------------------------------------
-# 1. Authentifizierung (Beispiel: Login via st.secrets)
-# ----------------------------------------------------------------------------
-def login():
-    st.sidebar.title("Login")
-    username = st.sidebar.text_input("Benutzername")
-    password = st.sidebar.text_input("Passwort", type="password")
-    if st.sidebar.button("Login"):
-        # Vergleiche mit Werten aus st.secrets
-        if username == st.secrets.get("username") and password == st.secrets.get("password"):
-            st.session_state["authenticated"] = True
-            st.sidebar.success("Erfolgreich eingeloggt!")
-        else:
-            st.sidebar.error("Ungültige Zugangsdaten.")
+# Sicherstellen, dass openai.error existiert. Falls nicht, erstellen wir ein Dummy-Objekt.
+if not hasattr(openai, "error"):
+    class DummyOpenAIError:
+        Timeout = Exception
+        TimeoutError = Exception
+    openai.error = DummyOpenAIError
 
-if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
-if not st.session_state["authenticated"]:
-    login()
-    st.stop()
+import streamlit as st
+import PyPDF2
+import pdfplumber
+import pytesseract
+import logging
 
-# ----------------------------------------------------------------------------
-# 2. Dynamischer Import von PaperQA2 via direktem Pfad zur __init__.py
-# ----------------------------------------------------------------------------
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+from PIL import Image
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.embeddings.openai import OpenAIEmbeddings  # Expliziter Importpfad
+from langchain.vectorstores import Chroma  # Offizielle Chroma-Implementierung
+from streamlit_feedback import streamlit_feedback
 
-# Erwartete Repository-Struktur:
-# your_repo/
-# └── modules/
-#     ├── paper-qa/
-#          └── paper-qa-main/
-#               └── paperqa/
-#                    └── __init__.py
-PAPERQA_INIT_FILE = os.path.join(
-    CURRENT_DIR,
-    "paper-qa",
-    "paper-qa-main",
-    "paperqa",
-    "__init__.py"
-)
+logging.basicConfig(level=logging.INFO)
 
-if not os.path.isfile(PAPERQA_INIT_FILE):
-    st.error(f"Kritischer Pfadfehler: {PAPERQA_INIT_FILE} existiert nicht!")
-    st.stop()
+##############################################
+# 1) PDF-Extraktion (nur digitale PDFs mit PyPDF2)
+##############################################
 
-try:
-    spec = importlib.util.spec_from_file_location("paperqa_custom", PAPERQA_INIT_FILE)
-    paperqa_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(paperqa_module)
-    if not hasattr(paperqa_module, "Docs"):
-        st.error("Im dynamisch geladenen PaperQA2-Modul ist kein 'Docs' definiert!")
-        st.stop()
-except Exception as e:
-    st.error(f"Fehler beim Laden von PaperQA2 via {PAPERQA_INIT_FILE}: {e}")
-    st.stop()
-
-Docs = paperqa_module.Docs
-
-# ----------------------------------------------------------------------------
-# 3. Beispielhafte Such-Funktion für PubMed
-# ----------------------------------------------------------------------------
-def search_pubmed(query: str, max_results=100):
+def extract_text_from_pdf(pdf_file) -> str:
     """
-    Sucht in PubMed per ESearch + ESummary und gibt eine Liste einfacher Dicts zurück.
+    Versucht, digitalen Text mit PyPDF2 auszulesen.
+    Gibt einen String zurück (ggf. leer, wenn kein Text gefunden wurde).
     """
-    esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-    params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": max_results}
-    out = []
+    text = ""
     try:
-        r = requests.get(esearch_url, params=params, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        idlist = data.get("esearchresult", {}).get("idlist", [])
-        if not idlist:
-            return out
-        esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
-        sum_params = {"db": "pubmed", "id": ",".join(idlist), "retmode": "json"}
-        r2 = requests.get(esummary_url, params=sum_params, timeout=10)
-        r2.raise_for_status()
-        summary_data = r2.json().get("result", {})
-        for pmid in idlist:
-            info = summary_data.get(pmid, {})
-            title = info.get("title", "n/a")
-            pubdate = info.get("pubdate", "n/a")
-            year = pubdate[:4] if pubdate != "n/a" else "n/a"
-            out.append({
-                "Source": "PubMed",
-                "Title": title,
-                "PubMed ID": pmid,
-                "Year": year
-            })
-        return out
+        reader = PyPDF2.PdfReader(pdf_file)
+        for page in reader.pages:
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text + "\n"
     except Exception as e:
-        st.error(f"PubMed-Suche fehlgeschlagen: {e}")
-        return out
+        logging.error(f"Fehler beim Lesen mit PyPDF2: {e}")
+    return text.strip()
 
-# ----------------------------------------------------------------------------
-# 4. PaperQA2-Demo: PDFs hochladen und Frage stellen
-# ----------------------------------------------------------------------------
-def paperqa_test_locally():
+##############################################
+# 2) Chroma + OpenAI Q&A
+##############################################
+
+def create_vectorstore_from_text(text: str):
     """
-    Demonstriert PaperQA2: PDFs hochladen und eine Frage stellen.
+    Teilt den Text in Chunks und erstellt eine Chroma-Datenbank
+    mit OpenAI-Embeddings. Gibt das VectorStore-Objekt zurück.
     """
-    st.subheader("Lokaler PaperQA2-Test")
-    docs = Docs()
-    pdfs = st.file_uploader("Lade PDF(s) hoch:", type=["pdf"], accept_multiple_files=True)
-    if pdfs:
-        for up in pdfs:
-            pdf_bytes = up.read()
-            try:
-                docs.add(pdf_bytes, metadata=up.name)
-                st.success(f"Datei '{up.name}' hinzugefügt.")
-            except Exception as e:
-                st.error(f"Fehler beim Hinzufügen von {up.name}: {e}")
-    question = st.text_area("Frage an PaperQA2:")
-    if st.button("PaperQA2-Abfrage starten"):
-        if not question.strip():
-            st.warning("Bitte eine Frage eingeben!")
-        else:
-            try:
-                answer_obj = docs.query(question)
-                st.markdown("### Antwort:")
-                st.write(answer_obj.answer)
-                with st.expander("Kontext / Belege"):
-                    st.write(answer_obj.context)
-            except Exception as e:
-                st.error(f"Fehler bei PaperQA2-Abfrage: {e}")
+    text_splitter = CharacterTextSplitter(separator="\n", chunk_size=1000, chunk_overlap=100)
+    chunks = text_splitter.split_text(text)
+    logging.info(f"Text in {len(chunks)} Chunks aufgeteilt.")
 
-# ----------------------------------------------------------------------------
-# 5. Multi-API-Suche + PaperQA2-Demo (Beispiel: PubMed-Suche + PaperQA2)
-# ----------------------------------------------------------------------------
-def module_codewords_pubmed():
-    st.title("Multi-API-Suche + PaperQA2 (lokaler Import)")
-    query = st.text_input("PubMed-Suchbegriff:", "Cancer")
-    anzahl = st.number_input("Anzahl Treffer", min_value=1, max_value=200, value=10)
-    if st.button("PubMed-Suche starten"):
-        results = search_pubmed(query, max_results=anzahl)
-        if results:
-            st.write(f"{len(results)} Ergebnisse via PubMed:")
-            df = pd.DataFrame(results)
-            st.dataframe(df)
-        else:
-            st.info("Keine Treffer für PubMed.")
-    st.write("---")
-    st.subheader("PaperQA2 Test-Lauf (lokal)")
-    paperqa_test_locally()
+    embeddings = OpenAIEmbeddings()
+    vectorstore = Chroma.from_texts(chunks, embedding=embeddings)
+    return vectorstore
 
-# ----------------------------------------------------------------------------
-# 6. Haupt-App (Streamlit)
-# ----------------------------------------------------------------------------
+def answer_question(query: str, vectorstore):
+    """
+    Sucht in der Vektordatenbank nach relevantem Kontext und
+    erzeugt eine Antwort mit openai.ChatCompletion.
+    """
+    docs = vectorstore.similarity_search(query, k=4)
+    logging.info(f"{len(docs)} relevante Textstellen für die Anfrage gefunden.")
+
+    context = "\n".join([d.page_content for d in docs])
+    system_message = {
+        "role": "system",
+        "content": (
+            "You are a helpful research assistant. You answer questions based on the provided paper excerpts. "
+            "If the context is insufficient, say you don't have enough information. Answer concisely and helpfully."
+        )
+    }
+    user_message = {
+        "role": "user",
+        "content": f"Context:\n{context}\n\nQuestion: {query}"
+    }
+
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[system_message, user_message],
+            temperature=0.2,
+        )
+        answer = response.choices[0].message.content.strip()
+        return answer
+    except Exception as e:
+        logging.error(f"Fehler bei der OpenAI-Anfrage: {e}")
+        return "Entschuldigung, es gab ein Problem bei der Beantwortung durch die KI."
+
+##############################################
+# 3) Feedback
+##############################################
+
+def save_feedback(index):
+    """
+    Callback-Funktion für Feedback (Daumen hoch/runter).
+    """
+    feedback_value = st.session_state.get(f"feedback_{index}")
+    st.session_state.history[index]["feedback"] = feedback_value
+    logging.info(f"Feedback für Nachricht {index}: {feedback_value}")
+
+##############################################
+# 4) Haupt-App
+##############################################
+
 def main():
-    st.set_page_config(layout="wide")
-    st.title("Kombinierte App: Multi-API-Suche + PaperQA2 (Streamlit)")
-    menu = ["Multi-API-Suche + PaperQA2"]
-    choice = st.sidebar.selectbox("Navigation", menu)
-    if choice == "Multi-API-Suche + PaperQA2":
-        module_codewords_pubmed()
-    else:
-        st.info("Bitte wählen Sie eine Option aus dem Menü.")
+    st.title("📄 Paper-QA Chatbot (Nur digitale PDFs, Offizielle Chroma)")
+    
+    # Optionale API-Key-Konfiguration:
+    # openai.api_key = st.secrets["OPENAI_API_KEY"]
+
+    uploaded_files = st.file_uploader(
+        "PDF-Dokument(e) hochladen (nur digitale PDFs):",
+        type=["pdf"],
+        accept_multiple_files=True
+    )
+
+    if uploaded_files:
+        all_text = ""
+        for file in uploaded_files:
+            file_text = extract_text_from_pdf(file)
+            if file_text.strip():
+                all_text += file_text + "\n"
+
+        if all_text.strip():
+            vectorstore = create_vectorstore_from_text(all_text)
+            st.session_state.vectorstore = vectorstore
+            st.success("Wissensdatenbank aus den hochgeladenen PDFs wurde erfolgreich erstellt!")
+        else:
+            st.error(
+                "Es konnte kein Text aus den PDFs extrahiert werden.\n\n"
+                "Mögliche Ursachen:\n"
+                "- Das PDF enthält keinen maschinenlesbaren Text (z.B. gescannte Bilder).\n"
+                "- Das PDF ist verschlüsselt oder geschützt.\n\n"
+                "Bitte laden Sie nur digitale PDFs hoch."
+            )
+
+    # Chat-Verlauf initialisieren
+    if "history" not in st.session_state:
+        st.session_state.history = []
+
+    # Bisherigen Chat-Verlauf anzeigen
+    for i, msg in enumerate(st.session_state.history):
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
+            if msg["role"] == "assistant":
+                feedback = msg.get("feedback")
+                st.session_state[f"feedback_{i}"] = feedback
+                streamlit_feedback(
+                    feedback_type="thumbs",
+                    key=f"feedback_{i}",
+                    disabled=feedback is not None,
+                    on_change=save_feedback,
+                    args=(i,),
+                )
+
+    # Neue Chat-Eingabe
+    if prompt := st.chat_input("Frage zu den hochgeladenen Papern stellen..."):
+        with st.chat_message("user"):
+            st.write(prompt)
+        st.session_state.history.append({"role": "user", "content": prompt})
+
+        if "vectorstore" not in st.session_state:
+            st.error("Bitte lade mindestens ein PDF hoch, bevor du Fragen stellst.")
+        else:
+            answer = answer_question(prompt, st.session_state.vectorstore)
+            with st.chat_message("assistant"):
+                st.write(answer)
+                streamlit_feedback(
+                    feedback_type="thumbs",
+                    key=f"feedback_{len(st.session_state.history)}",
+                    on_change=save_feedback,
+                    args=(len(st.session_state.history),),
+                )
+            st.session_state.history.append({"role": "assistant", "content": answer})
 
 if __name__ == "__main__":
     main()
