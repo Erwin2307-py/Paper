@@ -34,3 +34,4 @@ torch
 langchain-community>=0.0.10
 haystack
 logging
+python-dotenv>=1.0
