@@ -34,27 +34,7 @@ class PaperAnalyzer:
         for page in reader.pages:
             text += page.extract_text() + "\n"
         return text
-
-    def analyze_with_dummy_logic(self, text, task_info):
-        """
-        Dummy-Analyse, falls kein gültiger OpenAI-API-Key vorliegt.
-        
-        :param text: Extrahierter Volltext aus dem PDF
-        :param task_info: Kurze Beschreibung der Aufgabe (z.B. "Zusammenfassung" usw.)
-        :return: Simulierter Ergebnis-String
-        """
-        # Beispielhafter "Dummy"-Ansatz: Zeichen- und Wortanzahl ermitteln
-        num_chars = len(text)
-        num_words = len(text.split())
-        dummy_response = (
-            f"**DUMMY-Analyse für: {task_info}**\n\n"
-            f"Anzahl Zeichen im Text: {num_chars}\n"
-            f"Anzahl Wörter im Text: {num_words}\n\n"
-            f"Dies ist eine simulierte Ausgabe, da kein OpenAI API-Key vorhanden ist "
-            f"oder die KI-Analyse nicht aufgerufen wurde."
-        )
-        return dummy_response
-
+    
     def analyze_with_openai(self, text, prompt_template, api_key):
         """
         Analysiert Text mit OpenAI API
@@ -69,11 +49,10 @@ class PaperAnalyzer:
             text = text[:15000] + "..."
         
         prompt = prompt_template.format(text=text)
-
-        # Wichtig: openai muss mit openai.api_key=... genutzt werden
-        openai.api_key = api_key
         
-        response = openai.ChatCompletion.create(
+        client = openai.OpenAI(api_key=api_key)
+        
+        response = client.chat.completions.create(
             model=self.model,
             messages=[
                 {"role": "system", "content": "Du bist ein Experte für die Analyse wissenschaftlicher Paper, besonders im Bereich Side-Channel Analysis."},
@@ -87,35 +66,22 @@ class PaperAnalyzer:
     
     def summarize(self, text, api_key):
         """Erstellt eine Zusammenfassung des Papers"""
-        prompt = (
-            "Erstelle eine strukturierte Zusammenfassung des folgenden wissenschaftlichen Papers. "
-            "Gliedere es in: Hintergrund, Methodik, Ergebnisse und Schlussfolgerungen. "
-            "Verwende maximal 500 Wörter:\n\n{text}"
-        )
+        prompt = "Erstelle eine strukturierte Zusammenfassung des folgenden wissenschaftlichen Papers. Gliedere es in: Hintergrund, Methodik, Ergebnisse und Schlussfolgerungen. Verwende maximal 500 Wörter:\n\n{text}"
         return self.analyze_with_openai(text, prompt, api_key)
     
     def extract_key_findings(self, text, api_key):
         """Extrahiert die wichtigsten Erkenntnisse"""
-        prompt = (
-            "Extrahiere die 5 wichtigsten Erkenntnisse aus diesem wissenschaftlichen Paper "
-            "im Bereich Side-Channel Analysis. Liste sie mit Bulletpoints auf:\n\n{text}"
-        )
+        prompt = "Extrahiere die 5 wichtigsten Erkenntnisse aus diesem wissenschaftlichen Paper im Bereich Side-Channel Analysis. Liste sie mit Bulletpoints auf:\n\n{text}"
         return self.analyze_with_openai(text, prompt, api_key)
     
     def identify_methods(self, text, api_key):
         """Identifiziert verwendete Methoden und Techniken"""
-        prompt = (
-            "Identifiziere und beschreibe die im Paper verwendeten Methoden und Techniken zur Side-Channel-Analyse. "
-            "Gib zu jeder Methode eine kurze Erklärung:\n\n{text}"
-        )
+        prompt = "Identifiziere und beschreibe die im Paper verwendeten Methoden und Techniken zur Side-Channel-Analyse. Gib zu jeder Methode eine kurze Erklärung:\n\n{text}"
         return self.analyze_with_openai(text, prompt, api_key)
     
     def evaluate_relevance(self, text, topic, api_key):
         """Bewertet die Relevanz des Papers für ein bestimmtes Thema"""
-        prompt = (
-            f"Bewerte die Relevanz dieses Papers für das Thema '{topic}' auf einer Skala von 1-10. "
-            "Begründe deine Bewertung:\n\n{text}"
-        )
+        prompt = f"Bewerte die Relevanz dieses Papers für das Thema '{topic}' auf einer Skala von 1-10. Begründe deine Bewertung:\n\n{{text}}"
         return self.analyze_with_openai(text, prompt, api_key)
 
 def main():
@@ -152,40 +118,35 @@ def main():
     # Initialize analyzer
     analyzer = PaperAnalyzer(model=model)
     
-    if uploaded_file:
+    if uploaded_file and api_key:
         # Button zum Starten der Analyse
         if st.button("Analyse starten"):
-            # Schritt 1: PDF-Text extrahieren
+            # Status anzeigen
             with st.spinner("Extrahiere Text aus PDF..."):
                 text = analyzer.extract_text_from_pdf(uploaded_file)
                 st.success("Text wurde erfolgreich extrahiert!")
             
-            # Schritt 2: Prüfen, ob API-Key vorhanden -> AI oder Dummy
-            if not api_key:
-                st.warning("Kein gültiger OpenAI API-Key eingegeben. Es wird eine Dummy-Analyse durchgeführt.")
-                # Dummy-Analyse durchführen
-                task_info = action if action != "Relevanz-Bewertung" else f"{action} (Topic: {topic})"
-                result = analyzer.analyze_with_dummy_logic(text, task_info)
-            else:
-                # OpenAI-Analyse
-                with st.spinner(f"Führe {action}-Analyse durch..."):
-                    if action == "Zusammenfassung":
-                        result = analyzer.summarize(text, api_key)
-                    elif action == "Wichtigste Erkenntnisse":
-                        result = analyzer.extract_key_findings(text, api_key)
-                    elif action == "Methoden & Techniken":
-                        result = analyzer.identify_methods(text, api_key)
-                    elif action == "Relevanz-Bewertung":
-                        if not topic:
-                            st.error("Bitte geben Sie ein Thema für die Relevanz-Bewertung an!")
-                            st.stop()
-                        result = analyzer.evaluate_relevance(text, topic, api_key)
-
-            # Schritt 3: Ergebnis anzeigen
-            st.subheader("Ergebnis der Analyse")
-            st.markdown(result)
-    else:
-        st.info("Bitte laden Sie eine PDF-Datei hoch, um zu starten.")
+            # Analyse durchführen
+            with st.spinner(f"Führe {action}-Analyse durch..."):
+                if action == "Zusammenfassung":
+                    result = analyzer.summarize(text, api_key)
+                elif action == "Wichtigste Erkenntnisse":
+                    result = analyzer.extract_key_findings(text, api_key)
+                elif action == "Methoden & Techniken":
+                    result = analyzer.identify_methods(text, api_key)
+                elif action == "Relevanz-Bewertung":
+                    if not topic:
+                        st.error("Bitte geben Sie ein Thema für die Relevanz-Bewertung an!")
+                        st.stop()
+                    result = analyzer.evaluate_relevance(text, topic, api_key)
+                
+                # Ergebnis anzeigen
+                st.subheader("Ergebnis der Analyse")
+                st.markdown(result)
+    elif not api_key:
+        st.warning("Bitte geben Sie Ihren OpenAI API-Key ein!")
+    elif not uploaded_file:
+        st.info("Bitte laden Sie eine PDF-Datei hoch!")
 
 if __name__ == "__main__":
     main()
