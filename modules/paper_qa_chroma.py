@@ -1,11 +1,14 @@
 import streamlit as st
 import PyPDF2
+import pdfplumber
+import pytesseract
 import openai
 import logging
 
+from PIL import Image
 from langchain.text_splitter import CharacterTextSplitter
-from langchain.embeddings.openai import OpenAIEmbeddings  # Expliziter Importpfad
-from langchain.vectorstores import Chroma  # Offizielle Chroma-Implementierung
+from langchain_community.embeddings import OpenAIEmbeddings  # Neuer Importpfad
+from langchain_community.vectorstores import Chroma         # Neuer Importpfad
 from streamlit_feedback import streamlit_feedback
 
 logging.basicConfig(level=logging.INFO)
@@ -97,9 +100,9 @@ def save_feedback(index):
 ##############################################
 
 def main():
-    st.title("📄 Paper-QA Chatbot (nur digitale PDFs)")
+    st.title("📄 Paper-QA Chatbot (Nur digitale PDFs, Offizielle Chroma via langchain-community)")
     
-    # Optional: OpenAI-API-Key aus st.secrets nutzen:
+    # Falls du deinen OpenAI-Key aus st.secrets nutzt:
     # openai.api_key = st.secrets["OPENAI_API_KEY"]
 
     uploaded_files = st.file_uploader(
@@ -123,8 +126,8 @@ def main():
             st.error(
                 "Es konnte kein Text aus den PDFs extrahiert werden.\n\n"
                 "Mögliche Ursachen:\n"
-                "- PDF enthält keinen maschinenlesbaren Text (z.B. gescannte Bilder).\n"
-                "- PDF ist verschlüsselt oder geschützt.\n\n"
+                "- Das PDF enthält keinen maschinenlesbaren Text (z.B. gescannte Bilder).\n"
+                "- Das PDF ist verschlüsselt oder geschützt.\n\n"
                 "Bitte laden Sie nur digitale PDFs hoch."
             )
 
