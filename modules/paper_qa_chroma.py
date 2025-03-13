@@ -1,16 +1,22 @@
+import openai
+
+# Sicherstellen, dass openai.error existiert.
+if not hasattr(openai, "error"):
+    class DummyError:
+        Timeout = Exception
+    openai.error = DummyError
+else:
+    if not hasattr(openai.error, "Timeout"):
+        if hasattr(openai.error, "TimeoutError"):
+            openai.error.Timeout = openai.error.TimeoutError
+        else:
+            openai.error.Timeout = Exception
+
 import streamlit as st
 import PyPDF2
 import pdfplumber
 import pytesseract
-import openai
 import logging
-
-# Workaround: Sicherstellen, dass openai.error.Timeout existiert.
-if not hasattr(openai.error, "Timeout"):
-    if hasattr(openai.error, "TimeoutError"):
-        openai.error.Timeout = openai.error.TimeoutError
-    else:
-        openai.error.Timeout = Exception
 
 from PIL import Image
 from langchain.text_splitter import CharacterTextSplitter
