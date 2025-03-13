@@ -6,7 +6,7 @@ from io import BytesIO
 import re
 import datetime
 
-# Wenn du dieses Modul noch brauchst, kannst du es einkommentieren
+# OPTIONAL: Wenn nicht mehr benötigt, kannst du es auskommentieren.
 # from modules.online_filter import module_online_filter
 
 # ENTFERNT: Hier importieren wir dein Selenium-Modul aus modules/
@@ -81,6 +81,7 @@ def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
         st.error(f"CORE search error: {e}")
         return []
 
+
 ################################################################################
 # PubMed Connection Check + (Basis) Search
 ################################################################################
@@ -153,6 +154,7 @@ def fetch_pubmed_abstract(pmid):
     except Exception as e:
         return f"(Error: {e})"
 
+
 ################################################################################
 # Europe PMC Connection Check + (Basis) Search
 ################################################################################
@@ -202,6 +204,7 @@ def search_europe_pmc_simple(query):
         st.error(f"Europe PMC search error: {e}")
         return []
 
+
 ################################################################################
 # OpenAlex API Communication
 ################################################################################
@@ -226,6 +229,7 @@ def search_openalex_simple(query):
     """Kurze Version: Liest die rohen Daten, prüft nur, ob was zurückkommt."""
     search_params = {"search": query}
     return fetch_openalex_data("works", params=search_params)
+
 
 ################################################################################
 # Google Scholar (Basis) Test
@@ -262,6 +266,7 @@ class GoogleScholarSearch:
         except Exception as e:
             st.error(f"Fehler bei der Google Scholar-Suche: {e}")
 
+
 ################################################################################
 # Semantic Scholar API Communication
 ################################################################################
@@ -276,6 +281,7 @@ def check_semantic_scholar_connection(timeout=10):
         return response.status_code == 200
     except Exception:
         return False
+
 
 class SemanticScholarSearch:
     def __init__(self):
@@ -311,6 +317,7 @@ class SemanticScholarSearch:
         except Exception as e:
             st.error(f"Semantic Scholar: {e}")
 
+
 ################################################################################
 # 2) Neues Modul: "module_excel_online_search"
 ################################################################################
@@ -322,16 +329,17 @@ class SemanticScholarSearch:
 
 def module_paperqa2():
     st.subheader("PaperQA2 Module")
-    st.write("Dies ist das PaperQA2 Modul. Hier kannst du weitere Einstellungen "
-             "und Funktionen für PaperQA2 implementieren.")
+    st.write("Dies ist das PaperQA2 Modul. Hier kannst du weitere Einstellungen und Funktionen für PaperQA2 implementieren.")
     question = st.text_input("Bitte gib deine Frage ein:")
     if st.button("Frage absenden"):
         st.write("Antwort: Dies ist eine Dummy-Antwort auf die Frage:", question)
+
 
 def page_home():
     st.title("Welcome to the Main Menu")
     st.write("Choose a module in the sidebar to proceed.")
     st.image("Bild1.jpg", caption="Willkommen!", use_container_width=False, width=600)
+
 
 def page_codewords_pubmed():
     st.title("Codewords & PubMed Settings")
@@ -340,11 +348,13 @@ def page_codewords_pubmed():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
+
 def page_paper_selection():
     st.title("Paper Selection Settings")
     st.write("Define how you want to pick or exclude certain papers. (Dummy placeholder...)")
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
+
 
 def page_analysis():
     st.title("Analysis & Evaluation Settings")
@@ -352,11 +362,13 @@ def page_analysis():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
+
 def page_extended_topics():
     st.title("Extended Topics")
     st.write("Access advanced or extended topics for further research. (Dummy placeholder...)")
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
+
 
 def page_paperqa2():
     st.title("PaperQA2")
@@ -364,48 +376,167 @@ def page_paperqa2():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
+
 def page_excel_online_search():
     st.title("Excel Online Search")
-    # Rufe bei Bedarf weiterhin module_excel_online_search() auf
     from modules.online_api_filter import module_online_api_filter
-    # ...
 
-# -----------------------------------------------------------------------------
-# 4) SEITE FÜR SELENIUM Q&A: auskommentiert, um Fehler zu vermeiden
-# -----------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# 4) SEITE FÜR SELENIUM Q&A: ***auskommentiert***, um den Fehler zu verhindern
+# ---------------------------------------------------------------------------
 # def page_selenium_qa():
-#     st.title("Selenium Q&A (Modul) - Example")
 #     ...
-#     if st.button("Back to Main Menu"):
-#         st.session_state["current_page"] = "Home"
 
-# -----------------------------------------------------------------------------
-# 5) NEUE SEITE: Kombinierte Online API + Filter
-# -----------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# 5) NEUE SEITE: Kombinierte Online API + Filter (module_online_api_filter)
+# ---------------------------------------------------------------------------
 def page_online_api_filter():
     st.title("Online-API_Filter (Kombiniert)")
     st.write("Hier kombinierst du ggf. API-Auswahl und Online-Filter in einem Schritt.")
-    module_online_api_filter()  # Das kombinierte Modul
+    module_online_api_filter()
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-# -----------------------------------------------------------------------------
-# NEUE SEITE: "Analyze Paper" - hier importieren wir das 2. Skript (PaperAnalyzer)
-# -----------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Ab hier: Ehemaliger Inhalt aus analyze_paper.py direkt eingebaut
+# ---------------------------------------------------------------------------
+
+import os
+import PyPDF2
+import openai
+from dotenv import load_dotenv
+
+# Wir haben bereits st.set_page_config(...) am Skriptanfang,
+# daher entfernen wir das hier.
+
+load_dotenv()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+class PaperAnalyzer:
+    def __init__(self, model="gpt-3.5-turbo"):
+        self.model = model
+    
+    def extract_text_from_pdf(self, pdf_file):
+        reader = PyPDF2.PdfReader(pdf_file)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() + "\n"
+        return text
+    
+    def analyze_with_openai(self, text, prompt_template, api_key):
+        if len(text) > 15000:
+            text = text[:15000] + "..."
+        
+        prompt = prompt_template.format(text=text)
+        client = openai.OpenAI(api_key=api_key)
+        
+        response = client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system",
+                 "content": (
+                    "Du bist ein Experte für die Analyse wissenschaftlicher Paper, "
+                    "besonders im Bereich Side-Channel Analysis."
+                 )},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=1500
+        )
+        return response.choices[0].message.content
+    
+    def summarize(self, text, api_key):
+        prompt = (
+            "Erstelle eine strukturierte Zusammenfassung des folgenden "
+            "wissenschaftlichen Papers. Gliedere es in: Hintergrund, Methodik, "
+            "Ergebnisse und Schlussfolgerungen. Verwende maximal 500 Wörter:\n\n{text}"
+        )
+        return self.analyze_with_openai(text, prompt, api_key)
+    
+    def extract_key_findings(self, text, api_key):
+        prompt = (
+            "Extrahiere die 5 wichtigsten Erkenntnisse aus diesem wissenschaftlichen "
+            "Paper im Bereich Side-Channel Analysis. Liste sie mit Bulletpoints auf:\n\n{text}"
+        )
+        return self.analyze_with_openai(text, prompt, api_key)
+    
+    def identify_methods(self, text, api_key):
+        prompt = (
+            "Identifiziere und beschreibe die im Paper verwendeten Methoden "
+            "und Techniken zur Side-Channel-Analyse. Gib zu jeder Methode "
+            "eine kurze Erklärung:\n\n{text}"
+        )
+        return self.analyze_with_openai(text, prompt, api_key)
+    
+    def evaluate_relevance(self, text, topic, api_key):
+        prompt = (
+            f"Bewerte die Relevanz dieses Papers für das Thema '{topic}' auf "
+            f"einer Skala von 1-10. Begründe deine Bewertung:\n\n{{text}}"
+        )
+        return self.analyze_with_openai(text, prompt, api_key)
+
+
 def page_analyze_paper():
-    st.title("Analyze Paper")
-    st.write("Hier kannst du das Modul `analyze_paper.py` ausführen.")
+    """
+    Seite "Analyze Paper": ruft direkt den PaperAnalyzer auf.
+    """
+    st.title("Analyze Paper - Integriert")
 
-    # Wir importieren das *ganze* Skript (speziell die main-Funktion),
-    # das in modules/analyze_paper.py liegt.
-    from modules.analyze_paper import main as analyze_paper_main
+    # Seitenmenü (oder in diesem Fall: Sidebar) - Eingaben:
+    st.sidebar.header("Einstellungen - PaperAnalyzer")
+    api_key = st.sidebar.text_input("OpenAI API Key", type="password", value=OPENAI_API_KEY or "")
+    model = st.sidebar.selectbox("OpenAI-Modell",
+                                 ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4o"],
+                                 index=0)
+    action = st.sidebar.radio("Analyseart",
+                              ["Zusammenfassung", "Wichtigste Erkenntnisse", "Methoden & Techniken", "Relevanz-Bewertung"],
+                              index=0)
+    topic = ""
+    if action == "Relevanz-Bewertung":
+        topic = st.sidebar.text_input("Thema für Relevanz-Bewertung")
 
-    st.write("Klicke auf den Button, um das PaperAnalyzer-Interface aufzurufen.")
-    if st.button("Jetzt PaperAnalyzer starten"):
-        analyze_paper_main()  # Führt die main()-Funktion aus analyze_paper.py aus
+    # PDF upload:
+    uploaded_file = st.file_uploader("PDF-Datei hochladen", type="pdf")
+
+    analyzer = PaperAnalyzer(model=model)
+
+    # Button, um die Analyse zu starten:
+    if uploaded_file and api_key:
+        if st.button("Analyse starten"):
+            with st.spinner("Extrahiere Text aus PDF..."):
+                text = analyzer.extract_text_from_pdf(uploaded_file)
+                if not text.strip():
+                    st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
+                    st.stop()
+                st.success("Text wurde erfolgreich extrahiert!")
+
+            with st.spinner(f"Führe {action}-Analyse durch..."):
+                if action == "Zusammenfassung":
+                    result = analyzer.summarize(text, api_key)
+                elif action == "Wichtigste Erkenntnisse":
+                    result = analyzer.extract_key_findings(text, api_key)
+                elif action == "Methoden & Techniken":
+                    result = analyzer.identify_methods(text, api_key)
+                elif action == "Relevanz-Bewertung":
+                    if not topic:
+                        st.error("Bitte Thema angeben für die Relevanz-Bewertung!")
+                        st.stop()
+                    result = analyzer.evaluate_relevance(text, topic, api_key)
+
+                st.subheader("Ergebnis der Analyse")
+                st.markdown(result)
+    else:
+        if not api_key:
+            st.warning("Bitte OpenAI API-Key eingeben!")
+        elif not uploaded_file:
+            st.info("Bitte eine PDF-Datei hochladen!")
 
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
+
 
 ################################################################################
 # 6) Sidebar Module Navigation & Main
@@ -417,14 +548,14 @@ def sidebar_module_navigation():
         "Home": page_home,
         "Online-API_Filter": page_online_api_filter,
         "3) Codewords & PubMed": page_codewords_pubmed,
-        # Auskommentiert, um sie nicht im Sidebar-Menü zu zeigen:
-        # "4) Paper Selection": page_paper_selection,
+        # "4) Paper Selection": page_paper_selection,        # auskommentiert
         # "5) Analysis & Evaluation": page_analysis,
         # "6) Extended Topics": page_extended_topics,
         # "7) PaperQA2": page_paperqa2,
         # "8) Excel Online Search": page_excel_online_search,
         # "9) Selenium Q&A": page_selenium_qa,
-        "Analyze Paper": page_analyze_paper,  # Neuer Menüpunkt
+        # Neuer Menüpunkt => auf "page_analyze_paper" verlinkt
+        "Analyze Paper": page_analyze_paper,
     }
     for label, page in pages.items():
         if st.sidebar.button(label, key=label):
@@ -433,8 +564,8 @@ def sidebar_module_navigation():
         st.session_state["current_page"] = "Home"
     return pages[st.session_state["current_page"]]
 
+
 def main():
-    # Kleines Style-Element, kann man weglassen
     st.markdown(
         """
         <style>
@@ -449,6 +580,7 @@ def main():
 
     page_fn = sidebar_module_navigation()
     page_fn()
+
 
 if __name__ == '__main__':
     main()
