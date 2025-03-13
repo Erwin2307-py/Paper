@@ -5,11 +5,12 @@ import pytesseract
 import openai
 import logging
 
-# Workaround: Falls openai.error.Timeout nicht existiert, setze es auf TimeoutError.
-try:
-    _ = openai.error.Timeout
-except AttributeError:
-    openai.error.Timeout = openai.error.TimeoutError
+# Workaround: Sicherstellen, dass openai.error.Timeout existiert.
+if not hasattr(openai.error, "Timeout"):
+    if hasattr(openai.error, "TimeoutError"):
+        openai.error.Timeout = openai.error.TimeoutError
+    else:
+        openai.error.Timeout = Exception
 
 from PIL import Image
 from langchain.text_splitter import CharacterTextSplitter
@@ -107,7 +108,7 @@ def save_feedback(index):
 
 def main():
     st.title("📄 Paper-QA Chatbot (Nur digitale PDFs, Offizielle Chroma)")
-
+    
     # Optionale API-Key-Konfiguration:
     # openai.api_key = st.secrets["OPENAI_API_KEY"]
 
