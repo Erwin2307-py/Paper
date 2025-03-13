@@ -6,14 +6,49 @@ from io import BytesIO
 import re
 import datetime
 
-# OPTIONAL: Wenn nicht mehr benötigt, kannst du es auskommentieren.
-# from modules.online_filter import module_online_filter
-
-# ENTFERNT: Hier importieren wir dein Selenium-Modul aus modules/
-# from modules import my_selenium_qa_module
-
-# NEW: We import the combined “online API + filter” module
 from modules.online_api_filter import module_online_api_filter
+
+# ----------------------------------------------
+# NEU: Login-Funktion und Login-Check hinzufügen
+# ----------------------------------------------
+def login():
+    st.title("Login")
+
+    # Hier nehmen wir an, dass in deinen Streamlit-Secrets (Secrets Manager)
+    # zwei Einträge existieren: "login_username" und "login_password".
+    # Beispiel in deinem secrets.toml bzw. in den Streamlit Cloud-Secrets:
+    # [login]
+    # username = "mein_benutzername"
+    # password = "mein_passwort"
+    #
+    #   st.secrets["login_username"]
+    #   st.secrets["login_password"]
+
+    user_input = st.text_input("Username")
+    pass_input = st.text_input("Password", type="password")
+    if st.button("Login"):
+        # Vergleiche die Eingaben mit den Geheimnissen in st.secrets
+        if (
+            user_input == st.secrets["login_username"]
+            and pass_input == st.secrets["login_password"]
+        ):
+            st.session_state["logged_in"] = True
+            st.experimental_rerun()
+        else:
+            st.error("Login failed. Please check your credentials!")
+
+# Falls noch nicht im Session State: Standard auf False setzen
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
+
+# Prüfe den Login-Status. Wenn NICHT eingeloggt, zeige Login-Seite an.
+if not st.session_state["logged_in"]:
+    login()
+    st.stop()
+# ----------------------------------------------
+# Ende des Login-Teils — wenn der Code weiterläuft,
+# ist der/die User:in bereits eingeloggt.
+# ----------------------------------------------
 
 # ------------------------------------------------------------
 # EINMALIGE set_page_config(...) hier ganz am Anfang aufrufen
@@ -388,7 +423,6 @@ def page_excel_online_search():
 # def page_selenium_qa():
 #     ...
 
-
 # ---------------------------------------------------------------------------
 # 5) NEUE SEITE: Kombinierte Online API + Filter (module_online_api_filter)
 # ---------------------------------------------------------------------------
@@ -408,9 +442,6 @@ import os
 import PyPDF2
 import openai
 from dotenv import load_dotenv
-
-# Wir haben bereits st.set_page_config(...) am Skriptanfang,
-# daher entfernen wir das hier.
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
