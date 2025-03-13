@@ -2,11 +2,9 @@ import openai
 
 # Sicherstellen, dass openai.error existiert
 if not hasattr(openai, "error"):
-    class OpenAIErrorDummy:
-        pass
-    # Versuche, TimeoutError zu verwenden; wenn nicht vorhanden, setze auf Exception
-    OpenAIErrorDummy.Timeout = getattr(openai, "TimeoutError", Exception)
-    openai.error = OpenAIErrorDummy
+    class DummyError:
+        Timeout = getattr(openai, "TimeoutError", Exception)
+    openai.error = DummyError
 
 import streamlit as st
 import PyPDF2
