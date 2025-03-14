@@ -8,29 +8,28 @@ import datetime
 
 from modules.online_api_filter import module_online_api_filter
 
-# ----------------------------------------------
-# NEU: Login-Funktion und Login-Check hinzufügen
-# ----------------------------------------------
+# -----------------------------------------
+# NEU: Login-Funktion mit [login]-Schlüssel
+# -----------------------------------------
 def login():
     st.title("Login")
 
-    # Hier nehmen wir an, dass in deinen Streamlit-Secrets (Secrets Manager)
-    # zwei Einträge existieren: "login_username" und "login_password".
-    # Beispiel in deinem secrets.toml bzw. in den Streamlit Cloud-Secrets:
-    # [login]
-    # username = "mein_benutzername"
-    # password = "mein_passwort"
+    # Hier nehmen wir an, dass du in secrets.toml / Streamlit Cloud-Secrets
+    # Folgendes definiert hast:
     #
-    #   st.secrets["login_username"]
-    #   st.secrets["login_password"]
-
+    # [login]
+    # username = "dein_benutzername"
+    # password = "dein_passwort"
+    #
+    # Deshalb greifen wir mit st.secrets["login"]["username"] darauf zu.
     user_input = st.text_input("Username")
     pass_input = st.text_input("Password", type="password")
+    
     if st.button("Login"):
         # Vergleiche die Eingaben mit den Geheimnissen in st.secrets
         if (
-            user_input == st.secrets["login_username"]
-            and pass_input == st.secrets["login_password"]
+            user_input == st.secrets["login"]["username"]
+            and pass_input == st.secrets["login"]["password"]
         ):
             st.session_state["logged_in"] = True
             st.experimental_rerun()
@@ -45,10 +44,10 @@ if "logged_in" not in st.session_state:
 if not st.session_state["logged_in"]:
     login()
     st.stop()
-# ----------------------------------------------
-# Ende des Login-Teils — wenn der Code weiterläuft,
-# ist der/die User:in bereits eingeloggt.
-# ----------------------------------------------
+
+# -----------------------------------------
+# Wenn wir hier ankommen, ist man eingeloggt
+# -----------------------------------------
 
 # ------------------------------------------------------------
 # EINMALIGE set_page_config(...) hier ganz am Anfang aufrufen
