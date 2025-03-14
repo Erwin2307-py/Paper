@@ -8,9 +8,6 @@ import datetime
 
 from modules.online_api_filter import module_online_api_filter
 
-# -----------------------------------------
-# Login-Funktion mit [login]-Schlüssel
-# -----------------------------------------
 def login():
     st.title("Login")
 
@@ -26,24 +23,14 @@ def login():
         else:
             st.error("Login failed. Please check your credentials!")
 
-# Falls noch nicht im Session State: Standard auf False setzen
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
-# Prüfe den Login-Status. Wenn NICHT eingeloggt, zeige Login-Seite an, dann stop.
 if not st.session_state["logged_in"]:
     login()
     st.stop()
 
-# -----------------------------------------
-# Wenn wir hier ankommen, ist man eingeloggt
-# -----------------------------------------
-
-# ------------------------------------------------------------
-# EINMALIGE set_page_config(...) hier ganz am Anfang
-# ------------------------------------------------------------
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
-
 
 ################################################################################
 # 1) Gemeinsame Funktionen & Klassen
@@ -236,7 +223,6 @@ def search_europe_pmc_simple(query):
 
 BASE_URL = "https://api.openalex.org"
 
-
 def fetch_openalex_data(entity_type, entity_id=None, params=None):
     url = f"{BASE_URL}/{entity_type}"
     if entity_id:
@@ -250,7 +236,6 @@ def fetch_openalex_data(entity_type, entity_id=None, params=None):
     else:
         st.error(f"Fehler: {response.status_code} - {response.text}")
         return None
-
 
 def search_openalex_simple(query):
     """Kurze Version: Liest die rohen Daten, prüft nur, ob was zurückkommt."""
@@ -271,7 +256,6 @@ class GoogleScholarSearch:
     def search_google_scholar(self, base_query):
         try:
             search_results = scholarly.search_pubs(base_query)
-            # Nur 5 Abrufe als Test
             for _ in range(5):
                 result = next(search_results)
                 title = result['bib'].get('title', "n/a")
@@ -309,7 +293,6 @@ def check_semantic_scholar_connection(timeout=10):
     except Exception:
         return False
 
-
 class SemanticScholarSearch:
     def __init__(self):
         self.all_results = []
@@ -346,9 +329,8 @@ class SemanticScholarSearch:
 
 
 ################################################################################
-# 2) Neues Modul: "module_excel_online_search"
+# 2) Neues Modul: "module_excel_online_search" [unverändert...]
 ################################################################################
-# [unverändert...]
 
 ################################################################################
 # 3) Restliche Module + Seiten (Pages)
@@ -361,12 +343,10 @@ def module_paperqa2():
     if st.button("Frage absenden"):
         st.write("Antwort: Dies ist eine Dummy-Antwort auf die Frage:", question)
 
-
 def page_home():
     st.title("Welcome to the Main Menu")
     st.write("Choose a module in the sidebar to proceed.")
     st.image("Bild1.jpg", caption="Willkommen!", use_container_width=False, width=600)
-
 
 def page_codewords_pubmed():
     st.title("Codewords & PubMed Settings")
@@ -375,13 +355,11 @@ def page_codewords_pubmed():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-
 def page_paper_selection():
     st.title("Paper Selection Settings")
     st.write("Define how you want to pick or exclude certain papers. (Dummy placeholder...)")
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
-
 
 def page_analysis():
     st.title("Analysis & Evaluation Settings")
@@ -389,13 +367,11 @@ def page_analysis():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-
 def page_extended_topics():
     st.title("Extended Topics")
     st.write("Access advanced or extended topics for further research. (Dummy placeholder...)")
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
-
 
 def page_paperqa2():
     st.title("PaperQA2")
@@ -403,11 +379,9 @@ def page_paperqa2():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-
 def page_excel_online_search():
     st.title("Excel Online Search")
     from modules.online_api_filter import module_online_api_filter
-
 
 def page_online_api_filter():
     st.title("Online-API_Filter (Kombiniert)")
@@ -418,7 +392,7 @@ def page_online_api_filter():
 
 
 ################################################################################
-# 4) PAPER ANALYZER CLASS (unchanged)
+# 4) PAPER ANALYZER & "Analyze Paper" PAGE
 ################################################################################
 import os
 import PyPDF2
@@ -431,30 +405,25 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 class PaperAnalyzer:
     def __init__(self, model="gpt-3.5-turbo"):
         self.model = model
-    
+
     def extract_text_from_pdf(self, pdf_file):
         reader = PyPDF2.PdfReader(pdf_file)
         text = ""
         for page in reader.pages:
             text += page.extract_text() + "\n"
         return text
-    
+
     def analyze_with_openai(self, text, prompt_template, api_key):
         if len(text) > 15000:
             text = text[:15000] + "..."
-        
         prompt = prompt_template.format(text=text)
         client = openai.OpenAI(api_key=api_key)
-        
         response = client.chat.completions.create(
             model=self.model,
             messages=[
                 {
                     "role": "system",
-                    "content": (
-                        "Du bist ein Experte für die Analyse wissenschaftlicher Paper, "
-                        "besonders im Bereich Side-Channel Analysis."
-                    )
+                    "content": "Du bist ein Experte für die Analyse wissenschaftlicher Paper, besonders im Bereich Side-Channel Analysis."
                 },
                 {
                     "role": "user",
@@ -465,7 +434,7 @@ class PaperAnalyzer:
             max_tokens=1500
         )
         return response.choices[0].message.content
-    
+
     def summarize(self, text, api_key):
         prompt = (
             "Erstelle eine strukturierte Zusammenfassung des folgenden "
@@ -473,14 +442,14 @@ class PaperAnalyzer:
             "Ergebnisse und Schlussfolgerungen. Verwende maximal 500 Wörter:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
-    
+
     def extract_key_findings(self, text, api_key):
         prompt = (
             "Extrahiere die 5 wichtigsten Erkenntnisse aus diesem wissenschaftlichen "
             "Paper im Bereich Side-Channel Analysis. Liste sie mit Bulletpoints auf:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
-    
+
     def identify_methods(self, text, api_key):
         prompt = (
             "Identifiziere und beschreibe die im Paper verwendeten Methoden "
@@ -488,7 +457,7 @@ class PaperAnalyzer:
             "eine kurze Erklärung:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
-    
+
     def evaluate_relevance(self, text, topic, api_key):
         prompt = (
             f"Bewerte die Relevanz dieses Papers für das Thema '{topic}' auf "
@@ -497,20 +466,15 @@ class PaperAnalyzer:
         return self.analyze_with_openai(text, prompt, api_key)
 
 
-################################################################################
-# 5) PAGE "Analyze Paper" with button that Fills Excel
-################################################################################
 def page_analyze_paper():
     """
-    Seite "Analyze Paper": ruft direkt den PaperAnalyzer auf.
-    - "Alle Analysen durchführen & in Excel speichern"
-    - We parse the PDF text for:
-        * "rs7041" => cell D6
-        * genotype lines => fill D10, F10, then D11, F11, etc.
+    Seite "Analyze Paper": Standard analyses + single button that:
+      - runs all 4 analyses,
+      - finds any 'rsXXXX' reference in the text => D6,
+      - finds genotypes (TT, GG, etc.) => D10/F10, D11/F11, storing the entire line from the PDF as phenotype statement
     """
     st.title("Analyze Paper - Integriert")
 
-    # Seitenmenü (oder in diesem Fall: Sidebar) - Eingaben:
     st.sidebar.header("Einstellungen - PaperAnalyzer")
     api_key = st.sidebar.text_input("OpenAI API Key", type="password", value=OPENAI_API_KEY or "")
     model = st.sidebar.selectbox("OpenAI-Modell",
@@ -519,15 +483,13 @@ def page_analyze_paper():
     action = st.sidebar.radio("Analyseart",
                               ["Zusammenfassung", "Wichtigste Erkenntnisse", "Methoden & Techniken", "Relevanz-Bewertung"],
                               index=0)
-    # Thema für Relevanz-Bewertung
     topic = st.sidebar.text_input("Thema für Relevanz-Bewertung (falls relevant)")
 
-    # PDF upload:
     uploaded_file = st.file_uploader("PDF-Datei hochladen", type="pdf")
 
     analyzer = PaperAnalyzer(model=model)
 
-    # ------------------ 1) EINZELNE ANALYSE ------------------
+    # PART 1) Single analysis by radio
     if uploaded_file and api_key:
         if st.button("Analyse starten"):
             with st.spinner("Extrahiere Text aus PDF..."):
@@ -536,7 +498,6 @@ def page_analyze_paper():
                     st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
                     st.stop()
                 st.success("Text wurde erfolgreich extrahiert!")
-
             with st.spinner(f"Führe {action}-Analyse durch..."):
                 if action == "Zusammenfassung":
                     result = analyzer.summarize(text, api_key)
@@ -549,7 +510,6 @@ def page_analyze_paper():
                         st.error("Bitte Thema angeben für die Relevanz-Bewertung!")
                         st.stop()
                     result = analyzer.evaluate_relevance(text, topic, api_key)
-
                 st.subheader("Ergebnis der Analyse")
                 st.markdown(result)
     else:
@@ -558,11 +518,11 @@ def page_analyze_paper():
         elif not uploaded_file:
             st.info("Bitte eine PDF-Datei hochladen!")
 
-    # ------------------ 2) ALLE ANALYSEN & EXCEL-SPEICHERN -----------
+    # PART 2) All analyses + Excel
     st.write("---")
     st.write("## Alle Analysen & Excel-Ausgabe")
-    st.write("Führe alle 4 Analysen durch. Danach parse den Text auf rs7041 und Genotypen. "
-             "Fülle D6 mit rs7041, D10 / F10, D11 / F11 etc. in der Excel-Vorlage.")
+    st.write("Nach dem Auslesen füllen wir D6 mit dem gefundenen rs..., "
+             "und D10/F10, D11/F11 für bis zu zwei Genotypen plus die gesamte Zeile als Phenotype Statement.")
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
 
     if uploaded_file and api_key:
@@ -573,86 +533,71 @@ def page_analyze_paper():
                     st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
                     st.stop()
 
-                # Perform all 4 analyses
+                # 4 analyses
                 summary_result = analyzer.summarize(text, api_key)
                 key_findings_result = analyzer.extract_key_findings(text, api_key)
                 methods_result = analyzer.identify_methods(text, api_key)
                 if not topic:
-                    st.error("Bitte 'Thema für Relevanz-Bewertung' angeben (links in der Sidebar)!")
+                    st.error("Bitte 'Thema für Relevanz-Bewertung' angeben!")
                     st.stop()
                 relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
-
-                # Combine final relevance text with manual user rating
                 final_relevance = f"{relevance_result}\n\n[Manuelle Bewertung: {user_relevance_score}]"
 
-                # ------------- PARSE PDF TEXT FOR rs7041 & GENOTYPES -------------
-                # We'll do a naive approach: check if "rs7041" in text => fill D6
-                # Then find lines with " genotype" or "genotypes" that contain TT / GG / etc.
-                # We'll store them in (D10,F10), (D11,F11), ...
+                # ------- PARSE text for any "rs123456" pattern
+                rs_match = re.search(r"\brs\d+\b", text)
                 found_rs = None
-                if "rs7041" in text:
-                    found_rs = "rs7041"
-                # Find genotype lines, e.g. "TT", "GG", "GT"
-                # We'll do a simple regex: look for " TT ", " GG ", " GT " or "TG" etc.
-                genotype_pattern = r"\b([ACGT]{2,3})\b"
-                # This captures TT, GG, GT, etc. We'll store up to 2 of them plus a naive statement
-                genotypes_found = re.findall(genotype_pattern, text)
-                
-                # We'll keep unique ones in order, e.g. TT then GT
-                unique_genos = []
-                for g in genotypes_found:
-                    if g not in unique_genos:
-                        unique_genos.append(g)
-                
-                # We'll store up to 2: (D10,F10) & (D11,F11)
-                # We'll create naive phenotype statements:
-                # e.g. "Bioavailable 25(OH)D was lower for TT genotype"
-                # In a real scenario, you'd do more advanced NLP
-                genotype_pairs = []
-                for g in unique_genos[:2]:
-                    statement = f"Paper states {g} genotype is associated with vitamin D changes."
-                    genotype_pairs.append((g, statement))
+                if rs_match:
+                    found_rs = rs_match.group(0)
 
-                # -------------- OPEN THE EXCEL TEMPLATE & FILL --------------
+                # We'll do a line-by-line approach for genotypes + their statements
+                lines = text.splitlines()
+                genotype_pattern = r"\b[ACGT]{2,}\b"  # e.g. TT, GG, GT, A/A, etc.
+                found_genos = []
+                for line in lines:
+                    # If line has genotype mention
+                    genotype_match = re.findall(genotype_pattern, line)
+                    # We'll store each genotype plus the entire line as the statement
+                    for g in genotype_match:
+                        # Filter out short or single letter hits if any
+                        # We'll also skip if we've seen it with same line
+                        # we keep them as (genotype, line)
+                        if len(g) >= 2 and (g, line) not in found_genos:
+                            found_genos.append((g, line))
+
+                # We'll store up to 2
+                # (D10,F10) => 1st genotype
+                # (D11,F11) => 2nd genotype
+                # the line is used as the phenotype statement
+                genotypes_to_store = found_genos[:2]
+
+                # -------------- LOAD EXCEL --------------
                 import openpyxl
                 import io
-
                 try:
                     wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
                 except FileNotFoundError:
                     st.error("Vorlage 'vorlage_paperqa2.xlsx' nicht gefunden!")
                     st.stop()
-                ws = wb.active  # or use a named sheet if needed
+                ws = wb.active
 
-                # Fill D6 with the rs number if found:
+                # Fill D6 with the found rs
                 if found_rs:
                     ws["D6"] = found_rs
 
-                # If we have at least 1 genotype
-                if len(genotype_pairs) > 0:
-                    ws["D10"] = genotype_pairs[0][0]   # e.g. TT
-                    ws["F10"] = genotype_pairs[0][1]   # e.g. statement
-                if len(genotype_pairs) > 1:
-                    ws["D11"] = genotype_pairs[1][0]   # second genotype
-                    ws["F11"] = genotype_pairs[1][1]
+                # Fill up to 2 genotypes
+                if len(genotypes_to_store) > 0:
+                    ws["D10"] = genotypes_to_store[0][0]  # e.g. TT
+                    ws["F10"] = genotypes_to_store[0][1]  # entire line as statement
+                if len(genotypes_to_store) > 1:
+                    ws["D11"] = genotypes_to_store[1][0]
+                    ws["F11"] = genotypes_to_store[1][1]
 
-                # We won't fill D5 or others unless user specifically says so
-                # The user only asked for "D5 => Gene name," but you can do it if the text has "GC" or "VDBP"
-                # Let's just do a tiny detection:
-                gene_name = None
-                if "GC" in text:
-                    gene_name = "GC"
-                elif "VDBP" in text:
-                    gene_name = "VDBP"
-                if gene_name:
-                    ws["D5"] = gene_name  # fill gene name if found
-
-                # -------------- Save to memory & Provide Download -------------
+                # Save to memory
                 output = io.BytesIO()
                 wb.save(output)
                 output.seek(0)
 
-            st.success("Alle Analysen abgeschlossen – Excel-Datei erstellt & Genotypen eingetragen!")
+            st.success("Alle Analysen abgeschlossen – Excel-Datei erstellt! (D6, D10/F10, D11/F11 gefüllt)")
             st.download_button(
                 label="Download Excel",
                 data=output,
@@ -661,23 +606,12 @@ def page_analyze_paper():
             )
 
 
-################################################################################
-# 6) Sidebar Module Navigation & Main
-################################################################################
-
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
     pages = {
         "Home": page_home,
         "Online-API_Filter": page_online_api_filter,
         "3) Codewords & PubMed": page_codewords_pubmed,
-        # "4) Paper Selection": page_paper_selection,  # auskommentiert
-        # "5) Analysis & Evaluation": page_analysis,
-        # "6) Extended Topics": page_extended_topics,
-        # "7) PaperQA2": page_paperqa2,
-        # "8) Excel Online Search": page_excel_online_search,
-        # "9) Selenium Q&A": page_selenium_qa,
-        # Neuer Menüpunkt => auf "page_analyze_paper" verlinkt
         "Analyze Paper": page_analyze_paper,
     }
     for label, page in pages.items():
@@ -686,7 +620,6 @@ def sidebar_module_navigation():
     if "current_page" not in st.session_state:
         st.session_state["current_page"] = "Home"
     return pages[st.session_state["current_page"]]
-
 
 def main():
     st.markdown(
@@ -700,10 +633,8 @@ def main():
         """,
         unsafe_allow_html=True
     )
-
     page_fn = sidebar_module_navigation()
     page_fn()
-
 
 if __name__ == '__main__':
     main()
