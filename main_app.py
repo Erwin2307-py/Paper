@@ -9,30 +9,25 @@ import datetime
 from modules.online_api_filter import module_online_api_filter
 
 # -----------------------------------------
-# NEU: Login-Funktion mit [login]-Schlüssel
+# Login-Funktion mit [login]-Schlüssel
+# ABGEÄNDERT: Entfernt st.experimental_rerun()
 # -----------------------------------------
 def login():
     st.title("Login")
 
-    # Hier nehmen wir an, dass du in secrets.toml / Streamlit Cloud-Secrets
-    # Folgendes definiert hast:
-    #
-    # [login]
-    # username = "dein_benutzername"
-    # password = "dein_passwort"
-    #
-    # Deshalb greifen wir mit st.secrets["login"]["username"] darauf zu.
     user_input = st.text_input("Username")
     pass_input = st.text_input("Password", type="password")
     
     if st.button("Login"):
-        # Vergleiche die Eingaben mit den Geheimnissen in st.secrets
+        # Check credentials stored in secrets.toml / Streamlit Cloud:
+        # [login]
+        # username = "dein_benutzername"
+        # password = "dein_passwort"
         if (
             user_input == st.secrets["login"]["username"]
             and pass_input == st.secrets["login"]["password"]
         ):
             st.session_state["logged_in"] = True
-            st.experimental_rerun()
         else:
             st.error("Login failed. Please check your credentials!")
 
@@ -40,7 +35,7 @@ def login():
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
-# Prüfe den Login-Status. Wenn NICHT eingeloggt, zeige Login-Seite an.
+# Prüfe den Login-Status. Wenn NICHT eingeloggt, zeige Login-Seite an, dann stop.
 if not st.session_state["logged_in"]:
     login()
     st.stop()
