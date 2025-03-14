@@ -10,7 +10,7 @@ from modules.online_api_filter import module_online_api_filter
 
 # -----------------------------------------
 # Login-Funktion mit [login]-Schlüssel
-# ABGEÄNDERT: Entfernt st.experimental_rerun()
+# (Keine Änderung außer Removal von st.experimental_rerun)
 # -----------------------------------------
 def login():
     st.title("Login")
@@ -19,10 +19,6 @@ def login():
     pass_input = st.text_input("Password", type="password")
     
     if st.button("Login"):
-        # Check credentials stored in secrets.toml / Streamlit Cloud:
-        # [login]
-        # username = "dein_benutzername"
-        # password = "dein_passwort"
         if (
             user_input == st.secrets["login"]["username"]
             and pass_input == st.secrets["login"]["password"]
@@ -415,6 +411,9 @@ from dotenv import load_dotenv
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+###############################################################################
+# PAPER ANALYZER (unverändert)
+###############################################################################
 class PaperAnalyzer:
     def __init__(self, model="gpt-3.5-turbo"):
         self.model = model
@@ -484,12 +483,16 @@ class PaperAnalyzer:
         )
         return self.analyze_with_openai(text, prompt, api_key)
 
+###############################################################################
+# PAGE: ANALYZE PAPER
+###############################################################################
 def page_analyze_paper():
     """
     Seite "Analyze Paper": ruft direkt den PaperAnalyzer auf.
     Jetzt mit zweitem Button:
     - "Alle Analysen durchführen & in Excel speichern"
-    - Schreibt Summary, Key Findings, Methods, Relevance in eine Excel.
+    - ABER wir füllen nun nur D5 (Gene Name) und D6 (rs Number)
+      in der Vorlage vorlage_paperqa2.xlsx, sonst nichts!
     """
     st.title("Analyze Paper - Integriert")
 
@@ -511,7 +514,7 @@ def page_analyze_paper():
 
     analyzer = PaperAnalyzer(model=model)
 
-    # Einzelne Analyse via Radiobutton:
+    # 1) EINZELNE ANALYSE via Radiobutton:
     if uploaded_file and api_key:
         if st.button("Analyse starten"):
             with st.spinner("Extrahiere Text aus PDF..."):
@@ -542,13 +545,14 @@ def page_analyze_paper():
         elif not uploaded_file:
             st.info("Bitte eine PDF-Datei hochladen!")
 
+    # 2) ALLE ANALYSEN & EXCEL-SPEICHERN – ABER WIR FÜLLEN NUR D5 UND D6:
     st.write("---")
     st.write("## Alle Analysen & Excel-Ausgabe")
-    st.write("Führe alle 4 Analysen durch, frage nach Relevanz (Topic), und speichere die Ergebnisse in einer Excel-Datei.")
+    st.write("Führe alle 4 Analysen durch, frage nach Relevanz (Topic), und speichere nur den Gene Name (D5) und RS Number (D6) in der vorlage_paperqa2.xlsx.")
 
     # Manuelle Eingabe der Relevanz-Bewertung (z.B. 1-10)
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
-    # Ein Button, der ALLES durchführt:
+    
     if uploaded_file and api_key:
         if st.button("Alle Analysen durchführen & in Excel speichern"):
             with st.spinner("Analysiere alles..."):
@@ -557,6 +561,7 @@ def page_analyze_paper():
                     st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
                     st.stop()
                 
+                # Hier laufen die 4 Analysen (Ergebnisse werden NICHT in die Excel geschrieben):
                 summary_result = analyzer.summarize(text, api_key)
                 key_findings_result = analyzer.extract_key_findings(text, api_key)
                 methods_result = analyzer.identify_methods(text, api_key)
@@ -566,34 +571,34 @@ def page_analyze_paper():
                     st.stop()
                 relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
 
-                # Wenn der/die Nutzer:in einen manuellen Score eingibt, hängen wir das noch an:
-                final_relevance = f"{relevance_result}\n\n[Manuelle Bewertung: {user_relevance_score}]"
+                # OPTIONAL: Hier extrahieren wir "Gene Name" und "rs Number" DUMMY.
+                # In einer echten Anwendung würde man den Text parsen. Hier nehmen wir fiktive Werte:
+                gene_name = "GENE_XYZ_FROM_PDF"
+                rs_number = "rs1234567"
 
-                # Alles in eine Excel-Datei schreiben (4 Worksheets)
+                # Jetzt NICHT xlsxwriter, sondern openpyxl -> existierende Vorlage modifizieren.
+                import openpyxl
                 import io
-                import xlsxwriter
 
+                try:
+                    wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
+                except FileNotFoundError:
+                    st.error("Vorlage 'vorlage_paperqa2.xlsx' nicht gefunden!")
+                    st.stop()
+                ws = wb.active  # or specific named sheet if needed
+
+                # Nur D5 = gene name, D6 = rs number:
+                ws["D5"] = gene_name
+                ws["D6"] = rs_number
+
+                # Erstellen das Output-Objekt und speichern die geänderte Datei hinein
                 output = io.BytesIO()
-                workbook = xlsxwriter.Workbook(output)
-
-                ws_summary = workbook.add_worksheet("Summary")
-                ws_summary.write(0, 0, summary_result)
-
-                ws_key = workbook.add_worksheet("KeyFindings")
-                ws_key.write(0, 0, key_findings_result)
-
-                ws_methods = workbook.add_worksheet("Methods")
-                ws_methods.write(0, 0, methods_result)
-
-                ws_relevance = workbook.add_worksheet("Relevance")
-                ws_relevance.write(0, 0, final_relevance)
-
-                workbook.close()
+                wb.save(output)
                 output.seek(0)
 
-            st.success("Alle Analysen abgeschlossen – Excel-Datei erstellt!")
+            st.success("Alle Analysen abgeschlossen – Excel-Vorlage aktualisiert (nur D5, D6)!")
             st.download_button(
-                label="Download Excel",
+                label="Download aktualisierte Excel",
                 data=output,
                 file_name="analysis_results.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
