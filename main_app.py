@@ -45,7 +45,7 @@ if not st.session_state["logged_in"]:
 # -----------------------------------------
 
 # ------------------------------------------------------------
-# EINMALIGE set_page_config(...) hier ganz am Anfang aufrufen
+# EINMALIGE set_page_config(...) hier ganz am Anfang
 # ------------------------------------------------------------
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
@@ -77,7 +77,6 @@ class CoreAPI:
         r.raise_for_status()
         return r.json()
 
-
 def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", timeout=15):
     try:
         core = CoreAPI(api_key)
@@ -85,7 +84,6 @@ def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", 
         return "results" in result
     except Exception:
         return False
-
 
 def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
     if not api_key:
@@ -110,7 +108,6 @@ def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
         st.error(f"CORE search error: {e}")
         return []
 
-
 ################################################################################
 # PubMed Connection Check + (Basis) Search
 ################################################################################
@@ -125,7 +122,6 @@ def check_pubmed_connection(timeout=10):
         return "esearchresult" in data
     except Exception:
         return False
-
 
 def search_pubmed_simple(query):
     """Kurze Version: Sucht nur, ohne Abstract / Details."""
@@ -163,7 +159,6 @@ def search_pubmed_simple(query):
         st.error(f"Error searching PubMed: {e}")
         return []
 
-
 def fetch_pubmed_abstract(pmid):
     """Holt den Abstract via efetch für eine gegebene PubMed-ID."""
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
@@ -183,7 +178,6 @@ def fetch_pubmed_abstract(pmid):
     except Exception as e:
         return f"(Error: {e})"
 
-
 ################################################################################
 # Europe PMC Connection Check + (Basis) Search
 ################################################################################
@@ -198,7 +192,6 @@ def check_europe_pmc_connection(timeout=10):
         return "resultList" in data and "result" in data["resultList"]
     except Exception:
         return False
-
 
 def search_europe_pmc_simple(query):
     """Kurze Version: Sucht nur, ohne erweiterte Details."""
@@ -233,7 +226,6 @@ def search_europe_pmc_simple(query):
         st.error(f"Europe PMC search error: {e}")
         return []
 
-
 ################################################################################
 # OpenAlex API Communication
 ################################################################################
@@ -258,7 +250,6 @@ def search_openalex_simple(query):
     """Kurze Version: Liest die rohen Daten, prüft nur, ob was zurückkommt."""
     search_params = {"search": query}
     return fetch_openalex_data("works", params=search_params)
-
 
 ################################################################################
 # Google Scholar (Basis) Test
@@ -295,7 +286,6 @@ class GoogleScholarSearch:
         except Exception as e:
             st.error(f"Fehler bei der Google Scholar-Suche: {e}")
 
-
 ################################################################################
 # Semantic Scholar API Communication
 ################################################################################
@@ -310,7 +300,6 @@ def check_semantic_scholar_connection(timeout=10):
         return response.status_code == 200
     except Exception:
         return False
-
 
 class SemanticScholarSearch:
     def __init__(self):
@@ -346,7 +335,6 @@ class SemanticScholarSearch:
         except Exception as e:
             st.error(f"Semantic Scholar: {e}")
 
-
 ################################################################################
 # 2) Neues Modul: "module_excel_online_search"
 ################################################################################
@@ -363,12 +351,10 @@ def module_paperqa2():
     if st.button("Frage absenden"):
         st.write("Antwort: Dies ist eine Dummy-Antwort auf die Frage:", question)
 
-
 def page_home():
     st.title("Welcome to the Main Menu")
     st.write("Choose a module in the sidebar to proceed.")
     st.image("Bild1.jpg", caption="Willkommen!", use_container_width=False, width=600)
-
 
 def page_codewords_pubmed():
     st.title("Codewords & PubMed Settings")
@@ -377,13 +363,11 @@ def page_codewords_pubmed():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-
 def page_paper_selection():
     st.title("Paper Selection Settings")
     st.write("Define how you want to pick or exclude certain papers. (Dummy placeholder...)")
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
-
 
 def page_analysis():
     st.title("Analysis & Evaluation Settings")
@@ -391,13 +375,11 @@ def page_analysis():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-
 def page_extended_topics():
     st.title("Extended Topics")
     st.write("Access advanced or extended topics for further research. (Dummy placeholder...)")
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
-
 
 def page_paperqa2():
     st.title("PaperQA2")
@@ -405,28 +387,21 @@ def page_paperqa2():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-
 def page_excel_online_search():
     st.title("Excel Online Search")
     from modules.online_api_filter import module_online_api_filter
 
-
-# ---------------------------------------------------------------------------
-# 4) SEITE FÜR SELENIUM Q&A: ***auskommentiert***, um den Fehler zu verhindern
-# ---------------------------------------------------------------------------
+# 4) SEITE FÜR SELENIUM Q&A (auskommentiert - placeholder)
 # def page_selenium_qa():
 #     ...
 
-# ---------------------------------------------------------------------------
 # 5) NEUE SEITE: Kombinierte Online API + Filter (module_online_api_filter)
-# ---------------------------------------------------------------------------
 def page_online_api_filter():
     st.title("Online-API_Filter (Kombiniert)")
     st.write("Hier kombinierst du ggf. API-Auswahl und Online-Filter in einem Schritt.")
     module_online_api_filter()
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
-
 
 # ---------------------------------------------------------------------------
 # Ab hier: Ehemaliger Inhalt aus analyze_paper.py direkt eingebaut
@@ -452,6 +427,7 @@ class PaperAnalyzer:
         return text
     
     def analyze_with_openai(self, text, prompt_template, api_key):
+        """Helper to send text + prompt to OpenAI Chat."""
         if len(text) > 15000:
             text = text[:15000] + "..."
         
@@ -461,12 +437,17 @@ class PaperAnalyzer:
         response = client.chat.completions.create(
             model=self.model,
             messages=[
-                {"role": "system",
-                 "content": (
-                    "Du bist ein Experte für die Analyse wissenschaftlicher Paper, "
-                    "besonders im Bereich Side-Channel Analysis."
-                 )},
-                {"role": "user", "content": prompt}
+                {
+                    "role": "system",
+                    "content": (
+                        "Du bist ein Experte für die Analyse wissenschaftlicher Paper, "
+                        "besonders im Bereich Side-Channel Analysis."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
             ],
             temperature=0.3,
             max_tokens=1500
@@ -503,10 +484,12 @@ class PaperAnalyzer:
         )
         return self.analyze_with_openai(text, prompt, api_key)
 
-
 def page_analyze_paper():
     """
     Seite "Analyze Paper": ruft direkt den PaperAnalyzer auf.
+    Jetzt mit zweitem Button:
+    - "Alle Analysen durchführen & in Excel speichern"
+    - Schreibt Summary, Key Findings, Methods, Relevance in eine Excel.
     """
     st.title("Analyze Paper - Integriert")
 
@@ -519,16 +502,16 @@ def page_analyze_paper():
     action = st.sidebar.radio("Analyseart",
                               ["Zusammenfassung", "Wichtigste Erkenntnisse", "Methoden & Techniken", "Relevanz-Bewertung"],
                               index=0)
-    topic = ""
-    if action == "Relevanz-Bewertung":
-        topic = st.sidebar.text_input("Thema für Relevanz-Bewertung")
+    
+    # Thema für Relevanz-Bewertung (wird unten nur gebraucht, wenn action="Relevanz-Bewertung")
+    topic = st.sidebar.text_input("Thema für Relevanz-Bewertung (falls relevant)")
 
     # PDF upload:
     uploaded_file = st.file_uploader("PDF-Datei hochladen", type="pdf")
 
     analyzer = PaperAnalyzer(model=model)
 
-    # Button, um die Analyse zu starten:
+    # Einzelne Analyse via Radiobutton:
     if uploaded_file and api_key:
         if st.button("Analyse starten"):
             with st.spinner("Extrahiere Text aus PDF..."):
@@ -559,9 +542,62 @@ def page_analyze_paper():
         elif not uploaded_file:
             st.info("Bitte eine PDF-Datei hochladen!")
 
-    if st.button("Back to Main Menu"):
-        st.session_state["current_page"] = "Home"
+    st.write("---")
+    st.write("## Alle Analysen & Excel-Ausgabe")
+    st.write("Führe alle 4 Analysen durch, frage nach Relevanz (Topic), und speichere die Ergebnisse in einer Excel-Datei.")
 
+    # Manuelle Eingabe der Relevanz-Bewertung (z.B. 1-10)
+    user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
+    # Ein Button, der ALLES durchführt:
+    if uploaded_file and api_key:
+        if st.button("Alle Analysen durchführen & in Excel speichern"):
+            with st.spinner("Analysiere alles..."):
+                text = analyzer.extract_text_from_pdf(uploaded_file)
+                if not text.strip():
+                    st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
+                    st.stop()
+                
+                summary_result = analyzer.summarize(text, api_key)
+                key_findings_result = analyzer.extract_key_findings(text, api_key)
+                methods_result = analyzer.identify_methods(text, api_key)
+
+                if not topic:
+                    st.error("Bitte 'Thema für Relevanz-Bewertung' angeben (links in der Sidebar)!")
+                    st.stop()
+                relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
+
+                # Wenn der/die Nutzer:in einen manuellen Score eingibt, hängen wir das noch an:
+                final_relevance = f"{relevance_result}\n\n[Manuelle Bewertung: {user_relevance_score}]"
+
+                # Alles in eine Excel-Datei schreiben (4 Worksheets)
+                import io
+                import xlsxwriter
+
+                output = io.BytesIO()
+                workbook = xlsxwriter.Workbook(output)
+
+                ws_summary = workbook.add_worksheet("Summary")
+                ws_summary.write(0, 0, summary_result)
+
+                ws_key = workbook.add_worksheet("KeyFindings")
+                ws_key.write(0, 0, key_findings_result)
+
+                ws_methods = workbook.add_worksheet("Methods")
+                ws_methods.write(0, 0, methods_result)
+
+                ws_relevance = workbook.add_worksheet("Relevance")
+                ws_relevance.write(0, 0, final_relevance)
+
+                workbook.close()
+                output.seek(0)
+
+            st.success("Alle Analysen abgeschlossen – Excel-Datei erstellt!")
+            st.download_button(
+                label="Download Excel",
+                data=output,
+                file_name="analysis_results.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
 
 ################################################################################
 # 6) Sidebar Module Navigation & Main
@@ -573,7 +609,7 @@ def sidebar_module_navigation():
         "Home": page_home,
         "Online-API_Filter": page_online_api_filter,
         "3) Codewords & PubMed": page_codewords_pubmed,
-        # "4) Paper Selection": page_paper_selection,        # auskommentiert
+        # "4) Paper Selection": page_paper_selection,  # auskommentiert
         # "5) Analysis & Evaluation": page_analysis,
         # "6) Extended Topics": page_extended_topics,
         # "7) PaperQA2": page_paperqa2,
@@ -588,7 +624,6 @@ def sidebar_module_navigation():
     if "current_page" not in st.session_state:
         st.session_state["current_page"] = "Home"
     return pages[st.session_state["current_page"]]
-
 
 def main():
     st.markdown(
@@ -605,7 +640,6 @@ def main():
 
     page_fn = sidebar_module_navigation()
     page_fn()
-
 
 if __name__ == '__main__':
     main()
