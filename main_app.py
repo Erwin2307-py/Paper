@@ -5,26 +5,24 @@ import pandas as pd
 from io import BytesIO
 import re
 import datetime
-import os
-import PyPDF2
-import openai
-from dotenv import load_dotenv
-
-# For editing an existing Excel template
-import openpyxl
 
 from modules.online_api_filter import module_online_api_filter
-from scholarly import scholarly
 
-################################################################################
-# 1) LOGIN
-################################################################################
-
+# -----------------------------------------
+# Login-Funktion mit [login]-Schlüssel
+# ABGEÄNDERT: Entfernt st.experimental_rerun()
+# -----------------------------------------
 def login():
     st.title("Login")
+
     user_input = st.text_input("Username")
     pass_input = st.text_input("Password", type="password")
+    
     if st.button("Login"):
+        # Check credentials stored in secrets.toml / Streamlit Cloud:
+        # [login]
+        # username = "dein_benutzername"
+        # password = "dein_passwort"
         if (
             user_input == st.secrets["login"]["username"]
             and pass_input == st.secrets["login"]["password"]
@@ -33,22 +31,26 @@ def login():
         else:
             st.error("Login failed. Please check your credentials!")
 
+# Falls noch nicht im Session State: Standard auf False setzen
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
+# Prüfe den Login-Status. Wenn NICHT eingeloggt, zeige Login-Seite an, dann stop.
 if not st.session_state["logged_in"]:
     login()
     st.stop()
 
-################################################################################
-# 2) SET PAGE CONFIG
-################################################################################
+# -----------------------------------------
+# Wenn wir hier ankommen, ist man eingeloggt
+# -----------------------------------------
+
+# ------------------------------------------------------------
+# EINMALIGE set_page_config(...) hier ganz am Anfang
+# ------------------------------------------------------------
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
-load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 ################################################################################
-# 3) UTILITY + SEARCH FUNCTIONS (KEPT FOR COMPLETENESS)
+# 1) Gemeinsame Funktionen & Klassen
 ################################################################################
 
 class CoreAPI:
@@ -106,6 +108,10 @@ def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
         st.error(f"CORE search error: {e}")
         return []
 
+################################################################################
+# PubMed Connection Check + (Basis) Search
+################################################################################
+
 def check_pubmed_connection(timeout=10):
     test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": "test", "retmode": "json"}
@@ -118,6 +124,7 @@ def check_pubmed_connection(timeout=10):
         return False
 
 def search_pubmed_simple(query):
+    """Kurze Version: Sucht nur, ohne Abstract / Details."""
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 100}
     out = []
@@ -153,6 +160,7 @@ def search_pubmed_simple(query):
         return []
 
 def fetch_pubmed_abstract(pmid):
+    """Holt den Abstract via efetch für eine gegebene PubMed-ID."""
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
     params = {"db": "pubmed", "id": pmid, "retmode": "xml"}
     try:
@@ -170,6 +178,10 @@ def fetch_pubmed_abstract(pmid):
     except Exception as e:
         return f"(Error: {e})"
 
+################################################################################
+# Europe PMC Connection Check + (Basis) Search
+################################################################################
+
 def check_europe_pmc_connection(timeout=10):
     test_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {"query": "test", "format": "json", "pageSize": 100}
@@ -182,6 +194,7 @@ def check_europe_pmc_connection(timeout=10):
         return False
 
 def search_europe_pmc_simple(query):
+    """Kurze Version: Sucht nur, ohne erweiterte Details."""
     url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {
         "query": query,
@@ -213,14 +226,19 @@ def search_europe_pmc_simple(query):
         st.error(f"Europe PMC search error: {e}")
         return []
 
+################################################################################
+# OpenAlex API Communication
+################################################################################
+
 BASE_URL = "https://api.openalex.org"
+
 def fetch_openalex_data(entity_type, entity_id=None, params=None):
     url = f"{BASE_URL}/{entity_type}"
     if entity_id:
         url += f"/{entity_id}"
     if params is None:
         params = {}
-    params["mailto"] = "your_email@example.com"
+    params["mailto"] = "your_email@example.com"  # Ersetze durch deine E-Mail-Adresse
     response = requests.get(url, params=params)
     if response.status_code == 200:
         return response.json()
@@ -229,8 +247,13 @@ def fetch_openalex_data(entity_type, entity_id=None, params=None):
         return None
 
 def search_openalex_simple(query):
+    """Kurze Version: Liest die rohen Daten, prüft nur, ob was zurückkommt."""
     search_params = {"search": query}
     return fetch_openalex_data("works", params=search_params)
+
+################################################################################
+# Google Scholar (Basis) Test
+################################################################################
 
 from scholarly import scholarly
 
@@ -241,6 +264,7 @@ class GoogleScholarSearch:
     def search_google_scholar(self, base_query):
         try:
             search_results = scholarly.search_pubs(base_query)
+            # Nur 5 Abrufe als Test
             for _ in range(5):
                 result = next(search_results)
                 title = result['bib'].get('title', "n/a")
@@ -261,6 +285,10 @@ class GoogleScholarSearch:
                 })
         except Exception as e:
             st.error(f"Fehler bei der Google Scholar-Suche: {e}")
+
+################################################################################
+# Semantic Scholar API Communication
+################################################################################
 
 def check_semantic_scholar_connection(timeout=10):
     try:
@@ -308,7 +336,12 @@ class SemanticScholarSearch:
             st.error(f"Semantic Scholar: {e}")
 
 ################################################################################
-# 4) MODULES
+# 2) Neues Modul: "module_excel_online_search"
+################################################################################
+# [unverändert...]
+
+################################################################################
+# 3) Restliche Module + Seiten (Pages)
 ################################################################################
 
 def module_paperqa2():
@@ -317,10 +350,6 @@ def module_paperqa2():
     question = st.text_input("Bitte gib deine Frage ein:")
     if st.button("Frage absenden"):
         st.write("Antwort: Dies ist eine Dummy-Antwort auf die Frage:", question)
-
-################################################################################
-# 5) PAGE STRUCTURE
-################################################################################
 
 def page_home():
     st.title("Welcome to the Main Menu")
@@ -362,6 +391,11 @@ def page_excel_online_search():
     st.title("Excel Online Search")
     from modules.online_api_filter import module_online_api_filter
 
+# 4) SEITE FÜR SELENIUM Q&A (auskommentiert - placeholder)
+# def page_selenium_qa():
+#     ...
+
+# 5) NEUE SEITE: Kombinierte Online API + Filter (module_online_api_filter)
 def page_online_api_filter():
     st.title("Online-API_Filter (Kombiniert)")
     st.write("Hier kombinierst du ggf. API-Auswahl und Online-Filter in einem Schritt.")
@@ -369,9 +403,17 @@ def page_online_api_filter():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-################################################################################
-# 6) PAPER ANALYZER & EXCEL TEMPLATE PAGE
-################################################################################
+# ---------------------------------------------------------------------------
+# Ab hier: Ehemaliger Inhalt aus analyze_paper.py direkt eingebaut
+# ---------------------------------------------------------------------------
+
+import os
+import PyPDF2
+import openai
+from dotenv import load_dotenv
+
+load_dotenv()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 class PaperAnalyzer:
     def __init__(self, model="gpt-3.5-turbo"):
@@ -385,6 +427,7 @@ class PaperAnalyzer:
         return text
     
     def analyze_with_openai(self, text, prompt_template, api_key):
+        """Helper to send text + prompt to OpenAI Chat."""
         if len(text) > 15000:
             text = text[:15000] + "..."
         
@@ -443,138 +486,121 @@ class PaperAnalyzer:
 
 def page_analyze_paper():
     """
-    This page:
-     - lets user upload a PDF
-     - only shows text inputs to fill the template
-     - runs all analyses in the background
-     - fills "vorlage_paperqa2.xlsx" with the results
-     - lets the user download the new Excel
+    Seite "Analyze Paper": ruft direkt den PaperAnalyzer auf.
+    Jetzt mit zweitem Button:
+    - "Alle Analysen durchführen & in Excel speichern"
+    - Schreibt Summary, Key Findings, Methods, Relevance in eine Excel.
     """
+    st.title("Analyze Paper - Integriert")
 
-    st.title("Analyze Paper & Fill 'vorlage_paperqa2.xlsx'")
-
-    # We'll do a minimal sidebar – just the OpenAI key:
+    # Seitenmenü (oder in diesem Fall: Sidebar) - Eingaben:
     st.sidebar.header("Einstellungen - PaperAnalyzer")
     api_key = st.sidebar.text_input("OpenAI API Key", type="password", value=OPENAI_API_KEY or "")
+    model = st.sidebar.selectbox("OpenAI-Modell",
+                                 ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4o"],
+                                 index=0)
+    action = st.sidebar.radio("Analyseart",
+                              ["Zusammenfassung", "Wichtigste Erkenntnisse", "Methoden & Techniken", "Relevanz-Bewertung"],
+                              index=0)
     
-    # The user can upload the PDF
+    # Thema für Relevanz-Bewertung (wird unten nur gebraucht, wenn action="Relevanz-Bewertung")
+    topic = st.sidebar.text_input("Thema für Relevanz-Bewertung (falls relevant)")
+
+    # PDF upload:
     uploaded_file = st.file_uploader("PDF-Datei hochladen", type="pdf")
 
-    # The user can set a 'Topic' for relevance
-    topic = st.text_input("Topic for Relevance?")
+    analyzer = PaperAnalyzer(model=model)
 
-    # Additional text inputs for the fields in the Excel template
-    description = st.text_input("Description (D3)")
-    gen_name = st.text_input("Gen Name (D5)")
-    rs_number = st.text_input("rs Number (D6)")
-    special_comment = st.text_input("Special Comment (D7)")
-    genotype = st.text_input("Genotype (D10)")
-    population_freq = st.text_input("Population Frequency (E10)")
-    phenotype_statements = st.text_area("Phenotype Statements (F10)")
-    date_of_publication = st.text_input("Date of Publication (C20)")
-    study_size_ethnicity = st.text_input("Study size & Ethnicity (D20)")
-    pubmed_id = st.text_input("PubMed ID (J21)")
-    doi_input = st.text_input("DOI (I22)")
-    paper_link = st.text_input("Link to Paper (J22)")
-
-    # The user can give a manual relevance rating (1-10)
-    user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
-
-    analyzer = PaperAnalyzer()
-
-    # Show ONE button to do all:
+    # Einzelne Analyse via Radiobutton:
     if uploaded_file and api_key:
-        if st.button("Alle Analysen durchführen & in Excel-Template schreiben"):
-            with st.spinner("Analysiere und fülle Excel..."):
-                pdf_text = analyzer.extract_text_from_pdf(uploaded_file)
-                if not pdf_text.strip():
+        if st.button("Analyse starten"):
+            with st.spinner("Extrahiere Text aus PDF..."):
+                text = analyzer.extract_text_from_pdf(uploaded_file)
+                if not text.strip():
                     st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
                     st.stop()
+                st.success("Text wurde erfolgreich extrahiert!")
 
-                # Perform all 4 analyses
-                summary_text = analyzer.summarize(pdf_text, api_key)
-                key_findings = analyzer.extract_key_findings(pdf_text, api_key)
-                methods_text = analyzer.identify_methods(pdf_text, api_key)
-                
-                if topic:
-                    relevance_text = analyzer.evaluate_relevance(pdf_text, topic, api_key)
-                else:
-                    relevance_text = "(No Topic Provided -> No Relevance Analysis)"
+            with st.spinner(f"Führe {action}-Analyse durch..."):
+                if action == "Zusammenfassung":
+                    result = analyzer.summarize(text, api_key)
+                elif action == "Wichtigste Erkenntnisse":
+                    result = analyzer.extract_key_findings(text, api_key)
+                elif action == "Methoden & Techniken":
+                    result = analyzer.identify_methods(text, api_key)
+                elif action == "Relevanz-Bewertung":
+                    if not topic:
+                        st.error("Bitte Thema angeben für die Relevanz-Bewertung!")
+                        st.stop()
+                    result = analyzer.evaluate_relevance(text, topic, api_key)
 
-                # Combine or structure the "Literature Assessments" if desired:
-                # We'll put key findings + methods in C14
-                combined_assessment = f"Key Findings:\n{key_findings}\n\nMethods:\n{methods_text}"
-
-                # The final relevance with manual rating appended
-                final_relevance = f"{relevance_text}\n\n[Manuelle Bewertung: {user_relevance_score}]"
-
-                # Load the existing Excel template
-                try:
-                    wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
-                except FileNotFoundError:
-                    st.error("Die Vorlage 'vorlage_paperqa2.xlsx' wurde nicht im Verzeichnis gefunden!")
-                    st.stop()
-                ws = wb.active  # or use a sheet name if needed
-
-                # Fill the cells:
-                # D2 => Topic
-                ws["D2"] = topic
-                # D3 => Description
-                ws["D3"] = description
-                # D5 => Gen Name
-                ws["D5"] = gen_name
-                # D6 => rs Number
-                ws["D6"] = rs_number
-                # D7 => special Comment
-                ws["D7"] = special_comment
-                # D10 => Genotype
-                ws["D10"] = genotype
-                # E10 => population freq
-                ws["E10"] = population_freq
-                # F10 => phenotype statements
-                ws["F10"] = phenotype_statements
-                # C14 => summary of Literature Assessments
-                ws["C14"] = combined_assessment
-                # C20 => date of publication
-                ws["C20"] = date_of_publication
-                # D20 => study size & ethnicity
-                ws["D20"] = study_size_ethnicity
-                # E20 => summary
-                ws["E20"] = summary_text
-                # G19 => "assessment of paper" – let’s store the manual rating here
-                ws["G19"] = user_relevance_score
-                # G21 => statement about the paper – store the AI relevance text
-                ws["G21"] = relevance_text
-                # J21 => pubmed id
-                ws["J21"] = pubmed_id
-                # I22 => doi
-                ws["I22"] = doi_input
-                # J22 => link to the paper
-                ws["J22"] = paper_link
-
-                # Save to buffer for download
-                output = BytesIO()
-                wb.save(output)
-                output.seek(0)
-
-            st.success("Excel-Datei aktualisiert! Lade sie jetzt herunter:")
-            st.download_button(
-                label="Gefüllte Excel-Datei herunterladen",
-                data=output,
-                file_name="vorlage_paperqa2_filled.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
+                st.subheader("Ergebnis der Analyse")
+                st.markdown(result)
     else:
         if not api_key:
             st.warning("Bitte OpenAI API-Key eingeben!")
         elif not uploaded_file:
             st.info("Bitte eine PDF-Datei hochladen!")
 
-    if st.button("Back to Main Menu"):
-        st.session_state["current_page"] = "Home"
+    st.write("---")
+    st.write("## Alle Analysen & Excel-Ausgabe")
+    st.write("Führe alle 4 Analysen durch, frage nach Relevanz (Topic), und speichere die Ergebnisse in einer Excel-Datei.")
+
+    # Manuelle Eingabe der Relevanz-Bewertung (z.B. 1-10)
+    user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
+    # Ein Button, der ALLES durchführt:
+    if uploaded_file and api_key:
+        if st.button("Alle Analysen durchführen & in Excel speichern"):
+            with st.spinner("Analysiere alles..."):
+                text = analyzer.extract_text_from_pdf(uploaded_file)
+                if not text.strip():
+                    st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
+                    st.stop()
+                
+                summary_result = analyzer.summarize(text, api_key)
+                key_findings_result = analyzer.extract_key_findings(text, api_key)
+                methods_result = analyzer.identify_methods(text, api_key)
+
+                if not topic:
+                    st.error("Bitte 'Thema für Relevanz-Bewertung' angeben (links in der Sidebar)!")
+                    st.stop()
+                relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
+
+                # Wenn der/die Nutzer:in einen manuellen Score eingibt, hängen wir das noch an:
+                final_relevance = f"{relevance_result}\n\n[Manuelle Bewertung: {user_relevance_score}]"
+
+                # Alles in eine Excel-Datei schreiben (4 Worksheets)
+                import io
+                import xlsxwriter
+
+                output = io.BytesIO()
+                workbook = xlsxwriter.Workbook(output)
+
+                ws_summary = workbook.add_worksheet("Summary")
+                ws_summary.write(0, 0, summary_result)
+
+                ws_key = workbook.add_worksheet("KeyFindings")
+                ws_key.write(0, 0, key_findings_result)
+
+                ws_methods = workbook.add_worksheet("Methods")
+                ws_methods.write(0, 0, methods_result)
+
+                ws_relevance = workbook.add_worksheet("Relevance")
+                ws_relevance.write(0, 0, final_relevance)
+
+                workbook.close()
+                output.seek(0)
+
+            st.success("Alle Analysen abgeschlossen – Excel-Datei erstellt!")
+            st.download_button(
+                label="Download Excel",
+                data=output,
+                file_name="analysis_results.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
 
 ################################################################################
-# 7) SIDEBAR NAVIGATION & MAIN
+# 6) Sidebar Module Navigation & Main
 ################################################################################
 
 def sidebar_module_navigation():
@@ -583,7 +609,14 @@ def sidebar_module_navigation():
         "Home": page_home,
         "Online-API_Filter": page_online_api_filter,
         "3) Codewords & PubMed": page_codewords_pubmed,
-        "Analyze Paper": page_analyze_paper,  # Our new main page that fills the Excel
+        # "4) Paper Selection": page_paper_selection,  # auskommentiert
+        # "5) Analysis & Evaluation": page_analysis,
+        # "6) Extended Topics": page_extended_topics,
+        # "7) PaperQA2": page_paperqa2,
+        # "8) Excel Online Search": page_excel_online_search,
+        # "9) Selenium Q&A": page_selenium_qa,
+        # Neuer Menüpunkt => auf "page_analyze_paper" verlinkt
+        "Analyze Paper": page_analyze_paper,
     }
     for label, page in pages.items():
         if st.sidebar.button(label, key=label):
@@ -604,6 +637,7 @@ def main():
         """,
         unsafe_allow_html=True
     )
+
     page_fn = sidebar_module_navigation()
     page_fn()
 
