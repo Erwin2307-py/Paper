@@ -8,6 +8,9 @@ import datetime
 
 from modules.online_api_filter import module_online_api_filter
 
+# -----------------------------------------
+# Login-Funktion mit [login]-Schlüssel
+# -----------------------------------------
 def login():
     st.title("Login")
 
@@ -23,13 +26,22 @@ def login():
         else:
             st.error("Login failed. Please check your credentials!")
 
+# Falls noch nicht im Session State: Standard auf False setzen
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
+# Prüfe den Login-Status. Wenn NICHT eingeloggt, zeige Login-Seite an, dann stop.
 if not st.session_state["logged_in"]:
     login()
     st.stop()
 
+# -----------------------------------------
+# Wenn wir hier ankommen, ist man eingeloggt
+# -----------------------------------------
+
+# ------------------------------------------------------------
+# EINMALIGE set_page_config(...) hier ganz am Anfang
+# ------------------------------------------------------------
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
 ################################################################################
@@ -60,6 +72,7 @@ class CoreAPI:
         r.raise_for_status()
         return r.json()
 
+
 def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", timeout=15):
     try:
         core = CoreAPI(api_key)
@@ -67,6 +80,7 @@ def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", 
         return "results" in result
     except Exception:
         return False
+
 
 def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
     if not api_key:
@@ -91,6 +105,7 @@ def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
         st.error(f"CORE search error: {e}")
         return []
 
+
 ################################################################################
 # PubMed Connection Check + (Basis) Search
 ################################################################################
@@ -106,7 +121,9 @@ def check_pubmed_connection(timeout=10):
     except Exception:
         return False
 
+
 def search_pubmed_simple(query):
+    """Kurze Version: Sucht nur, ohne Abstract / Details."""
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 100}
     out = []
@@ -141,7 +158,9 @@ def search_pubmed_simple(query):
         st.error(f"Error searching PubMed: {e}")
         return []
 
+
 def fetch_pubmed_abstract(pmid):
+    """Holt den Abstract via efetch für eine gegebene PubMed-ID."""
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
     params = {"db": "pubmed", "id": pmid, "retmode": "xml"}
     try:
@@ -159,6 +178,7 @@ def fetch_pubmed_abstract(pmid):
     except Exception as e:
         return f"(Error: {e})"
 
+
 ################################################################################
 # Europe PMC Connection Check + (Basis) Search
 ################################################################################
@@ -174,7 +194,9 @@ def check_europe_pmc_connection(timeout=10):
     except Exception:
         return False
 
+
 def search_europe_pmc_simple(query):
+    """Kurze Version: Sucht nur, ohne erweiterte Details."""
     url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {
         "query": query,
@@ -206,6 +228,7 @@ def search_europe_pmc_simple(query):
         st.error(f"Europe PMC search error: {e}")
         return []
 
+
 ################################################################################
 # OpenAlex API Communication
 ################################################################################
@@ -218,7 +241,7 @@ def fetch_openalex_data(entity_type, entity_id=None, params=None):
         url += f"/{entity_id}"
     if params is None:
         params = {}
-    params["mailto"] = "your_email@example.com"
+    params["mailto"] = "your_email@example.com"  # Ersetze durch deine E-Mail-Adresse
     response = requests.get(url, params=params)
     if response.status_code == 200:
         return response.json()
@@ -227,8 +250,10 @@ def fetch_openalex_data(entity_type, entity_id=None, params=None):
         return None
 
 def search_openalex_simple(query):
+    """Kurze Version: Liest die rohen Daten, prüft nur, ob was zurückkommt."""
     search_params = {"search": query}
     return fetch_openalex_data("works", params=search_params)
+
 
 ################################################################################
 # Google Scholar (Basis) Test
@@ -263,6 +288,7 @@ class GoogleScholarSearch:
                 })
         except Exception as e:
             st.error(f"Fehler bei der Google Scholar-Suche: {e}")
+
 
 ################################################################################
 # Semantic Scholar API Communication
@@ -312,6 +338,7 @@ class SemanticScholarSearch:
                 })
         except Exception as e:
             st.error(f"Semantic Scholar: {e}")
+
 
 ################################################################################
 # 2) Neues Modul: "module_excel_online_search"
@@ -377,7 +404,7 @@ def page_online_api_filter():
         st.session_state["current_page"] = "Home"
 
 ################################################################################
-# PAPER ANALYZER
+# 4) PAPER ANALYZER (unchanged)
 ################################################################################
 import os
 import PyPDF2
@@ -455,12 +482,19 @@ class PaperAnalyzer:
         )
         return self.analyze_with_openai(text, prompt, api_key)
 
+
 ################################################################################
-# PAGE ANALYZE PAPER
+# 5) PAGE "Analyze Paper"
 ################################################################################
 def page_analyze_paper():
     """
-    Same as before, but we add J2 = today's date/time after filling everything else.
+    Seite "Analyze Paper": ruft direkt den PaperAnalyzer auf.
+    - If "Alle Analysen durchführen & in Excel speichern" is clicked:
+      * do all 4 GPT analyses
+      * parse the text for a gene (CYP24A1, etc.) => D5
+      * parse for rs... => D6
+      * parse for up to two genotype lines => (D10,F10), (D11,F11) with phenotype statements
+      * NEU: J2 = aktuelles Datum/Zeit, wann die Vorlage befüllt wurde.
     """
     st.title("Analyze Paper - Integriert")
 
@@ -475,9 +509,10 @@ def page_analyze_paper():
     topic = st.sidebar.text_input("Thema für Relevanz-Bewertung (falls relevant)")
 
     uploaded_file = st.file_uploader("PDF-Datei hochladen", type="pdf")
+
     analyzer = PaperAnalyzer(model=model)
 
-    # 1) EINZELANALYSE
+    # 1) EINZELNE ANALYSE VIA RADIO
     if uploaded_file and api_key:
         if st.button("Analyse starten"):
             with st.spinner("Extrahiere Text aus PDF..."):
@@ -508,9 +543,12 @@ def page_analyze_paper():
         elif not uploaded_file:
             st.info("Bitte eine PDF-Datei hochladen!")
 
-    # 2) Alle Analysen & Excel-Speichern
+    # 2) ALLE ANALYSEN & EXCEL-SPEICHERN
     st.write("---")
     st.write("## Alle Analysen & Excel-Ausgabe")
+    st.write("Führe alle 4 Analysen durch. Danach parse den Text auf Gene (CYP24A1, etc.), rs..., Genotypen (TT, CC, etc.) und schreibe sie in die Vorlage.")
+    st.write("Dann wird in J2 auch das aktuelle Datum/zur Laufzeit eingetragen.")
+
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
     if uploaded_file and api_key:
         if st.button("Alle Analysen durchführen & in Excel speichern"):
@@ -520,6 +558,7 @@ def page_analyze_paper():
                     st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
                     st.stop()
 
+                # 4 analyses:
                 summary_result = analyzer.summarize(text, api_key)
                 key_findings_result = analyzer.extract_key_findings(text, api_key)
                 methods_result = analyzer.identify_methods(text, api_key)
@@ -527,40 +566,72 @@ def page_analyze_paper():
                     st.error("Bitte 'Thema für Relevanz-Bewertung' angeben (links in der Sidebar)!")
                     st.stop()
                 relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
+
                 final_relevance = f"{relevance_result}\n\n[Manuelle Bewertung: {user_relevance_score}]"
 
-                # for demonstration, we won't parse gene/rs, etc. This is the same code as before
-                # but let's say we do the standard 4 worksheets approach:
+                # ------------------ PARSE PDF FOR GENE, RS, GENOTYPES -------------
+                gene_pat = r"(CYP24A1|VDBP|GC|CYP2R1|DHCR7|anyOtherGene)"
+                found_gene = re.search(gene_pat, text, re.IGNORECASE)
+                gene_name = None
+                if found_gene:
+                    gene_name = found_gene.group(1)
+
+                rs_pat = r"(rs\d+)"
+                found_rs = re.search(rs_pat, text)
+                rs_num = None
+                if found_rs:
+                    rs_num = found_rs.group(1)
+
+                genotype_regex = r"\b([ACGT]{2,3})\b"
+                lines = text.split("\n")
+                found_pairs = []
+                for line in lines:
+                    matches = re.findall(genotype_regex, line)
+                    if matches:
+                        for m in matches:
+                            found_pairs.append((m, line.strip()))
+                unique_geno_pairs = []
+                for gp in found_pairs:
+                    if gp not in unique_geno_pairs:
+                        unique_geno_pairs.append(gp)
+
+                import openpyxl
                 import io
-                import xlsxwriter
                 import datetime
 
+                try:
+                    wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
+                except FileNotFoundError:
+                    st.error("Vorlage 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
+                    st.stop()
+
+                ws = wb.active  # or a named sheet if needed
+
+                # Fill gene in D5
+                if gene_name:
+                    ws["D5"] = gene_name
+                # Fill rs in D6
+                if rs_num:
+                    ws["D6"] = rs_num
+
+                # Fill up to 2 genotype lines in D10/F10, D11/F11
+                if len(unique_geno_pairs) > 0:
+                    ws["D10"] = unique_geno_pairs[0][0]
+                    ws["F10"] = unique_geno_pairs[0][1]
+                if len(unique_geno_pairs) > 1:
+                    ws["D11"] = unique_geno_pairs[1][0]
+                    ws["F11"] = unique_geno_pairs[1][1]
+
+                # NEU: Setze in Zelle J2 das aktuelle Datum/Zeit
+                now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                ws["J2"] = now_str
+
+                # Save the updated Excel to memory
                 output = io.BytesIO()
-                workbook = xlsxwriter.Workbook(output)
-
-                ws_summary = workbook.add_worksheet("Summary")
-                ws_summary.write(0, 0, summary_result)
-
-                ws_key = workbook.add_worksheet("KeyFindings")
-                ws_key.write(0, 0, key_findings_result)
-
-                ws_methods = workbook.add_worksheet("Methods")
-                ws_methods.write(0, 0, methods_result)
-
-                ws_relevance = workbook.add_worksheet("Relevance")
-                ws_relevance.write(0, 0, final_relevance)
-
-                # NEU: Schreibe Datum in Zelle J2 (row=1, col=9) – xlsxwriter uses zero-based indexing
-                # So row=1, col=9 => that's J2 if col=9 => J, row=1 => 2. We'll do "A=0, B=1, ... J=9"
-                # But we can also just do ws_summary.write("J2", ...)
-                current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                # We'll write it on the "Summary" sheet, cell J2
-                ws_summary.write("J2", f"Created: {current_datetime}")
-
-                workbook.close()
+                wb.save(output)
                 output.seek(0)
 
-            st.success("Alle Analysen abgeschlossen – Excel-Datei erstellt!")
+            st.success("Alle Analysen abgeschlossen – Excel-Datei erstellt und Felder befüllt!")
             st.download_button(
                 label="Download Excel",
                 data=output,
@@ -569,7 +640,7 @@ def page_analyze_paper():
             )
 
 ################################################################################
-# SIDEBAR & MAIN
+# 6) Sidebar Module Navigation & Main
 ################################################################################
 
 def sidebar_module_navigation():
@@ -578,12 +649,13 @@ def sidebar_module_navigation():
         "Home": page_home,
         "Online-API_Filter": page_online_api_filter,
         "3) Codewords & PubMed": page_codewords_pubmed,
-        # "4) Paper Selection": page_paper_selection,
+        # "4) Paper Selection": page_paper_selection,  # auskommentiert
         # "5) Analysis & Evaluation": page_analysis,
         # "6) Extended Topics": page_extended_topics,
         # "7) PaperQA2": page_paperqa2,
         # "8) Excel Online Search": page_excel_online_search,
         # "9) Selenium Q&A": page_selenium_qa,
+        # Neuer Menüpunkt => auf "page_analyze_paper" verlinkt
         "Analyze Paper": page_analyze_paper,
     }
     for label, page in pages.items():
@@ -605,6 +677,7 @@ def main():
         """,
         unsafe_allow_html=True
     )
+
     page_fn = sidebar_module_navigation()
     page_fn()
 
