@@ -5,7 +5,8 @@ import pandas as pd
 from io import BytesIO
 import re
 import datetime
-import os
+
+from modules.online_api_filter import module_online_api_filter
 
 # -----------------------------------------
 # Login-Funktion mit [login]-Schlüssel
@@ -17,14 +18,9 @@ def login():
     pass_input = st.text_input("Password", type="password")
     
     if st.button("Login"):
-        # Falls du in st.secrets keinen Key hast, wird es nicht abstürzen
-        # Wir schalten hier einen Dummy-Check
-        # Du kannst das anpassen, wie du möchtest
-        valid_user = "admin"
-        valid_pass = "1234"
         if (
-            user_input == valid_user
-            and pass_input == valid_pass
+            user_input == st.secrets["login"]["username"]
+            and pass_input == st.secrets["login"]["password"]
         ):
             st.session_state["logged_in"] = True
         else:
@@ -49,7 +45,7 @@ if not st.session_state["logged_in"]:
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
 ################################################################################
-# 1) Gemeinsame Funktionen & Klassen 
+# 1) Gemeinsame Funktionen & Klassen (unverändert)
 ################################################################################
 
 class CoreAPI:
@@ -111,7 +107,7 @@ def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
 
 
 ################################################################################
-# PubMed Connection Check + (Basis) Search
+# PubMed Connection Check + (Basis) Search (unverändert)
 ################################################################################
 
 def check_pubmed_connection(timeout=10):
@@ -127,6 +123,7 @@ def check_pubmed_connection(timeout=10):
 
 
 def search_pubmed_simple(query):
+    """Kurze Version: Sucht nur, ohne Abstract / Details."""
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 100}
     out = []
@@ -163,6 +160,7 @@ def search_pubmed_simple(query):
 
 
 def fetch_pubmed_abstract(pmid):
+    """Holt den Abstract via efetch für eine gegebene PubMed-ID."""
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
     params = {"db": "pubmed", "id": pmid, "retmode": "xml"}
     try:
@@ -182,7 +180,7 @@ def fetch_pubmed_abstract(pmid):
 
 
 ################################################################################
-# Europe PMC Connection Check + (Basis) Search
+# Europe PMC Connection Check + (Basis) Search (unverändert)
 ################################################################################
 
 def check_europe_pmc_connection(timeout=10):
@@ -198,6 +196,7 @@ def check_europe_pmc_connection(timeout=10):
 
 
 def search_europe_pmc_simple(query):
+    """Kurze Version: Sucht nur, ohne erweiterte Details."""
     url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {
         "query": query,
@@ -231,7 +230,7 @@ def search_europe_pmc_simple(query):
 
 
 ################################################################################
-# OpenAlex API Communication
+# OpenAlex API Communication (unverändert)
 ################################################################################
 
 BASE_URL = "https://api.openalex.org"
@@ -242,7 +241,7 @@ def fetch_openalex_data(entity_type, entity_id=None, params=None):
         url += f"/{entity_id}"
     if params is None:
         params = {}
-    params["mailto"] = "your_email@example.com"
+    params["mailto"] = "your_email@example.com"  # Ersetze durch deine E-Mail-Adresse
     response = requests.get(url, params=params)
     if response.status_code == 200:
         return response.json()
@@ -251,12 +250,13 @@ def fetch_openalex_data(entity_type, entity_id=None, params=None):
         return None
 
 def search_openalex_simple(query):
+    """Kurze Version: Liest die rohen Daten, prüft nur, ob was zurückkommt."""
     search_params = {"search": query}
     return fetch_openalex_data("works", params=search_params)
 
 
 ################################################################################
-# Google Scholar (Basis) Test
+# Google Scholar (Basis) Test (unverändert)
 ################################################################################
 
 from scholarly import scholarly
@@ -291,7 +291,7 @@ class GoogleScholarSearch:
 
 
 ################################################################################
-# Semantic Scholar API Communication
+# Semantic Scholar API Communication (unverändert)
 ################################################################################
 
 def check_semantic_scholar_connection(timeout=10):
@@ -341,25 +341,13 @@ class SemanticScholarSearch:
 
 
 ################################################################################
-# 2) Neues Modul: "module_excel_online_search"
+# 2) Neues Modul: "module_excel_online_search" (unverändert)
 ################################################################################
-def module_excel_online_search():
-    st.write("Placeholder: module_excel_online_search function")
-    # Du kannst hier deinen Code ergänzen
-
+# [unverändert...]
 
 ################################################################################
-# 3) Restliche Module + Seiten (Pages)
+# 3) Restliche Module + Seiten (Pages) (unverändert)
 ################################################################################
-
-# Fallback, falls modules.online_api_filter nicht existiert:
-try:
-    from modules.online_api_filter import module_online_api_filter
-except ImportError:
-    st.warning("Konnte 'modules.online_api_filter' nicht importieren. Verwende Dummy.")
-    def module_online_api_filter():
-        st.write("Dummy-Funktion: Online-API_Filter nicht verfügbar.")
-
 
 def module_paperqa2():
     st.subheader("PaperQA2 Module")
@@ -371,19 +359,12 @@ def module_paperqa2():
 def page_home():
     st.title("Welcome to the Main Menu")
     st.write("Choose a module in the sidebar to proceed.")
-    # Falls Bild1.jpg fehlt, breche nicht ab.
-    try:
-        st.image("Bild1.jpg", caption="Willkommen!", use_container_width=False, width=600)
-    except:
-        st.write("(Hinweis: Bild1.jpg nicht gefunden.)")
+    st.image("Bild1.jpg", caption="Willkommen!", use_container_width=False, width=600)
 
 def page_codewords_pubmed():
     st.title("Codewords & PubMed Settings")
-    try:
-        from modules.codewords_pubmed import module_codewords_pubmed
-        module_codewords_pubmed()
-    except ImportError:
-        st.write("Placeholder: modules.codewords_pubmed nicht verfügbar.")
+    from modules.codewords_pubmed import module_codewords_pubmed
+    module_codewords_pubmed()
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
@@ -411,6 +392,10 @@ def page_paperqa2():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
+def page_excel_online_search():
+    st.title("Excel Online Search")
+    from modules.online_api_filter import module_online_api_filter
+
 def page_online_api_filter():
     st.title("Online-API_Filter (Kombiniert)")
     st.write("Hier kombinierst du ggf. API-Auswahl und Online-Filter in einem Schritt.")
@@ -418,10 +403,10 @@ def page_online_api_filter():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-
 ################################################################################
-# 4) PAPER ANALYZER + AlleleFrequencyFinder
+# 4) PAPER ANALYZER (unverändert) + Load Env/OPENAI key
 ################################################################################
+import os
 import PyPDF2
 import openai
 from dotenv import load_dotenv
@@ -445,7 +430,6 @@ class PaperAnalyzer:
             text = text[:15000] + "..."
         
         prompt = prompt_template.format(text=text)
-        import openai
         client = openai.OpenAI(api_key=api_key)
         
         response = client.chat.completions.create(
@@ -499,58 +483,80 @@ class PaperAnalyzer:
         return self.analyze_with_openai(text, prompt, api_key)
 
 
-import base64
+################################################################################
+# NEU: Die Klasse AlleleFrequencyFinder (aus deinem Snippet) + Integration
+################################################################################
+
+import time
+import sys
+import json
+from typing import Dict, Any, Optional
 
 class AlleleFrequencyFinder:
     """Klasse zum Abrufen und Anzeigen von Allelfrequenzen aus verschiedenen Quellen."""
+
     def __init__(self):
         self.ensembl_server = "https://rest.ensembl.org"
         self.max_retries = 3
-        self.retry_delay = 2
+        self.retry_delay = 2  # Sekunden zwischen Wiederholungsversuchen
 
-    def get_allele_frequencies(self, rs_id, retry_count=0):
+    def get_allele_frequencies(self, rs_id: str, retry_count: int = 0) -> Optional[Dict[str, Any]]:
+        """
+        Ruft Allelfrequenzdaten von Ensembl mit Wiederholungsversuchen ab.
+        
+        Args:
+            rs_id: Die RS-ID (z.B. rs699)
+            retry_count: Aktuelle Anzahl der Wiederholungsversuche
+            
+        Returns:
+            Dict mit Allelfrequenzdaten oder None bei Fehlschlag
+        """
         if not rs_id.startswith("rs"):
             rs_id = f"rs{rs_id}"
+            
         endpoint = f"/variation/human/{rs_id}?pops=1"
         url = f"{self.ensembl_server}{endpoint}"
 
         try:
-            r = requests.get(url, headers={"Content-Type": "application/json"}, timeout=10)
-            r.raise_for_status()
-            return r.json()
+            response = requests.get(url, headers={"Content-Type": "application/json"}, timeout=10)
+            response.raise_for_status()
+            return response.json()
         except requests.exceptions.HTTPError as e:
-            if r.status_code == 500 and retry_count < self.max_retries:
-                import time
+            # 500 => Retry bis max_retries
+            if response.status_code == 500 and retry_count < self.max_retries:
                 time.sleep(self.retry_delay)
-                return self.get_allele_frequencies(rs_id, retry_count+1)
-            elif r.status_code == 404:
+                return self.get_allele_frequencies(rs_id, retry_count + 1)
+            elif response.status_code == 404:
                 return None
             else:
                 return None
         except requests.exceptions.RequestException:
             if retry_count < self.max_retries:
-                import time
                 time.sleep(self.retry_delay)
-                return self.get_allele_frequencies(rs_id, retry_count+1)
+                return self.get_allele_frequencies(rs_id, retry_count + 1)
             return None
-
-    def try_alternative_source(self, rs_id):
+    
+    def try_alternative_source(self, rs_id: str) -> Optional[Dict[str, Any]]:
+        """Platzhalter: alternativer Weg, falls Ensembl down ist."""
         return None
-
-    def parse_and_display_data(self, data):
+    
+    def parse_and_display_data(self, data: Dict[str, Any]) -> None:
+        """Nur Konsolen-Print (Beispiel)."""
         if not data:
             print("Keine Daten verfügbar.")
             return
-        import json
         print(json.dumps(data, indent=2))
 
-    def build_freq_info_text(self, data):
+    def build_freq_info_text(self, data: Dict[str, Any]) -> str:
+        """Erstellt kurzen Text mit MAF + Populationen, etc."""
         if not data:
             return "Keine Daten von Ensembl"
+        
         maf = data.get("MAF", None)
         pops = data.get("populations", [])
         out = []
         out.append(f"MAF={maf}" if maf else "MAF=n/a")
+
         if pops:
             max_pop = 2
             for i, pop in enumerate(pops):
@@ -562,11 +568,17 @@ class AlleleFrequencyFinder:
                 out.append(f"{pop_name}:{allele}={freq}")
         else:
             out.append("Keine Populationsdaten gefunden.")
+
         return " | ".join(out)
 
+################################################################################
+# 5) PAGE "Analyze Paper" - Hier steht die neue Gen-Logik: Erst "offensichtlicher Hinweis", dann Excel.
+################################################################################
 def page_analyze_paper():
     """
     Seite "Analyze Paper": ruft direkt den PaperAnalyzer auf.
+    * Zuerst versuchen wir, aus dem Text "in the XYZ Gene" zu parsen (z.B. CYP24A1).
+    * Wenn das nicht klappt, fallback: wir lesen 'vorlage_gene.xlsx' und suchen alle Genes.
     """
     st.title("Analyze Paper - Integriert")
 
@@ -584,6 +596,7 @@ def page_analyze_paper():
 
     analyzer = PaperAnalyzer(model=model)
 
+    # 1) EINZELNE ANALYSE VIA RADIO-Knopf
     if uploaded_file and api_key:
         if st.button("Analyse starten"):
             with st.spinner("Extrahiere Text aus PDF..."):
@@ -614,9 +627,11 @@ def page_analyze_paper():
         elif not uploaded_file:
             st.info("Bitte eine PDF-Datei hochladen!")
 
+    # 2) ALLE ANALYSEN & EXCEL-SPEICHERN
     st.write("---")
     st.write("## Alle Analysen & Excel-Ausgabe")
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
+
     if uploaded_file and api_key:
         if st.button("Alle Analysen durchführen & in Excel speichern"):
             with st.spinner("Analysiere alles..."):
@@ -625,6 +640,7 @@ def page_analyze_paper():
                     st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
                     st.stop()
 
+                # GPT-Analysen:
                 summary_result = analyzer.summarize(text, api_key)
                 key_findings_result = analyzer.extract_key_findings(text, api_key)
                 methods_result = analyzer.identify_methods(text, api_key)
@@ -632,41 +648,56 @@ def page_analyze_paper():
                     st.error("Bitte 'Thema für Relevanz-Bewertung' angeben!")
                     st.stop()
                 relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
-
                 final_relevance = f"{relevance_result}\n\n[Manuelle Bewertung: {user_relevance_score}]"
 
                 import openpyxl
                 import io
                 import datetime
 
-                # Minimal - versuche vorlage_gene.xlsx
+                # --------------------------------------------------------------
+                # 1) Gucke, ob es einen "offensichtlichen" Hinweis im Text gibt:
+                #    z.B. "... in the CYP24A1 Gene ..."
+                # --------------------------------------------------------------
                 gene_via_text = None
+                # Suche Muster: "in the (irgendwas) gene"
+                # Wir erlauben: in the CIP24A1 gene, in the ABO gene, etc.
+                # Kleinschreibung egal => re.IGNORECASE
                 pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                 match_text = re.search(pattern_obvious, text)
                 if match_text:
                     gene_via_text = match_text.group(1)
+                    # gene_via_text wäre z.B. "CYP24A1" o.Ä.
 
+                # --------------------------------------------------------------
+                # 2) Falls NICHT da => fallback: Excel-Liste checken
+                # --------------------------------------------------------------
                 if gene_via_text:
-                    found_gene = gene_via_text
+                    found_gene = gene_via_text  # priorität: offensichtlicher Fund im Text
                 else:
+                    # normaler fallback: wir lesen 'vorlage_gene.xlsx'
                     try:
                         wb_gene = openpyxl.load_workbook("vorlage_gene.xlsx")
-                        ws_gene = wb_gene.active
-                        gene_names_from_excel = []
-                        for row in ws_gene.iter_rows(min_row=3, min_col=3, max_col=3, values_only=True):
-                            cell_value = row[0]
-                            if cell_value and isinstance(cell_value, str):
-                                gene_names_from_excel.append(cell_value.strip())
-                        found_gene = None
-                        for g in gene_names_from_excel:
-                            pat = re.compile(r"\b" + re.escape(g) + r"\b", re.IGNORECASE)
-                            if re.search(pat, text):
-                                found_gene = g
-                                break
                     except FileNotFoundError:
-                        st.warning("vorlage_gene.xlsx nicht gefunden. Setze 'found_gene'=None.")
-                        found_gene = None
+                        st.error("Die Datei 'vorlage_gene.xlsx' wurde nicht gefunden!")
+                        st.stop()
 
+                    ws_gene = wb_gene.active
+                    gene_names_from_excel = []
+                    for row in ws_gene.iter_rows(min_row=3, min_col=3, max_col=3, values_only=True):
+                        cell_value = row[0]
+                        if cell_value and isinstance(cell_value, str):
+                            gene_names_from_excel.append(cell_value.strip())
+
+                    found_gene = None
+                    for g in gene_names_from_excel:
+                        pat = re.compile(r"\b" + re.escape(g) + r"\b", re.IGNORECASE)
+                        if re.search(pat, text):
+                            found_gene = g
+                            break
+
+                # --------------------------------------------------------------
+                # 3) Excel-Vorlage öffnen
+                # --------------------------------------------------------------
                 try:
                     wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
                 except FileNotFoundError:
@@ -674,9 +705,12 @@ def page_analyze_paper():
                     st.stop()
 
                 ws = wb.active
+
+                # falls wir was gefunden haben => D5 = found_gene
                 if found_gene:
                     ws["D5"] = found_gene
 
+                # 4) rs\d+ => in D6 + Frequenz via AlleleFrequencyFinder
                 rs_pat = r"(rs\d+)"
                 found_rs = re.search(rs_pat, text)
                 rs_num = None
@@ -684,6 +718,7 @@ def page_analyze_paper():
                     rs_num = found_rs.group(1)
                     ws["D6"] = rs_num
 
+                # 5) Genotypen wie TT, CC, etc.
                 genotype_regex = r"\b([ACGT]{2,3})\b"
                 lines = text.split("\n")
                 found_pairs = []
@@ -698,6 +733,7 @@ def page_analyze_paper():
                     if gp not in unique_geno_pairs:
                         unique_geno_pairs.append(gp)
 
+                # 6) Frequenz via AlleleFrequencyFinder (nur wenn rs_num da)
                 aff = AlleleFrequencyFinder()
                 if rs_num:
                     data = aff.get_allele_frequencies(rs_num)
@@ -710,6 +746,7 @@ def page_analyze_paper():
                 else:
                     freq_info = "Keine rsID vorhanden"
 
+                # 7) Zellen (D10/F10/E10) + (D11/F11/E11)
                 if len(unique_geno_pairs) > 0:
                     ws["D10"] = unique_geno_pairs[0][0]
                     ws["F10"] = unique_geno_pairs[0][1]
@@ -720,9 +757,11 @@ def page_analyze_paper():
                     ws["F11"] = unique_geno_pairs[1][1]
                     ws["E11"] = freq_info
 
+                # Zeitstempel in J2
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ws["J2"] = now_str
 
+                # Speichern + Download anbieten
                 output = io.BytesIO()
                 wb.save(output)
                 output.seek(0)
@@ -735,6 +774,10 @@ def page_analyze_paper():
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
 
+################################################################################
+# 6) Sidebar Module Navigation & Main (unverändert)
+################################################################################
+
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
     pages = {
@@ -746,7 +789,7 @@ def sidebar_module_navigation():
         # "6) Extended Topics": page_extended_topics,
         # "7) PaperQA2": page_paperqa2,
         # "8) Excel Online Search": page_excel_online_search,
-        # "9) Selenium Q&A": lambda: st.write("Selenium Q&A placeholder"),
+        # "9) Selenium Q&A": page_selenium_qa,
         "Analyze Paper": page_analyze_paper,
     }
     for label, page in pages.items():
