@@ -37,3 +37,4 @@ logging
 python-dotenv>=1.0
 pdf2image
 img2table
+opencv-python
