@@ -527,7 +527,6 @@ class AlleleFrequencyFinder:
                 time.sleep(self.retry_delay)
                 return self.get_allele_frequencies(rs_id, retry_count + 1)
             elif response.status_code == 404:
-                # Variation nicht gefunden
                 return None
             else:
                 return None
@@ -538,25 +537,18 @@ class AlleleFrequencyFinder:
             return None
     
     def try_alternative_source(self, rs_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Versucht, Daten von einer alternativen Quelle (dbSNP) abzurufen,
-        falls Ensembl nicht verfügbar ist.
-        """
-        # Implementation würde NCBI's E-utilities oder dbSNP-Abfrage verwenden
+        """Platzhalter: alternativer Weg, falls Ensembl down ist."""
         return None
     
     def parse_and_display_data(self, data: Dict[str, Any]) -> None:
-        """
-        Konsolen-Ausgabe. In Streamlit wollen wir i.d.R. nicht printen,
-        aber du kannst das natürlich anpassen, wenn du möchtest.
-        """
+        """Nur Konsolen-Print (Beispiel)."""
         if not data:
             print("Keine Daten verfügbar.")
             return
         print(json.dumps(data, indent=2))
 
     def build_freq_info_text(self, data: Dict[str, Any]) -> str:
-        """Erstellt einen kurzen Text mit MAF + Populationen, ähnlich fetch_population_frequency_from_ensembl."""
+        """Erstellt kurzen Text mit MAF + Populationen, etc."""
         if not data:
             return "Keine Daten von Ensembl"
         
@@ -580,17 +572,13 @@ class AlleleFrequencyFinder:
         return " | ".join(out)
 
 ################################################################################
-# 5) PAGE "Analyze Paper" - hier binden wir AlleleFrequencyFinder ein
+# 5) PAGE "Analyze Paper" - Hier steht die neue Gen-Logik: Erst "offensichtlicher Hinweis", dann Excel.
 ################################################################################
 def page_analyze_paper():
     """
     Seite "Analyze Paper": ruft direkt den PaperAnalyzer auf.
-      * do all 4 GPT analyses
-      * liest Gene aus 'vorlage_gene.xlsx' (Spalte C ab Zeile 3)
-      * parse for rs... => D6 (nur die rs-ID wird an die AlleleFrequencyFinder-Klasse geschickt)
-      * parse for bis zu zwei genotype lines => (D10/F10), (D11/F11)
-      * E10/E11 => Falls rs-Nummer vorhanden, mache get_allele_frequencies() + parse => Frequenzinfo.
-      * J2 = aktuelles Datum/Zeit.
+    * Zuerst versuchen wir, aus dem Text "in the XYZ Gene" zu parsen (z.B. CYP24A1).
+    * Wenn das nicht klappt, fallback: wir lesen 'vorlage_gene.xlsx' und suchen alle Genes.
     """
     st.title("Analyze Paper - Integriert")
 
@@ -608,7 +596,7 @@ def page_analyze_paper():
 
     analyzer = PaperAnalyzer(model=model)
 
-    # 1) EINZELNE ANALYSE VIA RADIO
+    # 1) EINZELNE ANALYSE VIA RADIO-Knopf
     if uploaded_file and api_key:
         if st.button("Analyse starten"):
             with st.spinner("Extrahiere Text aus PDF..."):
@@ -639,11 +627,11 @@ def page_analyze_paper():
         elif not uploaded_file:
             st.info("Bitte eine PDF-Datei hochladen!")
 
-    # 2) ALLE ANALYSEN & EXCEL-SPEICHERN (unverändert, nur Frequenz-Teil an die neue Klasse angepasst)
+    # 2) ALLE ANALYSEN & EXCEL-SPEICHERN
     st.write("---")
     st.write("## Alle Analysen & Excel-Ausgabe")
-
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
+
     if uploaded_file and api_key:
         if st.button("Alle Analysen durchführen & in Excel speichern"):
             with st.spinner("Analysiere alles..."):
@@ -652,7 +640,7 @@ def page_analyze_paper():
                     st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
                     st.stop()
 
-                # GPT-Analysen
+                # GPT-Analysen:
                 summary_result = analyzer.summarize(text, api_key)
                 key_findings_result = analyzer.extract_key_findings(text, api_key)
                 methods_result = analyzer.identify_methods(text, api_key)
@@ -660,35 +648,56 @@ def page_analyze_paper():
                     st.error("Bitte 'Thema für Relevanz-Bewertung' angeben!")
                     st.stop()
                 relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
-
                 final_relevance = f"{relevance_result}\n\n[Manuelle Bewertung: {user_relevance_score}]"
 
                 import openpyxl
                 import io
                 import datetime
 
-                # 1) Gene einlesen + matchen
-                try:
-                    wb_gene = openpyxl.load_workbook("vorlage_gene.xlsx")
-                except FileNotFoundError:
-                    st.error("Die Datei 'vorlage_gene.xlsx' wurde nicht gefunden!")
-                    st.stop()
+                # --------------------------------------------------------------
+                # 1) Gucke, ob es einen "offensichtlichen" Hinweis im Text gibt:
+                #    z.B. "... in the CYP24A1 Gene ..."
+                # --------------------------------------------------------------
+                gene_via_text = None
+                # Suche Muster: "in the (irgendwas) gene"
+                # Wir erlauben: in the CIP24A1 gene, in the ABO gene, etc.
+                # Kleinschreibung egal => re.IGNORECASE
+                pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
+                match_text = re.search(pattern_obvious, text)
+                if match_text:
+                    gene_via_text = match_text.group(1)
+                    # gene_via_text wäre z.B. "CYP24A1" o.Ä.
 
-                ws_gene = wb_gene.active
-                gene_names_from_excel = []
-                for row in ws_gene.iter_rows(min_row=3, min_col=3, max_col=3, values_only=True):
-                    cell_value = row[0]
-                    if cell_value and isinstance(cell_value, str):
-                        gene_names_from_excel.append(cell_value.strip())
+                # --------------------------------------------------------------
+                # 2) Falls NICHT da => fallback: Excel-Liste checken
+                # --------------------------------------------------------------
+                if gene_via_text:
+                    found_gene = gene_via_text  # priorität: offensichtlicher Fund im Text
+                else:
+                    # normaler fallback: wir lesen 'vorlage_gene.xlsx'
+                    try:
+                        wb_gene = openpyxl.load_workbook("vorlage_gene.xlsx")
+                    except FileNotFoundError:
+                        st.error("Die Datei 'vorlage_gene.xlsx' wurde nicht gefunden!")
+                        st.stop()
 
-                found_gene_from_excel = None
-                for g in gene_names_from_excel:
-                    pattern = re.compile(r"\b" + re.escape(g) + r"\b", re.IGNORECASE)
-                    if re.search(pattern, text):
-                        found_gene_from_excel = g
-                        break
+                    ws_gene = wb_gene.active
+                    gene_names_from_excel = []
+                    for row in ws_gene.iter_rows(min_row=3, min_col=3, max_col=3, values_only=True):
+                        cell_value = row[0]
+                        if cell_value and isinstance(cell_value, str):
+                            gene_names_from_excel.append(cell_value.strip())
 
-                # 2) Excel-Vorlage 'vorlage_paperqa2.xlsx' öffnen
+                    found_gene = None
+                    for g in gene_names_from_excel:
+                        pat = re.compile(r"\b" + re.escape(g) + r"\b", re.IGNORECASE)
+                        if re.search(pat, text):
+                            found_gene = g
+                            break
+
+                # --------------------------------------------------------------
+                # 3) Excel-Vorlage öffnen
+                # --------------------------------------------------------------
                 try:
                     wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
                 except FileNotFoundError:
@@ -697,10 +706,11 @@ def page_analyze_paper():
 
                 ws = wb.active
 
-                if found_gene_from_excel:
-                    ws["D5"] = found_gene_from_excel
+                # falls wir was gefunden haben => D5 = found_gene
+                if found_gene:
+                    ws["D5"] = found_gene
 
-                # rs\d+ => in D6 + Frequenz via AlleleFrequencyFinder
+                # 4) rs\d+ => in D6 + Frequenz via AlleleFrequencyFinder
                 rs_pat = r"(rs\d+)"
                 found_rs = re.search(rs_pat, text)
                 rs_num = None
@@ -708,6 +718,7 @@ def page_analyze_paper():
                     rs_num = found_rs.group(1)
                     ws["D6"] = rs_num
 
+                # 5) Genotypen wie TT, CC, etc.
                 genotype_regex = r"\b([ACGT]{2,3})\b"
                 lines = text.split("\n")
                 found_pairs = []
@@ -722,38 +733,35 @@ def page_analyze_paper():
                     if gp not in unique_geno_pairs:
                         unique_geno_pairs.append(gp)
 
-                # NEU: AlleleFrequencyFinder statt fetch_population_frequency_from_ensembl
-                freq_info = "Keine rsID vorhanden"
+                # 6) Frequenz via AlleleFrequencyFinder (nur wenn rs_num da)
                 aff = AlleleFrequencyFinder()
-
                 if rs_num:
-                    # Versuch es via Ensembl (mit Retries):
                     data = aff.get_allele_frequencies(rs_num)
                     if not data:
-                        # Alternative Quelle probieren, falls gewünscht:
                         data = aff.try_alternative_source(rs_num)
                     if data:
                         freq_info = aff.build_freq_info_text(data)
                     else:
                         freq_info = "Keine Daten von Ensembl/dbSNP"
+                else:
+                    freq_info = "Keine rsID vorhanden"
 
-                # D10/F10/E10 (erster Genotyp)
+                # 7) Zellen (D10/F10/E10) + (D11/F11/E11)
                 if len(unique_geno_pairs) > 0:
                     ws["D10"] = unique_geno_pairs[0][0]
                     ws["F10"] = unique_geno_pairs[0][1]
                     ws["E10"] = freq_info
 
-                # D11/F11/E11 (zweiter Genotyp, falls vorhanden)
                 if len(unique_geno_pairs) > 1:
                     ws["D11"] = unique_geno_pairs[1][0]
                     ws["F11"] = unique_geno_pairs[1][1]
                     ws["E11"] = freq_info
 
-                # Datum/Zeit in J2
+                # Zeitstempel in J2
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ws["J2"] = now_str
 
-                # Speichern + Download
+                # Speichern + Download anbieten
                 output = io.BytesIO()
                 wb.save(output)
                 output.seek(0)
