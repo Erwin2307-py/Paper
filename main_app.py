@@ -44,7 +44,6 @@ if not st.session_state["logged_in"]:
 # ------------------------------------------------------------
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
-
 ################################################################################
 # 1) Gemeinsame Funktionen & Klassen (unverändert)
 ################################################################################
@@ -404,7 +403,6 @@ def page_online_api_filter():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-
 ################################################################################
 # 4) PAPER ANALYZER (unverändert) + Load Env/OPENAI key
 ################################################################################
@@ -486,122 +484,298 @@ class PaperAnalyzer:
 
 
 ################################################################################
-# KI-Chatbot: Neue Funktion page_chatbot()
+# NEU: Die Klasse AlleleFrequencyFinder (aus deinem Snippet) + Integration
 ################################################################################
-def page_chatbot():
-    import openai
-    from openai import OpenAI
+
+import time
+import sys
+import json
+from typing import Dict, Any, Optional
+
+class AlleleFrequencyFinder:
+    """Klasse zum Abrufen und Anzeigen von Allelfrequenzen aus verschiedenen Quellen."""
+
+    def __init__(self):
+        self.ensembl_server = "https://rest.ensembl.org"
+        self.max_retries = 3
+        self.retry_delay = 2  # Sekunden zwischen Wiederholungsversuchen
+
+    def get_allele_frequencies(self, rs_id: str, retry_count: int = 0) -> Optional[Dict[str, Any]]:
+        """
+        Ruft Allelfrequenzdaten von Ensembl mit Wiederholungsversuchen ab.
+        
+        Args:
+            rs_id: Die RS-ID (z.B. rs699)
+            retry_count: Aktuelle Anzahl der Wiederholungsversuche
+            
+        Returns:
+            Dict mit Allelfrequenzdaten oder None bei Fehlschlag
+        """
+        if not rs_id.startswith("rs"):
+            rs_id = f"rs{rs_id}"
+            
+        endpoint = f"/variation/human/{rs_id}?pops=1"
+        url = f"{self.ensembl_server}{endpoint}"
+
+        try:
+            response = requests.get(url, headers={"Content-Type": "application/json"}, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            # 500 => Retry bis max_retries
+            if response.status_code == 500 and retry_count < self.max_retries:
+                time.sleep(self.retry_delay)
+                return self.get_allele_frequencies(rs_id, retry_count + 1)
+            elif response.status_code == 404:
+                return None
+            else:
+                return None
+        except requests.exceptions.RequestException:
+            if retry_count < self.max_retries:
+                time.sleep(self.retry_delay)
+                return self.get_allele_frequencies(rs_id, retry_count + 1)
+            return None
     
-    st.set_page_config(page_title="KI-Chatbot", page_icon="🤖")
-
-    # Styling für den Chat
-    st.markdown("""
-    <style>
-        .stChatMessage {
-            padding: 1rem;
-            border-radius: 0.5rem;
-            margin-bottom: 1rem;
-        }
-        .stChatMessage[data-role="user"] {
-            background-color: #e6f7ff;
-        }
-        .stChatMessage[data-role="assistant"] {
-            background-color: #f0f0f0;
-        }
-    </style>
-    """, unsafe_allow_html=True)
-
-    st.title("🤖 Mein KI-Chatbot")
-
-    # OpenAI API-Key aus Streamlit Secrets
-    api_key = st.secrets.get("OPENAI_API_KEY", None)
-    if api_key is None:
-        api_key = st.text_input("OpenAI API-Key eingeben:", type="password")
-        if not api_key:
-            st.warning("Bitte gib deinen OpenAI API-Key ein, um den Chatbot zu nutzen.")
+    def try_alternative_source(self, rs_id: str) -> Optional[Dict[str, Any]]:
+        """Platzhalter: alternativer Weg, falls Ensembl down ist."""
+        return None
+    
+    def parse_and_display_data(self, data: Dict[str, Any]) -> None:
+        """Nur Konsolen-Print (Beispiel)."""
+        if not data:
+            print("Keine Daten verfügbar.")
             return
+        print(json.dumps(data, indent=2))
 
-    # OpenAI-Client initialisieren
-    client = OpenAI(api_key=api_key)
-
-    model_options = ["gpt-3.5-turbo", "gpt-4o"]
-    selected_model = st.sidebar.selectbox("Modell auswählen:", model_options)
-
-    temperature = st.sidebar.slider("Kreativität (Temperature):", min_value=0.0, max_value=1.0, value=0.7, step=0.1)
-    max_tokens = st.sidebar.slider("Maximale Antwortlänge:", min_value=50, max_value=4000, value=1000, step=50)
-
-    # System-Prompt
-    system_prompt = st.sidebar.text_area(
-        "System-Prompt (Anweisungen für den Chatbot):",
-        value="Du bist ein hilfreicher Assistent, der präzise und freundliche Antworten gibt.",
-        height=100
-    )
-
-    if "messages" not in st.session_state:
-        st.session_state.messages = [
-            {"role": "assistant", "content": "Hallo! Wie kann ich dir heute helfen?"}
-        ]
-
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    if prompt := st.chat_input("Schreibe deine Nachricht..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+    def build_freq_info_text(self, data: Dict[str, Any]) -> str:
+        """Erstellt kurzen Text mit MAF + Populationen, etc."""
+        if not data:
+            return "Keine Daten von Ensembl"
         
-        with st.chat_message("assistant"):
-            message_placeholder = st.empty()
-            full_response = ""
+        maf = data.get("MAF", None)
+        pops = data.get("populations", [])
+        out = []
+        out.append(f"MAF={maf}" if maf else "MAF=n/a")
 
-            messages_for_api = [
-                {"role": "system", "content": system_prompt}
-            ] + st.session_state.messages
-            
-            try:
-                stream = client.chat.completions.create(
-                    model=selected_model,
-                    messages=[{"role": m["role"], "content": m["content"]} for m in messages_for_api],
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    stream=True
-                )
+        if pops:
+            max_pop = 2
+            for i, pop in enumerate(pops):
+                if i >= max_pop:
+                    break
+                pop_name = pop.get('population', 'N/A')
+                allele = pop.get('allele', 'N/A')
+                freq = pop.get('frequency', 'N/A')
+                out.append(f"{pop_name}:{allele}={freq}")
+        else:
+            out.append("Keine Populationsdaten gefunden.")
 
-                for chunk in stream:
-                    if chunk.choices[0].delta.content is not None:
-                        full_response += chunk.choices[0].delta.content
-                        message_placeholder.markdown(full_response + "▌")
-                
-                message_placeholder.markdown(full_response)
-
-            except Exception as e:
-                st.error(f"Fehler bei der Kommunikation mit OpenAI: {str(e)}")
-                full_response = "Entschuldigung, es gab ein Problem bei der Generierung der Antwort."
-                message_placeholder.markdown(full_response)
-            
-            st.session_state.messages.append({"role": "assistant", "content": full_response})
-
-    with st.sidebar.expander("Info", expanded=False):
-        st.markdown("""
-        ## Über diesen Chatbot
-
-        Dieser Chatbot nutzt das OpenAI-API und ist mit Streamlit erstellt.
-        
-        1. API-Key eintragen
-        2. Modell & Optionen wählen
-        3. Chatten!
-        """)
-
+        return " | ".join(out)
 
 ################################################################################
-# 5) PAGE "Analyze Paper" - (unverändert)
-# ... ist ja schon oben deklariert ...
+# 5) PAGE "Analyze Paper" - Hier steht die neue Gen-Logik: Erst "offensichtlicher Hinweis", dann Excel.
 ################################################################################
+def page_analyze_paper():
+    """
+    Seite "Analyze Paper": ruft direkt den PaperAnalyzer auf.
+    * Zuerst versuchen wir, aus dem Text "in the XYZ Gene" zu parsen (z.B. CYP24A1).
+    * Wenn das nicht klappt, fallback: wir lesen 'vorlage_gene.xlsx' und suchen alle Genes.
+    """
+    st.title("Analyze Paper - Integriert")
 
+    st.sidebar.header("Einstellungen - PaperAnalyzer")
+    api_key = st.sidebar.text_input("OpenAI API Key", type="password", value=OPENAI_API_KEY or "")
+    model = st.sidebar.selectbox("OpenAI-Modell",
+                                 ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4o"],
+                                 index=0)
+    action = st.sidebar.radio("Analyseart",
+                              ["Zusammenfassung", "Wichtigste Erkenntnisse", "Methoden & Techniken", "Relevanz-Bewertung"],
+                              index=0)
+    topic = st.sidebar.text_input("Thema für Relevanz-Bewertung (falls relevant)")
+
+    uploaded_file = st.file_uploader("PDF-Datei hochladen", type="pdf")
+
+    analyzer = PaperAnalyzer(model=model)
+
+    # 1) EINZELNE ANALYSE VIA RADIO-Knopf
+    if uploaded_file and api_key:
+        if st.button("Analyse starten"):
+            with st.spinner("Extrahiere Text aus PDF..."):
+                text = analyzer.extract_text_from_pdf(uploaded_file)
+                if not text.strip():
+                    st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
+                    st.stop()
+                st.success("Text wurde erfolgreich extrahiert!")
+
+            with st.spinner(f"Führe {action}-Analyse durch..."):
+                if action == "Zusammenfassung":
+                    result = analyzer.summarize(text, api_key)
+                elif action == "Wichtigste Erkenntnisse":
+                    result = analyzer.extract_key_findings(text, api_key)
+                elif action == "Methoden & Techniken":
+                    result = analyzer.identify_methods(text, api_key)
+                elif action == "Relevanz-Bewertung":
+                    if not topic:
+                        st.error("Bitte Thema angeben für die Relevanz-Bewertung!")
+                        st.stop()
+                    result = analyzer.evaluate_relevance(text, topic, api_key)
+
+                st.subheader("Ergebnis der Analyse")
+                st.markdown(result)
+    else:
+        if not api_key:
+            st.warning("Bitte OpenAI API-Key eingeben!")
+        elif not uploaded_file:
+            st.info("Bitte eine PDF-Datei hochladen!")
+
+    # 2) ALLE ANALYSEN & EXCEL-SPEICHERN
+    st.write("---")
+    st.write("## Alle Analysen & Excel-Ausgabe")
+    user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
+
+    if uploaded_file and api_key:
+        if st.button("Alle Analysen durchführen & in Excel speichern"):
+            with st.spinner("Analysiere alles..."):
+                text = analyzer.extract_text_from_pdf(uploaded_file)
+                if not text.strip():
+                    st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
+                    st.stop()
+
+                # GPT-Analysen:
+                summary_result = analyzer.summarize(text, api_key)
+                key_findings_result = analyzer.extract_key_findings(text, api_key)
+                methods_result = analyzer.identify_methods(text, api_key)
+                if not topic:
+                    st.error("Bitte 'Thema für Relevanz-Bewertung' angeben!")
+                    st.stop()
+                relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
+                final_relevance = f"{relevance_result}\n\n[Manuelle Bewertung: {user_relevance_score}]"
+
+                import openpyxl
+                import io
+                import datetime
+
+                # --------------------------------------------------------------
+                # 1) Gucke, ob es einen "offensichtlichen" Hinweis im Text gibt:
+                #    z.B. "... in the CYP24A1 Gene ..."
+                # --------------------------------------------------------------
+                gene_via_text = None
+                # Suche Muster: "in the (irgendwas) gene"
+                # Wir erlauben: in the CIP24A1 gene, in the ABO gene, etc.
+                # Kleinschreibung egal => re.IGNORECASE
+                pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
+                match_text = re.search(pattern_obvious, text)
+                if match_text:
+                    gene_via_text = match_text.group(1)
+                    # gene_via_text wäre z.B. "CYP24A1" o.Ä.
+
+                # --------------------------------------------------------------
+                # 2) Falls NICHT da => fallback: Excel-Liste checken
+                # --------------------------------------------------------------
+                if gene_via_text:
+                    found_gene = gene_via_text  # priorität: offensichtlicher Fund im Text
+                else:
+                    # normaler fallback: wir lesen 'vorlage_gene.xlsx'
+                    try:
+                        wb_gene = openpyxl.load_workbook("vorlage_gene.xlsx")
+                    except FileNotFoundError:
+                        st.error("Die Datei 'vorlage_gene.xlsx' wurde nicht gefunden!")
+                        st.stop()
+
+                    ws_gene = wb_gene.active
+                    gene_names_from_excel = []
+                    for row in ws_gene.iter_rows(min_row=3, min_col=3, max_col=3, values_only=True):
+                        cell_value = row[0]
+                        if cell_value and isinstance(cell_value, str):
+                            gene_names_from_excel.append(cell_value.strip())
+
+                    found_gene = None
+                    for g in gene_names_from_excel:
+                        pat = re.compile(r"\b" + re.escape(g) + r"\b", re.IGNORECASE)
+                        if re.search(pat, text):
+                            found_gene = g
+                            break
+
+                # --------------------------------------------------------------
+                # 3) Excel-Vorlage öffnen
+                # --------------------------------------------------------------
+                try:
+                    wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
+                except FileNotFoundError:
+                    st.error("Vorlage 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
+                    st.stop()
+
+                ws = wb.active
+
+                # falls wir was gefunden haben => D5 = found_gene
+                if found_gene:
+                    ws["D5"] = found_gene
+
+                # 4) rs\d+ => in D6 + Frequenz via AlleleFrequencyFinder
+                rs_pat = r"(rs\d+)"
+                found_rs = re.search(rs_pat, text)
+                rs_num = None
+                if found_rs:
+                    rs_num = found_rs.group(1)
+                    ws["D6"] = rs_num
+
+                # 5) Genotypen wie TT, CC, etc.
+                genotype_regex = r"\b([ACGT]{2,3})\b"
+                lines = text.split("\n")
+                found_pairs = []
+                for line in lines:
+                    matches = re.findall(genotype_regex, line)
+                    if matches:
+                        for m in matches:
+                            found_pairs.append((m, line.strip()))
+
+                unique_geno_pairs = []
+                for gp in found_pairs:
+                    if gp not in unique_geno_pairs:
+                        unique_geno_pairs.append(gp)
+
+                # 6) Frequenz via AlleleFrequencyFinder (nur wenn rs_num da)
+                aff = AlleleFrequencyFinder()
+                if rs_num:
+                    data = aff.get_allele_frequencies(rs_num)
+                    if not data:
+                        data = aff.try_alternative_source(rs_num)
+                    if data:
+                        freq_info = aff.build_freq_info_text(data)
+                    else:
+                        freq_info = "Keine Daten von Ensembl/dbSNP"
+                else:
+                    freq_info = "Keine rsID vorhanden"
+
+                # 7) Zellen (D10/F10/E10) + (D11/F11/E11)
+                if len(unique_geno_pairs) > 0:
+                    ws["D10"] = unique_geno_pairs[0][0]
+                    ws["F10"] = unique_geno_pairs[0][1]
+                    ws["E10"] = freq_info
+
+                if len(unique_geno_pairs) > 1:
+                    ws["D11"] = unique_geno_pairs[1][0]
+                    ws["F11"] = unique_geno_pairs[1][1]
+                    ws["E11"] = freq_info
+
+                # Zeitstempel in J2
+                now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                ws["J2"] = now_str
+
+                # Speichern + Download anbieten
+                output = io.BytesIO()
+                wb.save(output)
+                output.seek(0)
+
+            st.success("Alle Analysen abgeschlossen – Excel-Datei erstellt und Felder befüllt!")
+            st.download_button(
+                label="Download Excel",
+                data=output,
+                file_name="analysis_results.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
 
 ################################################################################
-# 6) Sidebar Module Navigation & Main
+# 6) Sidebar Module Navigation & Main (unverändert)
 ################################################################################
 
 def sidebar_module_navigation():
@@ -610,8 +784,13 @@ def sidebar_module_navigation():
         "Home": page_home,
         "Online-API_Filter": page_online_api_filter,
         "3) Codewords & PubMed": page_codewords_pubmed,
+        # "4) Paper Selection": page_paper_selection,
+        # "5) Analysis & Evaluation": page_analysis,
+        # "6) Extended Topics": page_extended_topics,
+        # "7) PaperQA2": page_paperqa2,
+        # "8) Excel Online Search": page_excel_online_search,
+        # "9) Selenium Q&A": page_selenium_qa,
         "Analyze Paper": page_analyze_paper,
-        "KI-Chatbot": page_chatbot,  # <-- NEUER Menüpunkt
     }
     for label, page in pages.items():
         if st.sidebar.button(label, key=label):
