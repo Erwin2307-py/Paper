@@ -404,7 +404,7 @@ def page_online_api_filter():
         st.session_state["current_page"] = "Home"
 
 ################################################################################
-# 4) PAPER ANALYZER (unchanged)
+# 4) PAPER ANALYZER
 ################################################################################
 import os
 import PyPDF2
@@ -491,10 +491,11 @@ def page_analyze_paper():
     Seite "Analyze Paper": ruft direkt den PaperAnalyzer auf.
     - If "Alle Analysen durchführen & in Excel speichern" is clicked:
       * do all 4 GPT analyses
-      * parse the text for a gene (CYP24A1, etc.) => D5
+      * liest Gene aus 'vorlage_gene.xlsx' (Spalte C ab Zeile 3), sucht sie im PDF-Text (case-insensitive)
+      * wenn gefunden => Gen-Name in D5
       * parse for rs... => D6
-      * parse for up to two genotype lines => (D10,F10), (D11,F11) with phenotype statements
-      * NEU: J2 = aktuelles Datum/Zeit, wann die Vorlage befüllt wurde.
+      * parse for bis zu zwei genotype lines => (D10,F10), (D11,F11) mit Phenotyp-Statements
+      * J2 = aktuelles Datum/Zeit, wann die Vorlage befüllt wurde.
     """
     st.title("Analyze Paper - Integriert")
 
@@ -546,7 +547,7 @@ def page_analyze_paper():
     # 2) ALLE ANALYSEN & EXCEL-SPEICHERN
     st.write("---")
     st.write("## Alle Analysen & Excel-Ausgabe")
-    st.write("Führe alle 4 Analysen durch. Danach parse den Text auf Gene (CYP24A1, etc.), rs..., Genotypen (TT, CC, etc.) und schreibe sie in die Vorlage.")
+    st.write("Führe alle 4 Analysen durch. Danach parse den Text auf Gene aus vorlage_gene.xlsx, rs..., Genotypen etc. und schreibe sie in die Vorlage 'vorlage_paperqa2.xlsx'.")
     st.write("Dann wird in J2 auch das aktuelle Datum/zur Laufzeit eingetragen.")
 
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
@@ -566,16 +567,53 @@ def page_analyze_paper():
                     st.error("Bitte 'Thema für Relevanz-Bewertung' angeben (links in der Sidebar)!")
                     st.stop()
                 relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
-
                 final_relevance = f"{relevance_result}\n\n[Manuelle Bewertung: {user_relevance_score}]"
 
-                # ------------------ PARSE PDF FOR GENE, RS, GENOTYPES -------------
-                gene_pat = r"(CYP24A1|VDBP|GC|CYP2R1|DHCR7|anyOtherGene)"
-                found_gene = re.search(gene_pat, text, re.IGNORECASE)
-                gene_name = None
-                if found_gene:
-                    gene_name = found_gene.group(1)
+                # --------------------------------------------------------------
+                # NEU: Auslesen der Gen-Namen aus 'vorlage_gene.xlsx'
+                # --------------------------------------------------------------
+                import openpyxl
+                import io
+                import datetime
 
+                try:
+                    wb_gene = openpyxl.load_workbook("vorlage_gene.xlsx")
+                except FileNotFoundError:
+                    st.error("Die Datei 'vorlage_gene.xlsx' wurde nicht gefunden!")
+                    st.stop()
+
+                ws_gene = wb_gene.active
+
+                gene_names_from_excel = []
+                # Hier: Spalte C ab Zeile 3
+                for row in ws_gene.iter_rows(min_row=3, min_col=3, max_col=3, values_only=True):
+                    cell_value = row[0]
+                    if cell_value and isinstance(cell_value, str):
+                        gene_names_from_excel.append(cell_value.strip())
+
+                found_gene_from_excel = None
+                text_lower = text.lower()
+                for g in gene_names_from_excel:
+                    if g.lower() in text_lower:
+                        found_gene_from_excel = g
+                        break
+
+                # --------------------------------------------------------------
+                # Öffne die Zieldatei 'vorlage_paperqa2.xlsx'
+                # --------------------------------------------------------------
+                try:
+                    wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
+                except FileNotFoundError:
+                    st.error("Vorlage 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
+                    st.stop()
+
+                ws = wb.active  # oder gezielt ein bestimmtes Sheet
+
+                # Falls wir ein Gen aus 'vorlage_gene.xlsx' gefunden haben => in D5
+                if found_gene_from_excel:
+                    ws["D5"] = found_gene_from_excel
+
+                # ------------------ PARSE PDF FOR RS, GENOTYPES -------------
                 rs_pat = r"(rs\d+)"
                 found_rs = re.search(rs_pat, text)
                 rs_num = None
@@ -590,26 +628,12 @@ def page_analyze_paper():
                     if matches:
                         for m in matches:
                             found_pairs.append((m, line.strip()))
+
                 unique_geno_pairs = []
                 for gp in found_pairs:
                     if gp not in unique_geno_pairs:
                         unique_geno_pairs.append(gp)
 
-                import openpyxl
-                import io
-                import datetime
-
-                try:
-                    wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
-                except FileNotFoundError:
-                    st.error("Vorlage 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
-                    st.stop()
-
-                ws = wb.active  # or a named sheet if needed
-
-                # Fill gene in D5
-                if gene_name:
-                    ws["D5"] = gene_name
                 # Fill rs in D6
                 if rs_num:
                     ws["D6"] = rs_num
@@ -626,7 +650,9 @@ def page_analyze_paper():
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ws["J2"] = now_str
 
-                # Save the updated Excel to memory
+                # --------------------------------------------------------------
+                # Speichern in Speicher und Download anbieten
+                # --------------------------------------------------------------
                 output = io.BytesIO()
                 wb.save(output)
                 output.seek(0)
@@ -638,6 +664,7 @@ def page_analyze_paper():
                 file_name="analysis_results.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
+
 
 ################################################################################
 # 6) Sidebar Module Navigation & Main
