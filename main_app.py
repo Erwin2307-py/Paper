@@ -416,42 +416,25 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 
 ################################################################################
-# Ensembl REST-API LOGIK (aus deinem Code-Snippet)
+# Ensembl REST-API LOGIK (angepasst)
 ################################################################################
 
 def get_allele_frequencies(variant_id):
-    """
-    Ruft Allelfrequenzinformationen für eine Variation von der Ensembl REST API ab.
-    """
     server = "https://rest.ensembl.org"
     ext = f"/variation/human/{variant_id}?pops=1"
-
-    # Hier kein sys.exit() oder print(), stattdessen Logik direkt in return
     r = requests.get(server + ext, headers={"Content-Type": "application/json"})
     if not r.ok:
-        r.raise_for_status()  # Löst ggf. Exception aus, die wir weitergeben
-
+        r.raise_for_status()
     return r.json()
 
 def fetch_population_frequency_from_ensembl(variant_id: str) -> str:
-    """
-    Holt die MAF (falls vorhanden) oder Population-Frequenzinfos
-    zu einer Variation (z.B. rs699) von der Ensembl-API und
-    gibt sie als Text zurück.
-    """
     try:
         data = get_allele_frequencies(variant_id)
     except Exception as e:
         return f"Fehler beim Ensembl-API-Request: {e}"
 
-    # Allgemeine Infos:
     maf = data.get("MAF", None)
-
-    # Populationsinfos:
     populations = data.get("populations", [])
-
-    # Wir bauen uns einen Ausgabe-String zusammen
-    # (z.B. MAF plus ein paar Populationen)
     info_lines = []
     if maf:
         info_lines.append(f"MAF={maf}")
@@ -459,7 +442,6 @@ def fetch_population_frequency_from_ensembl(variant_id: str) -> str:
         info_lines.append("MAF=n/a")
 
     if populations:
-        # Als Beispiel geben wir die ersten 2 Populationen + Frequenzen aus
         max_pop = 2
         for i, pop in enumerate(populations):
             if i >= max_pop:
@@ -471,7 +453,6 @@ def fetch_population_frequency_from_ensembl(variant_id: str) -> str:
     else:
         info_lines.append("Keine Populationsdaten gefunden.")
 
-    # Alles als eine Zeile zurückgeben (oder mit \n getrennt)
     return " | ".join(info_lines)
 
 
@@ -549,19 +530,18 @@ class PaperAnalyzer:
 
 
 ################################################################################
-# 5) PAGE "Analyze Paper"
+# 5) PAGE "Analyze Paper" (mit korrigierter API-Logik)
 ################################################################################
 def page_analyze_paper():
     """
     Seite "Analyze Paper": ruft direkt den PaperAnalyzer auf.
-    - If "Alle Analysen durchführen & in Excel speichern" is clicked:
       * do all 4 GPT analyses
       * liest Gene aus 'vorlage_gene.xlsx' (Spalte C ab Zeile 3), sucht sie im PDF-Text (case-insensitive, mit Wortgrenzen)
       * wenn gefunden => Gen-Name in D5
-      * parse for rs... => D6
-      * parse for bis zu zwei genotype lines => (D10/F10), (D11/F11) + Population-Frequenz in E10/E11
+      * parse for rs... => D6 (nur die rs-ID wird an Ensembl-API geschickt)
+      * parse for bis zu zwei genotype lines => (D10/F10), (D11/F11)
+      * E10/E11 => Falls rs-Nummer vorhanden, schreibe die Frequenzinfo, sonst "Keine rsID vorhanden"
       * J2 = aktuelles Datum/Zeit, wann die Vorlage befüllt wurde.
-      * NEU: Populationsfrequenz jetzt via Ensembl-API (Code-Snippet).
     """
     st.title("Analyze Paper - Integriert")
 
@@ -613,8 +593,7 @@ def page_analyze_paper():
     # 2) ALLE ANALYSEN & EXCEL-SPEICHERN
     st.write("---")
     st.write("## Alle Analysen & Excel-Ausgabe")
-    st.write("Führe alle 4 Analysen durch. Danach parse den Text auf Gene aus vorlage_gene.xlsx, rs..., Genotypen etc. und schreibe sie in die Vorlage 'vorlage_paperqa2.xlsx'.")
-    st.write("Danach fügen wir in E10/E11 (falls vorhanden) die Populationsfrequenz zum Genotyp ein (via Ensembl-API). Anschließend wird in J2 das aktuelle Datum eingetragen.")
+    st.write("Hier parse ich den Text auf Gene, rs..., Genotypen. In die Zellen E10/E11 kommt die Frequenz des SNP (sofern rs gefunden).")
 
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
     if uploaded_file and api_key:
@@ -625,14 +604,15 @@ def page_analyze_paper():
                     st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
                     st.stop()
 
-                # 4 analyses:
+                # --- GPT-Analysen
                 summary_result = analyzer.summarize(text, api_key)
                 key_findings_result = analyzer.extract_key_findings(text, api_key)
                 methods_result = analyzer.identify_methods(text, api_key)
                 if not topic:
-                    st.error("Bitte 'Thema für Relevanz-Bewertung' angeben (links in der Sidebar)!")
+                    st.error("Bitte 'Thema für Relevanz-Bewertung' angeben!")
                     st.stop()
                 relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
+
                 final_relevance = f"{relevance_result}\n\n[Manuelle Bewertung: {user_relevance_score}]"
 
                 import openpyxl
@@ -640,8 +620,7 @@ def page_analyze_paper():
                 import datetime
 
                 # --------------------------------------------------------------
-                # Auslesen der Gen-Namen aus 'vorlage_gene.xlsx' (Spalte C ab Zeile 3)
-                # und Suche mit Wortgrenzen
+                # 1) Gene aus 'vorlage_gene.xlsx' auslesen und matchen
                 # --------------------------------------------------------------
                 try:
                     wb_gene = openpyxl.load_workbook("vorlage_gene.xlsx")
@@ -650,7 +629,6 @@ def page_analyze_paper():
                     st.stop()
 
                 ws_gene = wb_gene.active
-
                 gene_names_from_excel = []
                 for row in ws_gene.iter_rows(min_row=3, min_col=3, max_col=3, values_only=True):
                     cell_value = row[0]
@@ -665,7 +643,7 @@ def page_analyze_paper():
                         break
 
                 # --------------------------------------------------------------
-                # Öffne die Zieldatei 'vorlage_paperqa2.xlsx'
+                # 2) Excel-Vorlage öffnen und Felder befüllen
                 # --------------------------------------------------------------
                 try:
                     wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
@@ -673,19 +651,21 @@ def page_analyze_paper():
                     st.error("Vorlage 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
                     st.stop()
 
-                ws = wb.active  # oder gezielt ein bestimmtes Sheet
+                ws = wb.active
 
-                # Falls wir ein Gen aus 'vorlage_gene.xlsx' gefunden haben => in D5
+                # Gen in D5 (falls vorhanden)
                 if found_gene_from_excel:
                     ws["D5"] = found_gene_from_excel
 
-                # ------------------ PARSE PDF FOR RS, GENOTYPES -------------
+                # Suche nach rs\d+ => rs_num in D6, nur diesen an Ensembl-API senden
                 rs_pat = r"(rs\d+)"
                 found_rs = re.search(rs_pat, text)
                 rs_num = None
                 if found_rs:
                     rs_num = found_rs.group(1)
+                    ws["D6"] = rs_num
 
+                # Genotypen (TT, CC, etc.)
                 genotype_regex = r"\b([ACGT]{2,3})\b"
                 lines = text.split("\n")
                 found_pairs = []
@@ -700,32 +680,27 @@ def page_analyze_paper():
                     if gp not in unique_geno_pairs:
                         unique_geno_pairs.append(gp)
 
-                # Fill rs in D6
+                # (D10/F10), (D11/F11); E10/E11 => Frequenz nur, wenn rs_num vorhanden
+                freq_info = "Keine rsID vorhanden"
                 if rs_num:
-                    ws["D6"] = rs_num
+                    freq_info = fetch_population_frequency_from_ensembl(rs_num)
 
-                # Fill up to 2 genotype lines in D10/F10, D11/F11
                 if len(unique_geno_pairs) > 0:
                     ws["D10"] = unique_geno_pairs[0][0]
                     ws["F10"] = unique_geno_pairs[0][1]
-                    
-                    # Populationsfrequenz abrufen via Ensembl-API
-                    pop_freq_1 = fetch_population_frequency_from_ensembl(unique_geno_pairs[0][0])
-                    ws["E10"] = pop_freq_1
+                    ws["E10"] = freq_info
 
                 if len(unique_geno_pairs) > 1:
                     ws["D11"] = unique_geno_pairs[1][0]
                     ws["F11"] = unique_geno_pairs[1][1]
-
-                    pop_freq_2 = fetch_population_frequency_from_ensembl(unique_geno_pairs[1][0])
-                    ws["E11"] = pop_freq_2
+                    ws["E11"] = freq_info
 
                 # Datum/Zeit in J2
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ws["J2"] = now_str
 
                 # --------------------------------------------------------------
-                # Speichern in Speicher und Download anbieten
+                # 3) Speichern und Download bereitstellen
                 # --------------------------------------------------------------
                 output = io.BytesIO()
                 wb.save(output)
@@ -749,13 +724,12 @@ def sidebar_module_navigation():
         "Home": page_home,
         "Online-API_Filter": page_online_api_filter,
         "3) Codewords & PubMed": page_codewords_pubmed,
-        # "4) Paper Selection": page_paper_selection,  # auskommentiert
+        # "4) Paper Selection": page_paper_selection,
         # "5) Analysis & Evaluation": page_analysis,
         # "6) Extended Topics": page_extended_topics,
         # "7) PaperQA2": page_paperqa2,
         # "8) Excel Online Search": page_excel_online_search,
         # "9) Selenium Q&A": page_selenium_qa,
-        # Neuer Menüpunkt => auf "page_analyze_paper" verlinkt
         "Analyze Paper": page_analyze_paper,
     }
     for label, page in pages.items():
