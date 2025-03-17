@@ -484,7 +484,7 @@ class PaperAnalyzer:
 
 
 ################################################################################
-# NEU: Die Klasse AlleleFrequencyFinder (unverändert)
+# NEU: Die Klasse AlleleFrequencyFinder (aus deinem Snippet) + Integration
 ################################################################################
 
 import time
@@ -501,8 +501,19 @@ class AlleleFrequencyFinder:
         self.retry_delay = 2  # Sekunden zwischen Wiederholungsversuchen
 
     def get_allele_frequencies(self, rs_id: str, retry_count: int = 0) -> Optional[Dict[str, Any]]:
+        """
+        Ruft Allelfrequenzdaten von Ensembl mit Wiederholungsversuchen ab.
+        
+        Args:
+            rs_id: Die RS-ID (z.B. rs699)
+            retry_count: Aktuelle Anzahl der Wiederholungsversuche
+            
+        Returns:
+            Dict mit Allelfrequenzdaten oder None bei Fehlschlag
+        """
         if not rs_id.startswith("rs"):
             rs_id = f"rs{rs_id}"
+            
         endpoint = f"/variation/human/{rs_id}?pops=1"
         url = f"{self.ensembl_server}{endpoint}"
 
@@ -511,6 +522,7 @@ class AlleleFrequencyFinder:
             response.raise_for_status()
             return response.json()
         except requests.exceptions.HTTPError as e:
+            # 500 => Retry bis max_retries
             if response.status_code == 500 and retry_count < self.max_retries:
                 time.sleep(self.retry_delay)
                 return self.get_allele_frequencies(rs_id, retry_count + 1)
@@ -525,21 +537,26 @@ class AlleleFrequencyFinder:
             return None
     
     def try_alternative_source(self, rs_id: str) -> Optional[Dict[str, Any]]:
+        """Platzhalter: alternativer Weg, falls Ensembl down ist."""
         return None
     
     def parse_and_display_data(self, data: Dict[str, Any]) -> None:
+        """Nur Konsolen-Print (Beispiel)."""
         if not data:
             print("Keine Daten verfügbar.")
             return
         print(json.dumps(data, indent=2))
 
     def build_freq_info_text(self, data: Dict[str, Any]) -> str:
+        """Erstellt kurzen Text mit MAF + Populationen, etc."""
         if not data:
             return "Keine Daten von Ensembl"
+        
         maf = data.get("MAF", None)
         pops = data.get("populations", [])
         out = []
         out.append(f"MAF={maf}" if maf else "MAF=n/a")
+
         if pops:
             max_pop = 2
             for i, pop in enumerate(pops):
@@ -551,206 +568,211 @@ class AlleleFrequencyFinder:
                 out.append(f"{pop_name}:{allele}={freq}")
         else:
             out.append("Keine Populationsdaten gefunden.")
+
         return " | ".join(out)
 
-
 ################################################################################
-# 5) PAGE "Analyze Paper" - Hier wird die Logik für 5) "Grafik & Tabellen Erkennung" eingebunden
+# 5) PAGE "Analyze Paper" - Hier steht die neue Gen-Logik: Erst "offensichtlicher Hinweis", dann Excel.
 ################################################################################
-
 def page_analyze_paper():
     """
     Seite "Analyze Paper": ruft direkt den PaperAnalyzer auf.
-    * Zuerst versuchen wir, aus dem Text "in the XYZ Gene" zu parsen.
-    * Wenn das nicht klappt, fallback: Excel-Liste ...
-    * Und neu: 5) Grafiken & Tabellen Erkennung
+    * Zuerst versuchen wir, aus dem Text "in the XYZ Gene" zu parsen (z.B. CYP24A1).
+    * Wenn das nicht klappt, fallback: wir lesen 'vorlage_gene.xlsx' und suchen alle Genes.
     """
-    import os
     st.title("Analyze Paper - Integriert")
 
     st.sidebar.header("Einstellungen - PaperAnalyzer")
-    # ...
+    api_key = st.sidebar.text_input("OpenAI API Key", type="password", value=OPENAI_API_KEY or "")
+    model = st.sidebar.selectbox("OpenAI-Modell",
+                                 ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4o"],
+                                 index=0)
+    action = st.sidebar.radio("Analyseart",
+                              ["Zusammenfassung", "Wichtigste Erkenntnisse", "Methoden & Techniken", "Relevanz-Bewertung"],
+                              index=0)
+    topic = st.sidebar.text_input("Thema für Relevanz-Bewertung (falls relevant)")
 
-    # 1) BISHERIGE Analyse-Methoden ...
-    analysis_mode = st.radio(
-        "Wähle die Analyse-Methode aus:",
-        [
-            "1) Zusammenfassung",
-            "2) Wichtigste Erkenntnisse",
-            "3) Methoden & Techniken",
-            "4) Relevanz-Bewertung",
-            "5) Grafiken & Tabellen"
-        ]
-    )
+    uploaded_file = st.file_uploader("PDF-Datei hochladen", type="pdf")
 
-    if analysis_mode != "5) Grafiken & Tabellen":
-        st.info("Die bisherigen Textanalysen ...")
-        # ... hier dein bisheriger Code ...
+    analyzer = PaperAnalyzer(model=model)
+
+    # 1) EINZELNE ANALYSE VIA RADIO-Knopf
+    if uploaded_file and api_key:
+        if st.button("Analyse starten"):
+            with st.spinner("Extrahiere Text aus PDF..."):
+                text = analyzer.extract_text_from_pdf(uploaded_file)
+                if not text.strip():
+                    st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
+                    st.stop()
+                st.success("Text wurde erfolgreich extrahiert!")
+
+            with st.spinner(f"Führe {action}-Analyse durch..."):
+                if action == "Zusammenfassung":
+                    result = analyzer.summarize(text, api_key)
+                elif action == "Wichtigste Erkenntnisse":
+                    result = analyzer.extract_key_findings(text, api_key)
+                elif action == "Methoden & Techniken":
+                    result = analyzer.identify_methods(text, api_key)
+                elif action == "Relevanz-Bewertung":
+                    if not topic:
+                        st.error("Bitte Thema angeben für die Relevanz-Bewertung!")
+                        st.stop()
+                    result = analyzer.evaluate_relevance(text, topic, api_key)
+
+                st.subheader("Ergebnis der Analyse")
+                st.markdown(result)
     else:
-        # ============== NEUE LOGIK AUS DEINEM SNIPPET ============
-        # Skript aus dem Code-Snippet
-        st.subheader("Grafik- und Tabellenerkennung in PDF/Bild")
+        if not api_key:
+            st.warning("Bitte OpenAI API-Key eingeben!")
+        elif not uploaded_file:
+            st.info("Bitte eine PDF-Datei hochladen!")
 
-        from PIL import Image
-        import numpy as np
-        import io
-        import base64
-        import tempfile
-        import os
-        import re
+    # 2) ALLE ANALYSEN & EXCEL-SPEICHERN
+    st.write("---")
+    st.write("## Alle Analysen & Excel-Ausgabe")
+    user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
 
-        # Bibliotheken für Dokumentenverarbeitung
-        from pdf2image import convert_from_bytes
-        import pytesseract
-        from img2table.ocr import TesseractOCR
-        from img2table.document import Image as TableImage
+    if uploaded_file and api_key:
+        if st.button("Alle Analysen durchführen & in Excel speichern"):
+            with st.spinner("Analysiere alles..."):
+                text = analyzer.extract_text_from_pdf(uploaded_file)
+                if not text.strip():
+                    st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
+                    st.stop()
 
-        st.markdown("Lade ein Paper hoch (PDF oder Bild) – wir erkennen Grafiken / Tabellen")
+                # GPT-Analysen:
+                summary_result = analyzer.summarize(text, api_key)
+                key_findings_result = analyzer.extract_key_findings(text, api_key)
+                methods_result = analyzer.identify_methods(text, api_key)
+                if not topic:
+                    st.error("Bitte 'Thema für Relevanz-Bewertung' angeben!")
+                    st.stop()
+                relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
+                final_relevance = f"{relevance_result}\n\n[Manuelle Bewertung: {user_relevance_score}]"
 
-        # OCR-Engine (verwendet Tesseract)
-        ocr_engine = st.selectbox("OCR-Engine", ["Tesseract", "EasyOCR"])
-        if ocr_engine == "Tesseract":
-            lang = st.selectbox("Sprache für OCR", ["eng", "deu", "fra", "ita", "spa", "eng+deu"])
-        else:
-            lang = "eng"  # fallback
+                import openpyxl
+                import io
+                import datetime
 
-        uploaded_file = st.file_uploader("Paper hochladen (PDF oder Bild)", type=["pdf", "png", "jpg", "jpeg"])
+                # --------------------------------------------------------------
+                # 1) Gucke, ob es einen "offensichtlichen" Hinweis im Text gibt:
+                #    z.B. "... in the CYP24A1 Gene ..."
+                # --------------------------------------------------------------
+                gene_via_text = None
+                # Suche Muster: "in the (irgendwas) gene"
+                # Wir erlauben: in the CIP24A1 gene, in the ABO gene, etc.
+                # Kleinschreibung egal => re.IGNORECASE
+                pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
+                match_text = re.search(pattern_obvious, text)
+                if match_text:
+                    gene_via_text = match_text.group(1)
+                    # gene_via_text wäre z.B. "CYP24A1" o.Ä.
 
-        @st.cache_data
-        def convert_pdf_to_images(pdf_bytes):
-            return convert_from_bytes(pdf_bytes)
+                # --------------------------------------------------------------
+                # 2) Falls NICHT da => fallback: Excel-Liste checken
+                # --------------------------------------------------------------
+                if gene_via_text:
+                    found_gene = gene_via_text  # priorität: offensichtlicher Fund im Text
+                else:
+                    # normaler fallback: wir lesen 'vorlage_gene.xlsx'
+                    try:
+                        wb_gene = openpyxl.load_workbook("vorlage_gene.xlsx")
+                    except FileNotFoundError:
+                        st.error("Die Datei 'vorlage_gene.xlsx' wurde nicht gefunden!")
+                        st.stop()
 
-        @st.cache_data
-        def extract_tables_from_image(image):
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp:
-                image_path = temp.name
-                image.save(image_path)
+                    ws_gene = wb_gene.active
+                    gene_names_from_excel = []
+                    for row in ws_gene.iter_rows(min_row=3, min_col=3, max_col=3, values_only=True):
+                        cell_value = row[0]
+                        if cell_value and isinstance(cell_value, str):
+                            gene_names_from_excel.append(cell_value.strip())
 
-            ocr = TesseractOCR(lang=lang if ocr_engine == "Tesseract" else "eng")
-            try:
-                table_image = TableImage(image_path)
-                tables = table_image.extract_tables(ocr=ocr)
-                os.unlink(image_path)
-                return [(i, table.df) for i, table in enumerate(tables)]
-            except Exception as e:
-                st.error(f"Fehler bei der Tabellenextraktion: {e}")
-                os.unlink(image_path)
-                return []
+                    found_gene = None
+                    for g in gene_names_from_excel:
+                        pat = re.compile(r"\b" + re.escape(g) + r"\b", re.IGNORECASE)
+                        if re.search(pat, text):
+                            found_gene = g
+                            break
 
-        @st.cache_data
-        def analyze_image_content(image):
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp:
-                image_path = temp.name
-                image.save(image_path)
+                # --------------------------------------------------------------
+                # 3) Excel-Vorlage öffnen
+                # --------------------------------------------------------------
+                try:
+                    wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
+                except FileNotFoundError:
+                    st.error("Vorlage 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
+                    st.stop()
 
-            text = pytesseract.image_to_string(image_path, lang=lang if ocr_engine == "Tesseract" else "eng")
-            os.unlink(image_path)
-            text_lower = text.lower()
-            if re.search(r'fig(ure|\.)?|abbildung', text_lower):
-                return "Grafik", text
-            elif re.search(r'tab(le|\.)|tabelle', text_lower):
-                return "Tabelle", text
-            elif len(text.strip()) < 50:
-                return "Möglicherweise Grafik", text
-            else:
-                return "Text/Unbestimmt", text
+                ws = wb.active
 
-        def get_table_download_link(df, filename="tabelle.csv", text="CSV herunterladen"):
-            csv = df.to_csv(index=False)
-            b64 = base64.b64encode(csv.encode()).decode()
-            href = f'<a href="data:file/csv;base64,{b64}" download="{filename}">{text}</a>'
-            return href
+                # falls wir was gefunden haben => D5 = found_gene
+                if found_gene:
+                    ws["D5"] = found_gene
 
-        if uploaded_file is not None:
-            file_extension = uploaded_file.name.split('.')[-1].lower()
-            if file_extension == 'pdf':
-                with st.spinner("PDF wird verarbeitet..."):
-                    images = convert_pdf_to_images(uploaded_file.getvalue())
-                    if images:
-                        st.success(f"{len(images)} Seiten erfolgreich extrahiert!")
-                        if len(images) > 1:
-                            selected_page = st.selectbox("Seite auswählen:", range(1, len(images) + 1)) - 1
-                            selected_image = images[selected_page]
-                        else:
-                            selected_image = images[0]
-                        st.image(selected_image, caption=f"Seite {selected_page + 1}", use_column_width=True)
+                # 4) rs\d+ => in D6 + Frequenz via AlleleFrequencyFinder
+                rs_pat = r"(rs\d+)"
+                found_rs = re.search(rs_pat, text)
+                rs_num = None
+                if found_rs:
+                    rs_num = found_rs.group(1)
+                    ws["D6"] = rs_num
 
-                        analysis_type = st.radio("Analyse durchführen:",
-                            ["Tabellenerkennung", "Bildanalyse", "Texterkennung"])
+                # 5) Genotypen wie TT, CC, etc.
+                genotype_regex = r"\b([ACGT]{2,3})\b"
+                lines = text.split("\n")
+                found_pairs = []
+                for line in lines:
+                    matches = re.findall(genotype_regex, line)
+                    if matches:
+                        for m in matches:
+                            found_pairs.append((m, line.strip()))
 
-                        if analysis_type == "Tabellenerkennung":
-                            if st.button("Tabellen erkennen"):
-                                with st.spinner("Tabellen werden erkannt..."):
-                                    tables = extract_tables_from_image(selected_image)
-                                    if tables:
-                                        st.success(f"{len(tables)} Tabellen gefunden!")
-                                        for i, df in tables:
-                                            st.subheader(f"Tabelle {i+1}")
-                                            st.dataframe(df)
-                                            st.markdown(get_table_download_link(df, f"tabelle_{i+1}.csv"),
-                                                        unsafe_allow_html=True)
-                                    else:
-                                        st.warning("Keine Tabellen gefunden oder Fehler bei der Erkennung.")
+                unique_geno_pairs = []
+                for gp in found_pairs:
+                    if gp not in unique_geno_pairs:
+                        unique_geno_pairs.append(gp)
 
-                        elif analysis_type == "Bildanalyse":
-                            if st.button("Bildinhalt analysieren"):
-                                with st.spinner("Analyse läuft..."):
-                                    content_type, extracted_text = analyze_image_content(selected_image)
-                                    st.subheader("Analyse-Ergebnis")
-                                    st.info(f"Erkannter Inhaltstyp: {content_type}")
-                                    if extracted_text:
-                                        st.subheader("Extrahierter Text")
-                                        st.text_area("", extracted_text, height=200)
+                # 6) Frequenz via AlleleFrequencyFinder (nur wenn rs_num da)
+                aff = AlleleFrequencyFinder()
+                if rs_num:
+                    data = aff.get_allele_frequencies(rs_num)
+                    if not data:
+                        data = aff.try_alternative_source(rs_num)
+                    if data:
+                        freq_info = aff.build_freq_info_text(data)
+                    else:
+                        freq_info = "Keine Daten von Ensembl/dbSNP"
+                else:
+                    freq_info = "Keine rsID vorhanden"
 
-                        elif analysis_type == "Texterkennung":
-                            if st.button("Text extrahieren"):
-                                with st.spinner("Text wird extrahiert..."):
-                                    text = pytesseract.image_to_string(selected_image, lang=lang if ocr_engine == "Tesseract" else "eng")
-                                    st.subheader("Extrahierter Text")
-                                    st.text_area("", text, height=300)
+                # 7) Zellen (D10/F10/E10) + (D11/F11/E11)
+                if len(unique_geno_pairs) > 0:
+                    ws["D10"] = unique_geno_pairs[0][0]
+                    ws["F10"] = unique_geno_pairs[0][1]
+                    ws["E10"] = freq_info
 
-            elif file_extension in ['png', 'jpg', 'jpeg']:
-                with st.spinner("Bild wird verarbeitet..."):
-                    image = Image.open(uploaded_file)
-                    st.image(image, caption="Hochgeladenes Bild", use_column_width=True)
-                    analysis_type = st.radio("Analyse durchführen:",
-                                    ["Tabellenerkennung", "Bildanalyse", "Texterkennung"])
-                    
-                    if analysis_type == "Tabellenerkennung":
-                        if st.button("Tabellen erkennen"):
-                            with st.spinner("Tabellen werden erkannt..."):
-                                tables = extract_tables_from_image(image)
-                                if tables:
-                                    st.success(f"{len(tables)} Tabellen gefunden!")
-                                    for i, df in tables:
-                                        st.subheader(f"Tabelle {i+1}")
-                                        st.dataframe(df)
-                                        st.markdown(get_table_download_link(df, f"tabelle_{i+1}.csv"),
-                                                    unsafe_allow_html=True)
-                                else:
-                                    st.warning("Keine Tabellen gefunden oder Fehler bei der Erkennung.")
+                if len(unique_geno_pairs) > 1:
+                    ws["D11"] = unique_geno_pairs[1][0]
+                    ws["F11"] = unique_geno_pairs[1][1]
+                    ws["E11"] = freq_info
 
-                    elif analysis_type == "Bildanalyse":
-                        if st.button("Bildinhalt analysieren"):
-                            with st.spinner("Analyse läuft..."):
-                                content_type, extracted_text = analyze_image_content(image)
-                                st.subheader("Analyse-Ergebnis")
-                                st.info(f"Erkannter Inhaltstyp: {content_type}")
-                                if extracted_text:
-                                    st.subheader("Extrahierter Text")
-                                    st.text_area("", extracted_text, height=200)
+                # Zeitstempel in J2
+                now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                ws["J2"] = now_str
 
-                    elif analysis_type == "Texterkennung":
-                        if st.button("Text extrahieren"):
-                            with st.spinner("Text wird extrahiert..."):
-                                text = pytesseract.image_to_string(image, lang=lang if ocr_engine == "Tesseract" else "eng")
-                                st.subheader("Extrahierter Text")
-                                st.text_area("", text, height=300)
-            else:
-                st.error("Nicht unterstütztes Dateiformat! Bitte laden Sie eine PDF- oder Bilddatei hoch.")
-        else:
-            st.info("Bitte laden Sie eine PDF- oder Bilddatei hoch, um die Analyse zu starten.")
+                # Speichern + Download anbieten
+                output = io.BytesIO()
+                wb.save(output)
+                output.seek(0)
 
+            st.success("Alle Analysen abgeschlossen – Excel-Datei erstellt und Felder befüllt!")
+            st.download_button(
+                label="Download Excel",
+                data=output,
+                file_name="analysis_results.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
 
 ################################################################################
 # 6) Sidebar Module Navigation & Main (unverändert)
