@@ -35,3 +35,5 @@ langchain-community>=0.0.10
 haystack
 logging
 python-dotenv>=1.0
+pdf2image
+img2table
