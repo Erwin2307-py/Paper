@@ -491,7 +491,7 @@ def page_analyze_paper():
     Seite "Analyze Paper": ruft direkt den PaperAnalyzer auf.
     - If "Alle Analysen durchführen & in Excel speichern" is clicked:
       * do all 4 GPT analyses
-      * liest Gene aus 'vorlage_gene.xlsx' (Spalte C ab Zeile 3), sucht sie im PDF-Text (case-insensitive)
+      * liest Gene aus 'vorlage_gene.xlsx' (Spalte C ab Zeile 3), sucht sie im PDF-Text (case-insensitive, mit Wortgrenzen)
       * wenn gefunden => Gen-Name in D5
       * parse for rs... => D6
       * parse for bis zu zwei genotype lines => (D10,F10), (D11,F11) mit Phenotyp-Statements
@@ -570,7 +570,8 @@ def page_analyze_paper():
                 final_relevance = f"{relevance_result}\n\n[Manuelle Bewertung: {user_relevance_score}]"
 
                 # --------------------------------------------------------------
-                # NEU: Auslesen der Gen-Namen aus 'vorlage_gene.xlsx'
+                # NEU: Auslesen der Gen-Namen aus 'vorlage_gene.xlsx' (Spalte C ab Zeile 3)
+                # und Suche mit Wortgrenzen
                 # --------------------------------------------------------------
                 import openpyxl
                 import io
@@ -585,16 +586,16 @@ def page_analyze_paper():
                 ws_gene = wb_gene.active
 
                 gene_names_from_excel = []
-                # Hier: Spalte C ab Zeile 3
                 for row in ws_gene.iter_rows(min_row=3, min_col=3, max_col=3, values_only=True):
                     cell_value = row[0]
                     if cell_value and isinstance(cell_value, str):
                         gene_names_from_excel.append(cell_value.strip())
 
                 found_gene_from_excel = None
-                text_lower = text.lower()
+                # Für jeden Gen-Namen verwenden wir Regex mit Wortgrenzen (case-insensitive)
                 for g in gene_names_from_excel:
-                    if g.lower() in text_lower:
+                    pattern = re.compile(r"\b" + re.escape(g) + r"\b", re.IGNORECASE)
+                    if re.search(pattern, text):
                         found_gene_from_excel = g
                         break
 
@@ -664,7 +665,6 @@ def page_analyze_paper():
                 file_name="analysis_results.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
-
 
 ################################################################################
 # 6) Sidebar Module Navigation & Main
