@@ -414,6 +414,71 @@ from dotenv import load_dotenv
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+
+################################################################################
+# Ensembl REST-API LOGIK (aus deinem Code-Snippet)
+################################################################################
+
+def get_allele_frequencies(variant_id):
+    """
+    Ruft Allelfrequenzinformationen für eine Variation von der Ensembl REST API ab.
+    """
+    server = "https://rest.ensembl.org"
+    ext = f"/variation/human/{variant_id}?pops=1"
+
+    # Hier kein sys.exit() oder print(), stattdessen Logik direkt in return
+    r = requests.get(server + ext, headers={"Content-Type": "application/json"})
+    if not r.ok:
+        r.raise_for_status()  # Löst ggf. Exception aus, die wir weitergeben
+
+    return r.json()
+
+def fetch_population_frequency_from_ensembl(variant_id: str) -> str:
+    """
+    Holt die MAF (falls vorhanden) oder Population-Frequenzinfos
+    zu einer Variation (z.B. rs699) von der Ensembl-API und
+    gibt sie als Text zurück.
+    """
+    try:
+        data = get_allele_frequencies(variant_id)
+    except Exception as e:
+        return f"Fehler beim Ensembl-API-Request: {e}"
+
+    # Allgemeine Infos:
+    maf = data.get("MAF", None)
+
+    # Populationsinfos:
+    populations = data.get("populations", [])
+
+    # Wir bauen uns einen Ausgabe-String zusammen
+    # (z.B. MAF plus ein paar Populationen)
+    info_lines = []
+    if maf:
+        info_lines.append(f"MAF={maf}")
+    else:
+        info_lines.append("MAF=n/a")
+
+    if populations:
+        # Als Beispiel geben wir die ersten 2 Populationen + Frequenzen aus
+        max_pop = 2
+        for i, pop in enumerate(populations):
+            if i >= max_pop:
+                break
+            pop_name = pop.get("population", "N/A")
+            allele = pop.get("allele", "N/A")
+            freq = pop.get("frequency", "N/A")
+            info_lines.append(f"{pop_name}:{allele}={freq}")
+    else:
+        info_lines.append("Keine Populationsdaten gefunden.")
+
+    # Alles als eine Zeile zurückgeben (oder mit \n getrennt)
+    return " | ".join(info_lines)
+
+
+################################################################################
+# CLASS: PaperAnalyzer
+################################################################################
+
 class PaperAnalyzer:
     def __init__(self, model="gpt-3.5-turbo"):
         self.model = model
@@ -494,8 +559,9 @@ def page_analyze_paper():
       * liest Gene aus 'vorlage_gene.xlsx' (Spalte C ab Zeile 3), sucht sie im PDF-Text (case-insensitive, mit Wortgrenzen)
       * wenn gefunden => Gen-Name in D5
       * parse for rs... => D6
-      * parse for bis zu zwei genotype lines => (D10,F10), (D11,F11) mit Phenotyp-Statements
+      * parse for bis zu zwei genotype lines => (D10/F10), (D11/F11) + Population-Frequenz in E10/E11
       * J2 = aktuelles Datum/Zeit, wann die Vorlage befüllt wurde.
+      * NEU: Populationsfrequenz jetzt via Ensembl-API (Code-Snippet).
     """
     st.title("Analyze Paper - Integriert")
 
@@ -548,7 +614,7 @@ def page_analyze_paper():
     st.write("---")
     st.write("## Alle Analysen & Excel-Ausgabe")
     st.write("Führe alle 4 Analysen durch. Danach parse den Text auf Gene aus vorlage_gene.xlsx, rs..., Genotypen etc. und schreibe sie in die Vorlage 'vorlage_paperqa2.xlsx'.")
-    st.write("Dann wird in J2 auch das aktuelle Datum/zur Laufzeit eingetragen.")
+    st.write("Danach fügen wir in E10/E11 (falls vorhanden) die Populationsfrequenz zum Genotyp ein (via Ensembl-API). Anschließend wird in J2 das aktuelle Datum eingetragen.")
 
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
     if uploaded_file and api_key:
@@ -569,14 +635,14 @@ def page_analyze_paper():
                 relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
                 final_relevance = f"{relevance_result}\n\n[Manuelle Bewertung: {user_relevance_score}]"
 
-                # --------------------------------------------------------------
-                # NEU: Auslesen der Gen-Namen aus 'vorlage_gene.xlsx' (Spalte C ab Zeile 3)
-                # und Suche mit Wortgrenzen
-                # --------------------------------------------------------------
                 import openpyxl
                 import io
                 import datetime
 
+                # --------------------------------------------------------------
+                # Auslesen der Gen-Namen aus 'vorlage_gene.xlsx' (Spalte C ab Zeile 3)
+                # und Suche mit Wortgrenzen
+                # --------------------------------------------------------------
                 try:
                     wb_gene = openpyxl.load_workbook("vorlage_gene.xlsx")
                 except FileNotFoundError:
@@ -592,7 +658,6 @@ def page_analyze_paper():
                         gene_names_from_excel.append(cell_value.strip())
 
                 found_gene_from_excel = None
-                # Für jeden Gen-Namen verwenden wir Regex mit Wortgrenzen (case-insensitive)
                 for g in gene_names_from_excel:
                     pattern = re.compile(r"\b" + re.escape(g) + r"\b", re.IGNORECASE)
                     if re.search(pattern, text):
@@ -643,11 +708,19 @@ def page_analyze_paper():
                 if len(unique_geno_pairs) > 0:
                     ws["D10"] = unique_geno_pairs[0][0]
                     ws["F10"] = unique_geno_pairs[0][1]
+                    
+                    # Populationsfrequenz abrufen via Ensembl-API
+                    pop_freq_1 = fetch_population_frequency_from_ensembl(unique_geno_pairs[0][0])
+                    ws["E10"] = pop_freq_1
+
                 if len(unique_geno_pairs) > 1:
                     ws["D11"] = unique_geno_pairs[1][0]
                     ws["F11"] = unique_geno_pairs[1][1]
 
-                # NEU: Setze in Zelle J2 das aktuelle Datum/Zeit
+                    pop_freq_2 = fetch_population_frequency_from_ensembl(unique_geno_pairs[1][0])
+                    ws["E11"] = pop_freq_2
+
+                # Datum/Zeit in J2
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ws["J2"] = now_str
 
