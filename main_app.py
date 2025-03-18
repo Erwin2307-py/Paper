@@ -430,9 +430,9 @@ class PaperAnalyzer:
             text = text[:15000] + "..."
         
         prompt = prompt_template.format(text=text)
-        client = openai.OpenAI(api_key=api_key)
-        
-        response = client.chat.completions.create(
+        # NEU: Wir nutzen das neue Schema openai.chat.completions.create(...)
+        openai.api_key = api_key
+        response = openai.chat.completions.create(
             model=self.model,
             messages=[
                 {
@@ -565,7 +565,6 @@ class AlleleFrequencyFinder:
 def page_analyze_paper():
     st.title("Analyze Paper - Integriert")
 
-    # NEU: Speichere den Key in Session State, damit er vom Chatbot genutzt werden kann:
     if "api_key" not in st.session_state:
         st.session_state["api_key"] = OPENAI_API_KEY or ""
 
@@ -585,9 +584,9 @@ def page_analyze_paper():
     uploaded_file = st.file_uploader("PDF-Datei hochladen", type="pdf")
 
     analyzer = PaperAnalyzer(model=model)
-    api_key = st.session_state["api_key"]  # der "gültige" Key
+    api_key = st.session_state["api_key"]
 
-    # 1) EINZELNE ANALYSE VIA RADIO-Knopf
+    # 1) EINZELNE ANALYSE
     if uploaded_file and api_key:
         if st.button("Analyse starten"):
             with st.spinner("Extrahiere Text aus PDF..."):
@@ -596,7 +595,6 @@ def page_analyze_paper():
                     st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
                     st.stop()
                 st.success("Text wurde erfolgreich extrahiert!")
-                # NEU: PDF-Text im Session State speichern
                 st.session_state["paper_text"] = text[:15000]
 
             with st.spinner(f"Führe {action}-Analyse durch..."):
@@ -646,14 +644,13 @@ def page_analyze_paper():
                 import io
                 import datetime
 
-                # 1) Gucke, ob es einen "offensichtlichen" Hinweis im Text gibt:
+                # Erkennung von Gene + RS + Genotypen ...
                 gene_via_text = None
                 pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                 match_text = re.search(pattern_obvious, text)
                 if match_text:
                     gene_via_text = match_text.group(1)
 
-                # 2) Falls NICHT da => fallback: Excel-Liste checken
                 if gene_via_text:
                     found_gene = gene_via_text
                 else:
@@ -677,7 +674,6 @@ def page_analyze_paper():
                             found_gene = g
                             break
 
-                # 3) Excel-Vorlage öffnen
                 try:
                     wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
                 except FileNotFoundError:
@@ -764,8 +760,6 @@ def sidebar_module_navigation():
         # "8) Excel Online Search": page_excel_online_search,
         # "9) Selenium Q&A": page_selenium_qa,
         "Analyze Paper": page_analyze_paper,
-
-        # Button für Chatbot entfällt - wir entfernen "Chatbot": None hier
     }
     for label, page in pages.items():
         if st.sidebar.button(label, key=label):
@@ -775,17 +769,15 @@ def sidebar_module_navigation():
 
     return pages.get(st.session_state["current_page"], page_home)
 
-# NEU: Chatbot-Funktion, die denselben API-Key wie Analyze Paper benutzt
+
 def answer_chat(question: str) -> str:
     """Einfaches Beispiel: Nutzt Paper-Text (falls vorhanden) aus st.session_state + GPT."""
     api_key = st.session_state.get("api_key", "")
     paper_text = st.session_state.get("paper_text", "")
 
-    # Fallback: kein Key => dumme Echo-Antwort
     if not api_key:
         return f"(Kein API-Key) Echo: {question}"
 
-    # Wenn kein Paper vorliegt, nur "allgemeine" GPT-Antwort
     if not paper_text.strip():
         sys_msg = "Du bist ein hilfreicher Assistent für allgemeine Fragen."
     else:
@@ -795,9 +787,9 @@ def answer_chat(question: str) -> str:
             "Bitte nutze es, um Fragen möglichst fachkundig zu beantworten."
         )
 
+    openai.api_key = api_key
     try:
-        openai.api_key = api_key
-        response = openai.ChatCompletion.create(
+        response = openai.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": sys_msg},
@@ -824,19 +816,15 @@ def main():
         unsafe_allow_html=True
     )
 
-    # Wir erzeugen zwei Spalten: links für den Inhalt, rechts Chatbot
     col_left, col_right = st.columns([4, 1])
 
-    # --- Linke "Hauptspalte" (Module Navigation + Page) ---
     with col_left:
         page_fn = sidebar_module_navigation()
         if page_fn is not None:
             page_fn()
 
-    # --- Rechte Spalte: Chatbot ---
     with col_right:
-        st.subheader("Chatbot (rechts)")
-
+        st.subheader("Chatbot")  # Entfernt "(rechts)"
         if "chat_history" not in st.session_state:
             st.session_state["chat_history"] = []
 
