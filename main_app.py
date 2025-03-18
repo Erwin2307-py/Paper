@@ -572,7 +572,7 @@ class AlleleFrequencyFinder:
         return " | ".join(out)
 
 ################################################################################
-# 5) PAGE "Analyze Paper" - Hier steht die neue Gen-Logik: ...
+# 5) PAGE "Analyze Paper" - Neue Gen-Logik...
 ################################################################################
 def page_analyze_paper():
     """
@@ -605,6 +605,10 @@ def page_analyze_paper():
                     st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
                     st.stop()
                 st.success("Text wurde erfolgreich extrahiert!")
+                
+                # NEU: Speichere den (ggf. gekürzten) PDF-Text im Session State,
+                # damit der Chatbot später darauf zugreifen kann:
+                st.session_state["paper_text"] = text[:15000]  # z.B. 15k Zeichen
 
             with st.spinner(f"Führe {action}-Analyse durch..."):
                 if action == "Zusammenfassung":
@@ -770,6 +774,43 @@ def page_analyze_paper():
             )
 
 ################################################################################
+# NEU: Hilfsfunktion für Chat-Fragen (Paper-Kontext + OpenAI)
+################################################################################
+def answer_with_paper_context(question: str, openai_key: str, fallback_echo: str):
+    """
+    Nutzt das im Session State gespeicherte Paper (falls vorhanden),
+    um mithilfe von GPT zu antworten. Wenn kein Key oder kein Text da,
+    return fallback_echo.
+    """
+    if not openai_key:
+        return fallback_echo  # Kein Key => Echo
+    paper_text = st.session_state.get("paper_text", "")
+    if not paper_text.strip():
+        return fallback_echo  # Kein Paper => Echo
+
+    try:
+        openai.api_key = openai_key
+        system_prompt = (
+            "Du bist ein hilfreicher Assistent und hast folgendes Paper:\n\n"
+            f"{paper_text[:12000]}\n\n"  # ggf. kürzen
+            "Beantworte Fragen dazu so gut wie möglich. Wenn die Frage nicht zum Paper passt, "
+            "oder du dir unsicher bist, gib dein bestes, eine sinnvolle Antwort zu liefern.\n"
+        )
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": question}
+            ],
+            max_tokens=500,
+            temperature=0.3
+        )
+        return response["choices"][0]["message"]["content"]
+    except Exception as e:
+        return f"OpenAI-Fehler: {e}"
+
+
+################################################################################
 # 6) Sidebar Module Navigation & Main (unverändert)
 ################################################################################
 
@@ -796,14 +837,14 @@ def sidebar_module_navigation():
     if "current_page" not in st.session_state:
         st.session_state["current_page"] = "Home"
 
-    # Wenn jemand explizit "Chatbot" klickt, war das zuvor vorhandene page_chatbot():
-    # Da es hier "None" ist, würde nichts passieren. Wir lassen es bestehen.
-
     # ----------------------------------------------------
-    # NEU: Chatbot direkt in der Sidebar
+    # Chatbot direkt in der Sidebar (NEU)
     # ----------------------------------------------------
     st.sidebar.markdown("---")
     st.sidebar.subheader("Chatbot (immer sichtbar)")
+
+    # NEU: Optionaler OpenAI-Key für den Chat
+    openai_key_for_chat = st.sidebar.text_input("OpenAI Key (Chat)", type="password", key="chatbot_openai_key")
 
     if "chat_history_sidebar" not in st.session_state:
         st.session_state["chat_history_sidebar"] = []
@@ -816,8 +857,17 @@ def sidebar_module_navigation():
         if user_input_sidebar.strip():
             # User-Message
             st.session_state["chat_history_sidebar"].append(("user", user_input_sidebar))
-            # Beispielhafte Echo-Antwort
-            bot_answer = f"Echo: {user_input_sidebar}"
+            # Ursprüngliche Echo-Antwort
+            fallback_answer = f"Echo: {user_input_sidebar}"
+
+            # NEU: Versuche mit Paper-Kontext via OpenAI zu antworten
+            bot_answer = answer_with_paper_context(
+                question=user_input_sidebar,
+                openai_key=openai_key_for_chat,
+                fallback_echo=fallback_answer
+            )
+
+            # Bot-Antwort
             st.session_state["chat_history_sidebar"].append(("bot", bot_answer))
 
     # Bisheriger Chat-Verlauf in der Sidebar
@@ -833,8 +883,6 @@ def sidebar_module_navigation():
     return pages.get(st.session_state["current_page"], page_home)
 
 
-# Wir belassen die bisherige page_chatbot() - sie ist nicht entfernt,
-# wir haben nur keinen Link mehr dorthin (außer man klickt auf den Dictionary-Button).
 def page_chatbot():
     st.title("Chatbot")
     # (Hier könnte ebenfalls etwas stehen, wir lassen es unverändert.)
@@ -854,8 +902,6 @@ def main():
     )
 
     page_fn = sidebar_module_navigation()
-    # Falls page_fn None ist (z.B. wenn "Chatbot" geklickt),
-    # machen wir optional:
     if page_fn is not None:
         page_fn()
 
