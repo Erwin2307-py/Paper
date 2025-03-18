@@ -450,6 +450,7 @@ class PaperAnalyzer:
             temperature=0.3,
             max_tokens=1500
         )
+        # Rückgabe per Punkt-Notation, um "object not subscriptable" zu vermeiden
         return response.choices[0].message.content
     
     def summarize(self, text, api_key):
@@ -569,7 +570,6 @@ def page_analyze_paper():
         st.session_state["api_key"] = OPENAI_API_KEY or ""
 
     st.sidebar.header("Einstellungen - PaperAnalyzer")
-    # Der User kann den Key überschreiben
     new_key_value = st.sidebar.text_input("OpenAI API Key", type="password", value=st.session_state["api_key"])
     st.session_state["api_key"] = new_key_value
 
@@ -586,7 +586,6 @@ def page_analyze_paper():
     analyzer = PaperAnalyzer(model=model)
     api_key = st.session_state["api_key"]
 
-    # 1) EINZELNE ANALYSE
     if uploaded_file and api_key:
         if st.button("Analyse starten"):
             with st.spinner("Extrahiere Text aus PDF..."):
@@ -618,7 +617,6 @@ def page_analyze_paper():
         elif not uploaded_file:
             st.info("Bitte eine PDF-Datei hochladen!")
 
-    # 2) ALLE ANALYSEN & EXCEL-SPEICHERN
     st.write("---")
     st.write("## Alle Analysen & Excel-Ausgabe")
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
@@ -644,7 +642,6 @@ def page_analyze_paper():
                 import io
                 import datetime
 
-                # Erkennung von Gene + RS + Genotypen ...
                 gene_via_text = None
                 pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                 match_text = re.search(pattern_obvious, text)
@@ -789,6 +786,7 @@ def answer_chat(question: str) -> str:
 
     openai.api_key = api_key
     try:
+        # Hier der neue Zugriff, um 'object not subscriptable' zu vermeiden:
         response = openai.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
@@ -798,7 +796,7 @@ def answer_chat(question: str) -> str:
             temperature=0.3,
             max_tokens=400
         )
-        return response["choices"][0]["message"]["content"]
+        return response.choices[0].message.content
     except Exception as e:
         return f"OpenAI-Fehler: {e}"
 
@@ -824,7 +822,7 @@ def main():
             page_fn()
 
     with col_right:
-        st.subheader("Chatbot")  # Entfernt "(rechts)"
+        st.subheader("Chatbot")
         if "chat_history" not in st.session_state:
             st.session_state["chat_history"] = []
 
