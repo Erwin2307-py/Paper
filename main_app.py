@@ -557,10 +557,10 @@ class AlleleFrequencyFinder:
 
         return " | ".join(out)
 
-
 ################################################################################
 # 5) PAGE "Analyze Paper" (Gen-Logik)
 ################################################################################
+
 def page_analyze_paper():
     st.title("Analyze Paper - Integriert")
 
@@ -827,12 +827,8 @@ def main():
         if "chat_history" not in st.session_state:
             st.session_state["chat_history"] = []
 
-        user_input = st.text_input("Deine Frage hier", key="chatbot_right_input")
-        if st.button("Absenden (Chat)", key="chatbot_right_send"):
-            if user_input.strip():
-                st.session_state["chat_history"].append(("user", user_input))
-                bot_answer = answer_chat(user_input)
-                st.session_state["chat_history"].append(("bot", bot_answer))
+        # NEU: Wir zeigen zuerst den Chat-Verlauf, dann unten das Eingabefeld.
+        # So sind alle Nachrichten (User & Bot) in einem scrollbaren Container.
 
         # CSS & HTML für scrollbaren Container:
         st.markdown(
@@ -850,7 +846,6 @@ def main():
             unsafe_allow_html=True
         )
 
-        # Chat-Verlauf in scrollbarem DIV
         st.markdown('<div class="scrollable-chat">', unsafe_allow_html=True)
         for role, text in st.session_state["chat_history"]:
             if role == "user":
@@ -858,6 +853,14 @@ def main():
             else:
                 st.markdown(f"**Bot**: {text}")
         st.markdown('</div>', unsafe_allow_html=True)
+
+        # Eingabefeld und Button unter dem Scroll-Container
+        user_input = st.text_input("Deine Frage hier", key="chatbot_right_input")
+        if st.button("Absenden (Chat)", key="chatbot_right_send"):
+            if user_input.strip():
+                st.session_state["chat_history"].append(("user", user_input))
+                bot_answer = answer_chat(user_input)
+                st.session_state["chat_history"].append(("bot", bot_answer))
 
 
 if __name__ == '__main__':
