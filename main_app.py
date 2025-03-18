@@ -572,7 +572,7 @@ class AlleleFrequencyFinder:
         return " | ".join(out)
 
 ################################################################################
-# 5) PAGE "Analyze Paper" - Hier steht die neue Gen-Logik
+# 5) PAGE "Analyze Paper" - Hier steht die neue Gen-Logik: ...
 ################################################################################
 def page_analyze_paper():
     """
@@ -656,6 +656,7 @@ def page_analyze_paper():
 
                 # --------------------------------------------------------------
                 # 1) Gucke, ob es einen "offensichtlichen" Hinweis im Text gibt:
+                #    z.B. "... in the CYP24A1 Gene ..."
                 # --------------------------------------------------------------
                 gene_via_text = None
                 pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
@@ -727,7 +728,7 @@ def page_analyze_paper():
                     if gp not in unique_geno_pairs:
                         unique_geno_pairs.append(gp)
 
-                # 6) Frequenz via AlleleFrequencyFinder
+                # 6) Frequenz via AlleleFrequencyFinder (nur wenn rs_num da)
                 aff = AlleleFrequencyFinder()
                 if rs_num:
                     data = aff.get_allele_frequencies(rs_num)
@@ -755,7 +756,7 @@ def page_analyze_paper():
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ws["J2"] = now_str
 
-                # Speichern + Download
+                # Speichern + Download anbieten
                 output = io.BytesIO()
                 wb.save(output)
                 output.seek(0)
@@ -786,57 +787,57 @@ def sidebar_module_navigation():
         # "9) Selenium Q&A": page_selenium_qa,
         "Analyze Paper": page_analyze_paper,
 
-        # ----------------------------------------------------
-        # NEU: Chatbot-Page ins Dictionary einfügen
-        # ----------------------------------------------------
-        "Chatbot": None,  # Platzhalter, wird später zugewiesen
+        # Dieser Eintrag bleibt bestehen - wir ändern ja nichts:
+        "Chatbot": None,  # Platzhalter für Page (nicht gelöscht)
     }
-
-    # Buttons für Navigation
     for label, page in pages.items():
         if st.sidebar.button(label, key=label):
             st.session_state["current_page"] = label
-
     if "current_page" not in st.session_state:
         st.session_state["current_page"] = "Home"
 
-    # ----------------------------------
-    # An dieser Stelle Chatbot-Funktion
-    # ----------------------------------
-    if st.session_state["current_page"] == "Chatbot":
-        page_chatbot()
-        return lambda: None  # Dummy, wir sind schon "im Chatbot"
+    # Wenn jemand explizit "Chatbot" klickt, war das zuvor vorhandene page_chatbot():
+    # Da es hier "None" ist, würde nichts passieren. Wir lassen es bestehen.
 
-    # Rückgabe der Funktion für die restlichen Pages
+    # ----------------------------------------------------
+    # NEU: Chatbot direkt in der Sidebar
+    # ----------------------------------------------------
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Chatbot (immer sichtbar)")
+
+    if "chat_history_sidebar" not in st.session_state:
+        st.session_state["chat_history_sidebar"] = []
+
+    # Eingabefeld in der Sidebar
+    user_input_sidebar = st.sidebar.text_input("Nachricht eingeben", key="chatbot_input_sidebar")
+    
+    # Button zum Abschicken
+    if st.sidebar.button("Senden", key="chatbot_send_sidebar"):
+        if user_input_sidebar.strip():
+            # User-Message
+            st.session_state["chat_history_sidebar"].append(("user", user_input_sidebar))
+            # Beispielhafte Echo-Antwort
+            bot_answer = f"Echo: {user_input_sidebar}"
+            st.session_state["chat_history_sidebar"].append(("bot", bot_answer))
+
+    # Bisheriger Chat-Verlauf in der Sidebar
+    for role, message in st.session_state["chat_history_sidebar"]:
+        if role == "user":
+            st.sidebar.markdown(f"**Du**: {message}")
+        else:
+            st.sidebar.markdown(f"**Bot**: {message}")
+
+    # ----------------------------------
+    # Rückgabe der Seite aus dem Dict
+    # ----------------------------------
     return pages.get(st.session_state["current_page"], page_home)
 
-# ------------------------------------------------------------------------------
-# NEU: Chatbot-Seite definieren
-# ------------------------------------------------------------------------------
+
+# Wir belassen die bisherige page_chatbot() - sie ist nicht entfernt,
+# wir haben nur keinen Link mehr dorthin (außer man klickt auf den Dictionary-Button).
 def page_chatbot():
     st.title("Chatbot")
-
-    # Einfaches Beispiel: Wir merken uns den Chat-Verlauf in st.session_state
-    if "chat_history" not in st.session_state:
-        st.session_state["chat_history"] = []
-
-    user_input = st.text_input("Du:", key="chatbot_input")
-    if st.button("Abschicken"):
-        if user_input.strip():
-            # User-Message an den Verlauf anhängen
-            st.session_state["chat_history"].append(("user", user_input))
-
-            # Beispiel: eine einfache Echo-Antwort (ggf. hier z.B. OpenAI ansprechen)
-            bot_answer = f"Ich habe verstanden: {user_input}"
-            st.session_state["chat_history"].append(("bot", bot_answer))
-
-    st.write("---")
-    st.write("### Chat Verlauf")
-    for role, message in st.session_state["chat_history"]:
-        if role == "user":
-            st.markdown(f"**Du**: {message}")
-        else:
-            st.markdown(f"**Bot**: {message}")
+    # (Hier könnte ebenfalls etwas stehen, wir lassen es unverändert.)
 
 
 def main():
@@ -853,7 +854,10 @@ def main():
     )
 
     page_fn = sidebar_module_navigation()
-    page_fn()
+    # Falls page_fn None ist (z.B. wenn "Chatbot" geklickt),
+    # machen wir optional:
+    if page_fn is not None:
+        page_fn()
 
 if __name__ == '__main__':
     main()
