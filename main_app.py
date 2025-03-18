@@ -241,7 +241,7 @@ def fetch_openalex_data(entity_type, entity_id=None, params=None):
         url += f"/{entity_id}"
     if params is None:
         params = {}
-    params["mailto"] = "your_email@example.com"  # Ersetze durch deine E-Mail-Adresse
+    params["mailto"] = "your_email@example.com"
     response = requests.get(url, params=params)
     if response.status_code == 200:
         return response.json()
@@ -430,7 +430,6 @@ class PaperAnalyzer:
             text = text[:15000] + "..."
         
         prompt = prompt_template.format(text=text)
-        # NEU: Wir nutzen das neue Schema openai.chat.completions.create(...)
         openai.api_key = api_key
         response = openai.chat.completions.create(
             model=self.model,
@@ -450,7 +449,6 @@ class PaperAnalyzer:
             temperature=0.3,
             max_tokens=1500
         )
-        # Rückgabe per Punkt-Notation, um "object not subscriptable" zu vermeiden
         return response.choices[0].message.content
     
     def summarize(self, text, api_key):
@@ -786,7 +784,6 @@ def answer_chat(question: str) -> str:
 
     openai.api_key = api_key
     try:
-        # Hier der neue Zugriff, um 'object not subscriptable' zu vermeiden:
         response = openai.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
@@ -814,15 +811,19 @@ def main():
         unsafe_allow_html=True
     )
 
+    # 2-spaltiges Layout
     col_left, col_right = st.columns([4, 1])
 
+    # Linke Spalte: Navigation + Page
     with col_left:
         page_fn = sidebar_module_navigation()
         if page_fn is not None:
             page_fn()
 
+    # Rechte Spalte: Chatbot + scrollbarer Bereich
     with col_right:
         st.subheader("Chatbot")
+
         if "chat_history" not in st.session_state:
             st.session_state["chat_history"] = []
 
@@ -833,11 +834,30 @@ def main():
                 bot_answer = answer_chat(user_input)
                 st.session_state["chat_history"].append(("bot", bot_answer))
 
+        # CSS & HTML für scrollbaren Container:
+        st.markdown(
+            """
+            <style>
+            .scrollable-chat {
+                height: 300px;
+                overflow-y: auto;
+                border: 1px solid #CCC;
+                padding: 8px;
+                margin-top: 10px;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+
+        # Chat-Verlauf in scrollbarem DIV
+        st.markdown('<div class="scrollable-chat">', unsafe_allow_html=True)
         for role, text in st.session_state["chat_history"]:
             if role == "user":
                 st.markdown(f"**Du**: {text}")
             else:
                 st.markdown(f"**Bot**: {text}")
+        st.markdown('</div>', unsafe_allow_html=True)
 
 
 if __name__ == '__main__':
