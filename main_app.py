@@ -346,7 +346,7 @@ class SemanticScholarSearch:
 # [unverändert...]
 
 ################################################################################
-# 3) Restliche Module + Seiten (Pages) (unverändert)
+# 3) Restliche Module + Seiten (unverändert)
 ################################################################################
 
 def module_paperqa2():
@@ -572,7 +572,7 @@ class AlleleFrequencyFinder:
         return " | ".join(out)
 
 ################################################################################
-# 5) PAGE "Analyze Paper" - Hier steht die neue Gen-Logik: Erst "offensichtlicher Hinweis", dann Excel.
+# 5) PAGE "Analyze Paper" - Hier steht die neue Gen-Logik
 ################################################################################
 def page_analyze_paper():
     """
@@ -656,25 +656,19 @@ def page_analyze_paper():
 
                 # --------------------------------------------------------------
                 # 1) Gucke, ob es einen "offensichtlichen" Hinweis im Text gibt:
-                #    z.B. "... in the CYP24A1 Gene ..."
                 # --------------------------------------------------------------
                 gene_via_text = None
-                # Suche Muster: "in the (irgendwas) gene"
-                # Wir erlauben: in the CIP24A1 gene, in the ABO gene, etc.
-                # Kleinschreibung egal => re.IGNORECASE
                 pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                 match_text = re.search(pattern_obvious, text)
                 if match_text:
                     gene_via_text = match_text.group(1)
-                    # gene_via_text wäre z.B. "CYP24A1" o.Ä.
 
                 # --------------------------------------------------------------
                 # 2) Falls NICHT da => fallback: Excel-Liste checken
                 # --------------------------------------------------------------
                 if gene_via_text:
-                    found_gene = gene_via_text  # priorität: offensichtlicher Fund im Text
+                    found_gene = gene_via_text
                 else:
-                    # normaler fallback: wir lesen 'vorlage_gene.xlsx'
                     try:
                         wb_gene = openpyxl.load_workbook("vorlage_gene.xlsx")
                     except FileNotFoundError:
@@ -733,7 +727,7 @@ def page_analyze_paper():
                     if gp not in unique_geno_pairs:
                         unique_geno_pairs.append(gp)
 
-                # 6) Frequenz via AlleleFrequencyFinder (nur wenn rs_num da)
+                # 6) Frequenz via AlleleFrequencyFinder
                 aff = AlleleFrequencyFinder()
                 if rs_num:
                     data = aff.get_allele_frequencies(rs_num)
@@ -761,7 +755,7 @@ def page_analyze_paper():
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ws["J2"] = now_str
 
-                # Speichern + Download anbieten
+                # Speichern + Download
                 output = io.BytesIO()
                 wb.save(output)
                 output.seek(0)
@@ -791,13 +785,59 @@ def sidebar_module_navigation():
         # "8) Excel Online Search": page_excel_online_search,
         # "9) Selenium Q&A": page_selenium_qa,
         "Analyze Paper": page_analyze_paper,
+
+        # ----------------------------------------------------
+        # NEU: Chatbot-Page ins Dictionary einfügen
+        # ----------------------------------------------------
+        "Chatbot": None,  # Platzhalter, wird später zugewiesen
     }
+
+    # Buttons für Navigation
     for label, page in pages.items():
         if st.sidebar.button(label, key=label):
             st.session_state["current_page"] = label
+
     if "current_page" not in st.session_state:
         st.session_state["current_page"] = "Home"
-    return pages[st.session_state["current_page"]]
+
+    # ----------------------------------
+    # An dieser Stelle Chatbot-Funktion
+    # ----------------------------------
+    if st.session_state["current_page"] == "Chatbot":
+        page_chatbot()
+        return lambda: None  # Dummy, wir sind schon "im Chatbot"
+
+    # Rückgabe der Funktion für die restlichen Pages
+    return pages.get(st.session_state["current_page"], page_home)
+
+# ------------------------------------------------------------------------------
+# NEU: Chatbot-Seite definieren
+# ------------------------------------------------------------------------------
+def page_chatbot():
+    st.title("Chatbot")
+
+    # Einfaches Beispiel: Wir merken uns den Chat-Verlauf in st.session_state
+    if "chat_history" not in st.session_state:
+        st.session_state["chat_history"] = []
+
+    user_input = st.text_input("Du:", key="chatbot_input")
+    if st.button("Abschicken"):
+        if user_input.strip():
+            # User-Message an den Verlauf anhängen
+            st.session_state["chat_history"].append(("user", user_input))
+
+            # Beispiel: eine einfache Echo-Antwort (ggf. hier z.B. OpenAI ansprechen)
+            bot_answer = f"Ich habe verstanden: {user_input}"
+            st.session_state["chat_history"].append(("bot", bot_answer))
+
+    st.write("---")
+    st.write("### Chat Verlauf")
+    for role, message in st.session_state["chat_history"]:
+        if role == "user":
+            st.markdown(f"**Du**: {message}")
+        else:
+            st.markdown(f"**Bot**: {message}")
+
 
 def main():
     st.markdown(
