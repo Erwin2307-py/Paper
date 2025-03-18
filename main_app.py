@@ -404,7 +404,7 @@ def page_online_api_filter():
         st.session_state["current_page"] = "Home"
 
 ################################################################################
-# 4) PAPER ANALYZER (unverändert) + Load Env/OPENAI key
+# 4) PAPER ANALYZER + Load Env/OPENAI key
 ################################################################################
 import os
 import PyPDF2
@@ -484,7 +484,7 @@ class PaperAnalyzer:
 
 
 ################################################################################
-# NEU: Die Klasse AlleleFrequencyFinder (aus deinem Snippet) + Integration
+# NEU: Die Klasse AlleleFrequencyFinder
 ################################################################################
 
 import time
@@ -501,16 +501,6 @@ class AlleleFrequencyFinder:
         self.retry_delay = 2  # Sekunden zwischen Wiederholungsversuchen
 
     def get_allele_frequencies(self, rs_id: str, retry_count: int = 0) -> Optional[Dict[str, Any]]:
-        """
-        Ruft Allelfrequenzdaten von Ensembl mit Wiederholungsversuchen ab.
-        
-        Args:
-            rs_id: Die RS-ID (z.B. rs699)
-            retry_count: Aktuelle Anzahl der Wiederholungsversuche
-            
-        Returns:
-            Dict mit Allelfrequenzdaten oder None bei Fehlschlag
-        """
         if not rs_id.startswith("rs"):
             rs_id = f"rs{rs_id}"
             
@@ -522,7 +512,6 @@ class AlleleFrequencyFinder:
             response.raise_for_status()
             return response.json()
         except requests.exceptions.HTTPError as e:
-            # 500 => Retry bis max_retries
             if response.status_code == 500 and retry_count < self.max_retries:
                 time.sleep(self.retry_delay)
                 return self.get_allele_frequencies(rs_id, retry_count + 1)
@@ -541,14 +530,12 @@ class AlleleFrequencyFinder:
         return None
     
     def parse_and_display_data(self, data: Dict[str, Any]) -> None:
-        """Nur Konsolen-Print (Beispiel)."""
         if not data:
             print("Keine Daten verfügbar.")
             return
         print(json.dumps(data, indent=2))
 
     def build_freq_info_text(self, data: Dict[str, Any]) -> str:
-        """Erstellt kurzen Text mit MAF + Populationen, etc."""
         if not data:
             return "Keine Daten von Ensembl"
         
@@ -571,19 +558,22 @@ class AlleleFrequencyFinder:
 
         return " | ".join(out)
 
+
 ################################################################################
-# 5) PAGE "Analyze Paper" - Neue Gen-Logik...
+# 5) PAGE "Analyze Paper" (Gen-Logik)
 ################################################################################
 def page_analyze_paper():
-    """
-    Seite "Analyze Paper": ruft direkt den PaperAnalyzer auf.
-    * Zuerst versuchen wir, aus dem Text "in the XYZ Gene" zu parsen (z.B. CYP24A1).
-    * Wenn das nicht klappt, fallback: wir lesen 'vorlage_gene.xlsx' und suchen alle Genes.
-    """
     st.title("Analyze Paper - Integriert")
 
+    # NEU: Speichere den Key in Session State, damit er vom Chatbot genutzt werden kann:
+    if "api_key" not in st.session_state:
+        st.session_state["api_key"] = OPENAI_API_KEY or ""
+
     st.sidebar.header("Einstellungen - PaperAnalyzer")
-    api_key = st.sidebar.text_input("OpenAI API Key", type="password", value=OPENAI_API_KEY or "")
+    # Der User kann den Key überschreiben
+    new_key_value = st.sidebar.text_input("OpenAI API Key", type="password", value=st.session_state["api_key"])
+    st.session_state["api_key"] = new_key_value
+
     model = st.sidebar.selectbox("OpenAI-Modell",
                                  ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4o"],
                                  index=0)
@@ -595,6 +585,7 @@ def page_analyze_paper():
     uploaded_file = st.file_uploader("PDF-Datei hochladen", type="pdf")
 
     analyzer = PaperAnalyzer(model=model)
+    api_key = st.session_state["api_key"]  # der "gültige" Key
 
     # 1) EINZELNE ANALYSE VIA RADIO-Knopf
     if uploaded_file and api_key:
@@ -605,10 +596,8 @@ def page_analyze_paper():
                     st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
                     st.stop()
                 st.success("Text wurde erfolgreich extrahiert!")
-                
-                # NEU: Speichere den (ggf. gekürzten) PDF-Text im Session State,
-                # damit der Chatbot später darauf zugreifen kann:
-                st.session_state["paper_text"] = text[:15000]  # z.B. 15k Zeichen
+                # NEU: PDF-Text im Session State speichern
+                st.session_state["paper_text"] = text[:15000]
 
             with st.spinner(f"Führe {action}-Analyse durch..."):
                 if action == "Zusammenfassung":
@@ -644,7 +633,6 @@ def page_analyze_paper():
                     st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
                     st.stop()
 
-                # GPT-Analysen:
                 summary_result = analyzer.summarize(text, api_key)
                 key_findings_result = analyzer.extract_key_findings(text, api_key)
                 methods_result = analyzer.identify_methods(text, api_key)
@@ -658,19 +646,14 @@ def page_analyze_paper():
                 import io
                 import datetime
 
-                # --------------------------------------------------------------
                 # 1) Gucke, ob es einen "offensichtlichen" Hinweis im Text gibt:
-                #    z.B. "... in the CYP24A1 Gene ..."
-                # --------------------------------------------------------------
                 gene_via_text = None
                 pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                 match_text = re.search(pattern_obvious, text)
                 if match_text:
                     gene_via_text = match_text.group(1)
 
-                # --------------------------------------------------------------
                 # 2) Falls NICHT da => fallback: Excel-Liste checken
-                # --------------------------------------------------------------
                 if gene_via_text:
                     found_gene = gene_via_text
                 else:
@@ -694,9 +677,7 @@ def page_analyze_paper():
                             found_gene = g
                             break
 
-                # --------------------------------------------------------------
                 # 3) Excel-Vorlage öffnen
-                # --------------------------------------------------------------
                 try:
                     wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
                 except FileNotFoundError:
@@ -705,11 +686,9 @@ def page_analyze_paper():
 
                 ws = wb.active
 
-                # falls wir was gefunden haben => D5 = found_gene
                 if found_gene:
                     ws["D5"] = found_gene
 
-                # 4) rs\d+ => in D6 + Frequenz via AlleleFrequencyFinder
                 rs_pat = r"(rs\d+)"
                 found_rs = re.search(rs_pat, text)
                 rs_num = None
@@ -717,7 +696,6 @@ def page_analyze_paper():
                     rs_num = found_rs.group(1)
                     ws["D6"] = rs_num
 
-                # 5) Genotypen wie TT, CC, etc.
                 genotype_regex = r"\b([ACGT]{2,3})\b"
                 lines = text.split("\n")
                 found_pairs = []
@@ -732,7 +710,6 @@ def page_analyze_paper():
                     if gp not in unique_geno_pairs:
                         unique_geno_pairs.append(gp)
 
-                # 6) Frequenz via AlleleFrequencyFinder (nur wenn rs_num da)
                 aff = AlleleFrequencyFinder()
                 if rs_num:
                     data = aff.get_allele_frequencies(rs_num)
@@ -745,7 +722,6 @@ def page_analyze_paper():
                 else:
                     freq_info = "Keine rsID vorhanden"
 
-                # 7) Zellen (D10/F10/E10) + (D11/F11/E11)
                 if len(unique_geno_pairs) > 0:
                     ws["D10"] = unique_geno_pairs[0][0]
                     ws["F10"] = unique_geno_pairs[0][1]
@@ -756,11 +732,9 @@ def page_analyze_paper():
                     ws["F11"] = unique_geno_pairs[1][1]
                     ws["E11"] = freq_info
 
-                # Zeitstempel in J2
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ws["J2"] = now_str
 
-                # Speichern + Download anbieten
                 output = io.BytesIO()
                 wb.save(output)
                 output.seek(0)
@@ -774,44 +748,7 @@ def page_analyze_paper():
             )
 
 ################################################################################
-# NEU: Hilfsfunktion für Chat-Fragen (Paper-Kontext + OpenAI)
-################################################################################
-def answer_with_paper_context(question: str, openai_key: str, fallback_echo: str):
-    """
-    Nutzt das im Session State gespeicherte Paper (falls vorhanden),
-    um mithilfe von GPT zu antworten. Wenn kein Key oder kein Text da,
-    return fallback_echo.
-    """
-    if not openai_key:
-        return fallback_echo  # Kein Key => Echo
-    paper_text = st.session_state.get("paper_text", "")
-    if not paper_text.strip():
-        return fallback_echo  # Kein Paper => Echo
-
-    try:
-        openai.api_key = openai_key
-        system_prompt = (
-            "Du bist ein hilfreicher Assistent und hast folgendes Paper:\n\n"
-            f"{paper_text[:12000]}\n\n"  # ggf. kürzen
-            "Beantworte Fragen dazu so gut wie möglich. Wenn die Frage nicht zum Paper passt, "
-            "oder du dir unsicher bist, gib dein bestes, eine sinnvolle Antwort zu liefern.\n"
-        )
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": question}
-            ],
-            max_tokens=500,
-            temperature=0.3
-        )
-        return response["choices"][0]["message"]["content"]
-    except Exception as e:
-        return f"OpenAI-Fehler: {e}"
-
-
-################################################################################
-# 6) Sidebar Module Navigation & Main (unverändert)
+# 6) Sidebar Module Navigation & Main
 ################################################################################
 
 def sidebar_module_navigation():
@@ -828,8 +765,7 @@ def sidebar_module_navigation():
         # "9) Selenium Q&A": page_selenium_qa,
         "Analyze Paper": page_analyze_paper,
 
-        # Dieser Eintrag bleibt bestehen - wir ändern ja nichts:
-        "Chatbot": None,  # Platzhalter für Page (nicht gelöscht)
+        # Button für Chatbot entfällt - wir entfernen "Chatbot": None hier
     }
     for label, page in pages.items():
         if st.sidebar.button(label, key=label):
@@ -837,55 +773,42 @@ def sidebar_module_navigation():
     if "current_page" not in st.session_state:
         st.session_state["current_page"] = "Home"
 
-    # ----------------------------------------------------
-    # Chatbot direkt in der Sidebar (NEU)
-    # ----------------------------------------------------
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("Chatbot (immer sichtbar)")
-
-    # NEU: Optionaler OpenAI-Key für den Chat
-    openai_key_for_chat = st.sidebar.text_input("OpenAI Key (Chat)", type="password", key="chatbot_openai_key")
-
-    if "chat_history_sidebar" not in st.session_state:
-        st.session_state["chat_history_sidebar"] = []
-
-    # Eingabefeld in der Sidebar
-    user_input_sidebar = st.sidebar.text_input("Nachricht eingeben", key="chatbot_input_sidebar")
-    
-    # Button zum Abschicken
-    if st.sidebar.button("Senden", key="chatbot_send_sidebar"):
-        if user_input_sidebar.strip():
-            # User-Message
-            st.session_state["chat_history_sidebar"].append(("user", user_input_sidebar))
-            # Ursprüngliche Echo-Antwort
-            fallback_answer = f"Echo: {user_input_sidebar}"
-
-            # NEU: Versuche mit Paper-Kontext via OpenAI zu antworten
-            bot_answer = answer_with_paper_context(
-                question=user_input_sidebar,
-                openai_key=openai_key_for_chat,
-                fallback_echo=fallback_answer
-            )
-
-            # Bot-Antwort
-            st.session_state["chat_history_sidebar"].append(("bot", bot_answer))
-
-    # Bisheriger Chat-Verlauf in der Sidebar
-    for role, message in st.session_state["chat_history_sidebar"]:
-        if role == "user":
-            st.sidebar.markdown(f"**Du**: {message}")
-        else:
-            st.sidebar.markdown(f"**Bot**: {message}")
-
-    # ----------------------------------
-    # Rückgabe der Seite aus dem Dict
-    # ----------------------------------
     return pages.get(st.session_state["current_page"], page_home)
 
+# NEU: Chatbot-Funktion, die denselben API-Key wie Analyze Paper benutzt
+def answer_chat(question: str) -> str:
+    """Einfaches Beispiel: Nutzt Paper-Text (falls vorhanden) aus st.session_state + GPT."""
+    api_key = st.session_state.get("api_key", "")
+    paper_text = st.session_state.get("paper_text", "")
 
-def page_chatbot():
-    st.title("Chatbot")
-    # (Hier könnte ebenfalls etwas stehen, wir lassen es unverändert.)
+    # Fallback: kein Key => dumme Echo-Antwort
+    if not api_key:
+        return f"(Kein API-Key) Echo: {question}"
+
+    # Wenn kein Paper vorliegt, nur "allgemeine" GPT-Antwort
+    if not paper_text.strip():
+        sys_msg = "Du bist ein hilfreicher Assistent für allgemeine Fragen."
+    else:
+        sys_msg = (
+            "Du bist ein hilfreicher Assistent, und hier ist ein Paper als Kontext:\n\n"
+            + paper_text[:12000] + "\n\n"
+            "Bitte nutze es, um Fragen möglichst fachkundig zu beantworten."
+        )
+
+    try:
+        openai.api_key = api_key
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": sys_msg},
+                {"role": "user", "content": question}
+            ],
+            temperature=0.3,
+            max_tokens=400
+        )
+        return response["choices"][0]["message"]["content"]
+    except Exception as e:
+        return f"OpenAI-Fehler: {e}"
 
 
 def main():
@@ -901,9 +824,35 @@ def main():
         unsafe_allow_html=True
     )
 
-    page_fn = sidebar_module_navigation()
-    if page_fn is not None:
-        page_fn()
+    # Wir erzeugen zwei Spalten: links für den Inhalt, rechts Chatbot
+    col_left, col_right = st.columns([4, 1])
+
+    # --- Linke "Hauptspalte" (Module Navigation + Page) ---
+    with col_left:
+        page_fn = sidebar_module_navigation()
+        if page_fn is not None:
+            page_fn()
+
+    # --- Rechte Spalte: Chatbot ---
+    with col_right:
+        st.subheader("Chatbot (rechts)")
+
+        if "chat_history" not in st.session_state:
+            st.session_state["chat_history"] = []
+
+        user_input = st.text_input("Deine Frage hier", key="chatbot_right_input")
+        if st.button("Absenden (Chat)", key="chatbot_right_send"):
+            if user_input.strip():
+                st.session_state["chat_history"].append(("user", user_input))
+                bot_answer = answer_chat(user_input)
+                st.session_state["chat_history"].append(("bot", bot_answer))
+
+        for role, text in st.session_state["chat_history"]:
+            if role == "user":
+                st.markdown(f"**Du**: {text}")
+            else:
+                st.markdown(f"**Bot**: {text}")
+
 
 if __name__ == '__main__':
     main()
