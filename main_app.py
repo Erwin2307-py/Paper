@@ -76,7 +76,6 @@ class CoreAPI:
         r.raise_for_status()
         return r.json()
 
-
 def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", timeout=15):
     try:
         core = CoreAPI(api_key)
@@ -84,7 +83,6 @@ def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", 
         return "results" in result
     except Exception:
         return False
-
 
 def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
     if not api_key:
@@ -109,7 +107,6 @@ def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
         st.error(f"CORE search error: {e}")
         return []
 
-
 ################################################################################
 # PubMed Connection Check + (Basis) Search (unverändert)
 ################################################################################
@@ -124,7 +121,6 @@ def check_pubmed_connection(timeout=10):
         return "esearchresult" in data
     except Exception:
         return False
-
 
 def search_pubmed_simple(query):
     """Kurze Version: Sucht nur, ohne Abstract / Details."""
@@ -162,7 +158,6 @@ def search_pubmed_simple(query):
         st.error(f"Error searching PubMed: {e}")
         return []
 
-
 def fetch_pubmed_abstract(pmid):
     """Holt den Abstract via efetch für eine gegebene PubMed-ID."""
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
@@ -182,7 +177,6 @@ def fetch_pubmed_abstract(pmid):
     except Exception as e:
         return f"(Error: {e})"
 
-
 ################################################################################
 # Europe PMC Connection Check + (Basis) Search (unverändert)
 ################################################################################
@@ -197,7 +191,6 @@ def check_europe_pmc_connection(timeout=10):
         return "resultList" in data and "result" in data["resultList"]
     except Exception:
         return False
-
 
 def search_europe_pmc_simple(query):
     """Kurze Version: Sucht nur, ohne erweiterte Details."""
@@ -231,7 +224,6 @@ def search_europe_pmc_simple(query):
     except Exception as e:
         st.error(f"Europe PMC search error: {e}")
         return []
-
 
 ################################################################################
 # OpenAlex API Communication (unverändert)
