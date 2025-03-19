@@ -20,6 +20,7 @@ def clean_html_except_br(text):
 
 # Neue Funktion zur Übersetzung über OpenAI-Chatcompletions
 def translate_text_openai(text, source_language, target_language, api_key):
+    import openai
     openai.api_key = api_key
     prompt_system = (
         f"You are a translation engine from {source_language} to {target_language} for a biotech company called Novogenia "
@@ -166,11 +167,13 @@ def search_pubmed_simple(query):
         idlist = data.get("esearchresult", {}).get("idlist", [])
         if not idlist:
             return out
+
         esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
         sum_params = {"db": "pubmed", "id": ",".join(idlist), "retmode": "json"}
         r2 = requests.get(esummary_url, params=sum_params, timeout=10)
         r2.raise_for_status()
         summary_data = r2.json().get("result", {})
+
         for pmid in idlist:
             info = summary_data.get(pmid, {})
             title = info.get("title", "n/a")
@@ -356,7 +359,7 @@ class SemanticScholarSearch:
                     "Journal/Organism": "n/a",
                     "Year": year,
                     "PMID": "n/a",
-                    "DOI": doi,
+                    "DOI": "n/a",
                     "URL": url_article,
                     "Abstract": abstract_text
                 })
@@ -456,17 +459,11 @@ class PaperAnalyzer:
         response = openai.chat.completions.create(
             model=self.model,
             messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Du bist ein Experte für die Analyse wissenschaftlicher Paper, "
-                        "besonders im Bereich Side-Channel Analysis."
-                    )
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
+                {"role": "system", "content": (
+                    "Du bist ein Experte für die Analyse wissenschaftlicher Paper, "
+                    "besonders im Bereich Side-Channel Analysis."
+                )},
+                {"role": "user", "content": prompt}
             ],
             temperature=0.3,
             max_tokens=1500
@@ -593,7 +590,6 @@ def page_analyze_paper():
                               index=0)
     topic = st.sidebar.text_input("Thema für Relevanz-Bewertung (falls relevant)")
     
-    # Neue Auswahl für die Ausgabesprache
     output_lang = st.sidebar.selectbox("Ausgabesprache", ["Deutsch", "Englisch", "Portugiesisch", "Serbisch"], index=0)
     
     uploaded_file = st.file_uploader("PDF-Datei hochladen", type="pdf")
@@ -623,9 +619,7 @@ def page_analyze_paper():
                         st.stop()
                     result = analyzer.evaluate_relevance(text, topic, api_key)
     
-                # Übersetzung falls gewünscht (sofern nicht Deutsch ausgewählt) mit OpenAI-gestützter Übersetzung
                 if output_lang != "Deutsch":
-                    # Wir gehen davon aus, dass der Originaltext in Deutsch vorliegt
                     lang_map = {"Englisch": "English", "Portugiesisch": "Portuguese", "Serbisch": "Serbian"}
                     target_lang = lang_map.get(output_lang, "English")
                     result = translate_text_openai(result, "German", target_lang, api_key)
@@ -796,6 +790,7 @@ def answer_chat(question: str) -> str:
             + paper_text[:12000] + "\n\n"
             "Bitte nutze es, um Fragen möglichst fachkundig zu beantworten."
         )
+    import openai
     openai.api_key = api_key
     try:
         response = openai.chat.completions.create(
@@ -812,6 +807,7 @@ def answer_chat(question: str) -> str:
         return f"OpenAI-Fehler: {e}"
 
 def main():
+    # Füge hier die angepassten CSS-Einstellungen hinzu
     st.markdown(
         """
         <style>
@@ -819,39 +815,38 @@ def main():
             margin: 0;
             padding: 0;
         }
+        .scrollable-chat {
+            max-height: 400px; /* feste oder maximale Höhe */
+            overflow-y: scroll; /* scrollbar wenn zu lang */
+            border: 1px solid #CCC;
+            padding: 8px;
+            margin-top: 10px;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+        }
         </style>
         """,
         unsafe_allow_html=True
     )
+
     col_left, col_right = st.columns([4, 1])
     with col_left:
         page_fn = sidebar_module_navigation()
         if page_fn is not None:
             page_fn()
+
     with col_right:
         st.subheader("Chatbot")
         if "chat_history" not in st.session_state:
             st.session_state["chat_history"] = []
+
         user_input = st.text_input("Deine Frage hier", key="chatbot_right_input")
         if st.button("Absenden (Chat)", key="chatbot_right_send"):
             if user_input.strip():
                 st.session_state["chat_history"].append(("user", user_input))
                 bot_answer = answer_chat(user_input)
                 st.session_state["chat_history"].append(("bot", bot_answer))
-        st.markdown(
-            """
-            <style>
-            .scrollable-chat {
-                height: 300px;
-                overflow-y: auto;
-                border: 1px solid #CCC;
-                padding: 8px;
-                margin-top: 10px;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
+
         st.markdown('<div class="scrollable-chat">', unsafe_allow_html=True)
         for role, msg_text in st.session_state["chat_history"]:
             if role == "user":
