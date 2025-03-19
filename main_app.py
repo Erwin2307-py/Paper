@@ -751,11 +751,17 @@ def sidebar_module_navigation():
 
 
 def answer_chat(question: str) -> str:
-    """Einfaches Beispiel: Nutzt Paper-Text (falls vorhanden) aus st.session_state + GPT."""
+    """
+    Einfaches Beispiel: Nutzt Paper-Text (falls vorhanden) aus st.session_state + GPT.
+    Du kannst hier natürlich deine eigenen Chat- bzw. Modellaufrufe einbauen
+    oder komplett austauschen, wenn du nicht OpenAI verwenden willst.
+    """
     api_key = st.session_state.get("api_key", "")
     paper_text = st.session_state.get("paper_text", "")
     if not api_key:
         return f"(Kein API-Key) Echo: {question}"
+
+    # Fallback: Kein PDF / Kein extrahierter Text vorhanden
     if not paper_text.strip():
         sys_msg = "Du bist ein hilfreicher Assistent für allgemeine Fragen."
     else:
@@ -765,6 +771,7 @@ def answer_chat(question: str) -> str:
             "Bitte nutze es, um Fragen möglichst fachkundig zu beantworten."
         )
 
+    # OpenAI-Aufruf (Beispiel) – anpassen nach Wunsch
     openai.api_key = api_key
     try:
         response = openai.chat.completions.create(
@@ -782,68 +789,51 @@ def answer_chat(question: str) -> str:
 
 
 def main():
-    # Globales CSS/Styling
+    # Zunächst Seiten-Navigation über die Sidebar
+    page_fn = sidebar_module_navigation()
+    if page_fn is not None:
+        page_fn()
+
+    # Danach Chat-Bereich unterhalb der ausgewählten Seite
+    st.write("## Chatbot")
+
+    # Session State für Chatverlauf
+    if "chat_history" not in st.session_state:
+        st.session_state["chat_history"] = []
+
+    # Eingabe für den Chat
+    user_input = st.text_input("Deine Frage hier", key="chatbot_input")
+    if st.button("Absenden (Chat)", key="chatbot_send"):
+        if user_input.strip():
+            st.session_state["chat_history"].append(("user", user_input))
+            bot_answer = answer_chat(user_input)
+            st.session_state["chat_history"].append(("bot", bot_answer))
+
+    # CSS für einen scrollbaren Container
     st.markdown(
         """
         <style>
-        html, body {
-            margin: 0;
-            padding: 0;
+        .scrollable-chat {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #CCC;
+            padding: 8px;
+            margin-top: 10px;
+            border-radius: 4px;
         }
         </style>
         """,
         unsafe_allow_html=True
     )
 
-    # Zwei Spalten: links der Hauptinhalt (Module), rechts der Chat
-    col_left, col_right = st.columns([4, 1])
-
-    # Linke Spalte: Navigation + Seiten
-    with col_left:
-        page_fn = sidebar_module_navigation()
-        if page_fn is not None:
-            page_fn()
-
-    # Rechte Spalte: Chat
-    with col_right:
-        st.subheader("Chatbot")
-
-        # Session State für Chat-History
-        if "chat_history" not in st.session_state:
-            st.session_state["chat_history"] = []
-
-        # Eingabefeld und Button
-        user_input = st.text_input("Deine Frage hier", key="chatbot_right_input")
-        if st.button("Absenden (Chat)", key="chatbot_right_send"):
-            if user_input.strip():
-                st.session_state["chat_history"].append(("user", user_input))
-                bot_answer = answer_chat(user_input)
-                st.session_state["chat_history"].append(("bot", bot_answer))
-
-        # CSS für scrollbaren Container
-        st.markdown(
-            """
-            <style>
-            .scrollable-chat {
-                height: 300px;
-                overflow-y: auto;
-                border: 1px solid #CCC;
-                padding: 8px;
-                margin-top: 10px;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
-
-        # Chatverlauf in scrollbarem Container ausgeben
-        st.markdown('<div class="scrollable-chat">', unsafe_allow_html=True)
-        for role, msg_text in st.session_state["chat_history"]:
-            if role == "user":
-                st.markdown(f"**Du**: {msg_text}")
-            else:
-                st.markdown(f"**Bot**: {msg_text}")
-        st.markdown('</div>', unsafe_allow_html=True)
+    # Chatverlauf in scrollbarem Container
+    st.markdown('<div class="scrollable-chat">', unsafe_allow_html=True)
+    for role, msg_text in st.session_state["chat_history"]:
+        if role == "user":
+            st.markdown(f"**Du**: {msg_text}")
+        else:
+            st.markdown(f"**Bot**: {msg_text}")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 if __name__ == '__main__':
