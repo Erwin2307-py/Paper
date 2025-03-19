@@ -38,3 +38,4 @@ python-dotenv>=1.0
 pdf2image
 img2table
 opencv-python
+googletrans==4.0.0-rc1
