@@ -5,6 +5,7 @@ import pandas as pd
 from io import BytesIO
 import re
 import datetime
+import sys
 
 from modules.online_api_filter import module_online_api_filter
 
@@ -41,6 +42,7 @@ if not st.session_state["logged_in"]:
 # EINMALIGE set_page_config(...) hier ganz am Anfang
 # ------------------------------------------------------------
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
+
 
 ################################################################################
 # 1) Gemeinsame Funktionen & Klassen (unverändert)
@@ -343,6 +345,7 @@ class SemanticScholarSearch:
 ################################################################################
 # [unverändert...]
 
+
 ################################################################################
 # 3) Restliche Module + Seiten (unverändert)
 ################################################################################
@@ -401,9 +404,11 @@ def page_online_api_filter():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
+
 ################################################################################
 # 4) PAPER ANALYZER + Load Env/OPENAI key
 ################################################################################
+
 import os
 import PyPDF2
 import openai
@@ -426,7 +431,7 @@ class PaperAnalyzer:
     def analyze_with_openai(self, text, prompt_template, api_key):
         if len(text) > 15000:
             text = text[:15000] + "..."
-        
+
         prompt = prompt_template.format(text=text)
         openai.api_key = api_key
         response = openai.chat.completions.create(
@@ -483,8 +488,8 @@ class PaperAnalyzer:
 ################################################################################
 # NEU: Die Klasse AlleleFrequencyFinder
 ################################################################################
+
 import time
-import sys
 import json
 from typing import Dict, Any, Optional
 
@@ -548,6 +553,7 @@ class AlleleFrequencyFinder:
             out.append("Keine Populationsdaten gefunden.")
         return " | ".join(out)
 
+
 ################################################################################
 # 5) PAGE "Analyze Paper" (Gen-Logik)
 ################################################################################
@@ -569,6 +575,7 @@ def page_analyze_paper():
     uploaded_file = st.file_uploader("PDF-Datei hochladen", type="pdf")
     analyzer = PaperAnalyzer(model=model)
     api_key = st.session_state["api_key"]
+
     if uploaded_file and api_key:
         if st.button("Analyse starten"):
             with st.spinner("Extrahiere Text aus PDF..."):
@@ -578,6 +585,7 @@ def page_analyze_paper():
                     st.stop()
                 st.success("Text wurde erfolgreich extrahiert!")
                 st.session_state["paper_text"] = text[:15000]
+
             with st.spinner(f"Führe {action}-Analyse durch..."):
                 if action == "Zusammenfassung":
                     result = analyzer.summarize(text, api_key)
@@ -590,6 +598,7 @@ def page_analyze_paper():
                         st.error("Bitte Thema angeben für die Relevanz-Bewertung!")
                         st.stop()
                     result = analyzer.evaluate_relevance(text, topic, api_key)
+
                 st.subheader("Ergebnis der Analyse")
                 st.markdown(result)
     else:
@@ -597,9 +606,11 @@ def page_analyze_paper():
             st.warning("Bitte OpenAI API-Key eingeben!")
         elif not uploaded_file:
             st.info("Bitte eine PDF-Datei hochladen!")
+
     st.write("---")
     st.write("## Alle Analysen & Excel-Ausgabe")
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
+
     if uploaded_file and api_key:
         if st.button("Alle Analysen durchführen & in Excel speichern"):
             with st.spinner("Analysiere alles..."):
@@ -607,22 +618,28 @@ def page_analyze_paper():
                 if not text.strip():
                     st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
                     st.stop()
+
                 summary_result = analyzer.summarize(text, api_key)
                 key_findings_result = analyzer.extract_key_findings(text, api_key)
                 methods_result = analyzer.identify_methods(text, api_key)
+
                 if not topic:
                     st.error("Bitte 'Thema für Relevanz-Bewertung' angeben!")
                     st.stop()
+
                 relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
                 final_relevance = f"{relevance_result}\n\n[Manuelle Bewertung: {user_relevance_score}]"
+
                 import openpyxl
                 import io
                 import datetime
+
                 gene_via_text = None
                 pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                 match_text = re.search(pattern_obvious, text)
                 if match_text:
                     gene_via_text = match_text.group(1)
+
                 if gene_via_text:
                     found_gene = gene_via_text
                 else:
@@ -637,26 +654,31 @@ def page_analyze_paper():
                         cell_value = row[0]
                         if cell_value and isinstance(cell_value, str):
                             gene_names_from_excel.append(cell_value.strip())
+
                     found_gene = None
                     for g in gene_names_from_excel:
                         pat = re.compile(r"\b" + re.escape(g) + r"\b", re.IGNORECASE)
                         if re.search(pat, text):
                             found_gene = g
                             break
+
                 try:
                     wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
                 except FileNotFoundError:
                     st.error("Vorlage 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
                     st.stop()
                 ws = wb.active
+
                 if found_gene:
                     ws["D5"] = found_gene
+
                 rs_pat = r"(rs\d+)"
                 found_rs = re.search(rs_pat, text)
                 rs_num = None
                 if found_rs:
                     rs_num = found_rs.group(1)
                     ws["D6"] = rs_num
+
                 genotype_regex = r"\b([ACGT]{2,3})\b"
                 lines = text.split("\n")
                 found_pairs = []
@@ -665,10 +687,12 @@ def page_analyze_paper():
                     if matches:
                         for m in matches:
                             found_pairs.append((m, line.strip()))
+
                 unique_geno_pairs = []
                 for gp in found_pairs:
                     if gp not in unique_geno_pairs:
                         unique_geno_pairs.append(gp)
+
                 aff = AlleleFrequencyFinder()
                 if rs_num:
                     data = aff.get_allele_frequencies(rs_num)
@@ -680,6 +704,7 @@ def page_analyze_paper():
                         freq_info = "Keine Daten von Ensembl/dbSNP"
                 else:
                     freq_info = "Keine rsID vorhanden"
+
                 if len(unique_geno_pairs) > 0:
                     ws["D10"] = unique_geno_pairs[0][0]
                     ws["F10"] = unique_geno_pairs[0][1]
@@ -688,11 +713,14 @@ def page_analyze_paper():
                     ws["D11"] = unique_geno_pairs[1][0]
                     ws["F11"] = unique_geno_pairs[1][1]
                     ws["E11"] = freq_info
+
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ws["J2"] = now_str
+
                 output = io.BytesIO()
                 wb.save(output)
                 output.seek(0)
+
             st.success("Alle Analysen abgeschlossen – Excel-Datei erstellt und Felder befüllt!")
             st.download_button(
                 label="Download Excel",
@@ -700,6 +728,7 @@ def page_analyze_paper():
                 file_name="analysis_results.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
+
 
 ################################################################################
 # 6) Sidebar Module Navigation & Main
@@ -720,6 +749,7 @@ def sidebar_module_navigation():
         st.session_state["current_page"] = "Home"
     return pages.get(st.session_state["current_page"], page_home)
 
+
 def answer_chat(question: str) -> str:
     """Einfaches Beispiel: Nutzt Paper-Text (falls vorhanden) aus st.session_state + GPT."""
     api_key = st.session_state.get("api_key", "")
@@ -734,6 +764,7 @@ def answer_chat(question: str) -> str:
             + paper_text[:12000] + "\n\n"
             "Bitte nutze es, um Fragen möglichst fachkundig zu beantworten."
         )
+
     openai.api_key = api_key
     try:
         response = openai.chat.completions.create(
@@ -749,7 +780,9 @@ def answer_chat(question: str) -> str:
     except Exception as e:
         return f"OpenAI-Fehler: {e}"
 
+
 def main():
+    # Globales CSS/Styling
     st.markdown(
         """
         <style>
@@ -761,23 +794,33 @@ def main():
         """,
         unsafe_allow_html=True
     )
+
+    # Zwei Spalten: links der Hauptinhalt (Module), rechts der Chat
     col_left, col_right = st.columns([4, 1])
+
+    # Linke Spalte: Navigation + Seiten
     with col_left:
         page_fn = sidebar_module_navigation()
         if page_fn is not None:
             page_fn()
+
+    # Rechte Spalte: Chat
     with col_right:
         st.subheader("Chatbot")
+
+        # Session State für Chat-History
         if "chat_history" not in st.session_state:
             st.session_state["chat_history"] = []
-        # Eingabefeld und Button (außerhalb des scrollbaren Containers)
+
+        # Eingabefeld und Button
         user_input = st.text_input("Deine Frage hier", key="chatbot_right_input")
         if st.button("Absenden (Chat)", key="chatbot_right_send"):
             if user_input.strip():
                 st.session_state["chat_history"].append(("user", user_input))
                 bot_answer = answer_chat(user_input)
                 st.session_state["chat_history"].append(("bot", bot_answer))
-        # Scrollbarer Container für den gesamten Chatverlauf
+
+        # CSS für scrollbaren Container
         st.markdown(
             """
             <style>
@@ -792,6 +835,8 @@ def main():
             """,
             unsafe_allow_html=True
         )
+
+        # Chatverlauf in scrollbarem Container ausgeben
         st.markdown('<div class="scrollable-chat">', unsafe_allow_html=True)
         for role, msg_text in st.session_state["chat_history"]:
             if role == "user":
@@ -799,6 +844,7 @@ def main():
             else:
                 st.markdown(f"**Bot**: {msg_text}")
         st.markdown('</div>', unsafe_allow_html=True)
+
 
 if __name__ == '__main__':
     main()
