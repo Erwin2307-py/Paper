@@ -807,7 +807,7 @@ def answer_chat(question: str) -> str:
         return f"OpenAI-Fehler: {e}"
 
 def main():
-    # Füge hier die angepassten CSS-Einstellungen hinzu
+    # CSS-Anpassungen für das scrollbare Chat-Fenster
     st.markdown(
         """
         <style>
@@ -824,6 +824,25 @@ def main():
             border-radius: 4px;
             background-color: #f9f9f9;
         }
+        
+        /* Nachrichten-Styling */
+        .message {
+            padding: 0.5rem 1rem;
+            border-radius: 15px;
+            margin-bottom: 0.5rem;
+            max-width: 80%;
+            word-wrap: break-word;
+        }
+        .user-message {
+            background-color: #e3f2fd;
+            margin-left: auto;
+            border-bottom-right-radius: 0;
+        }
+        .assistant-message {
+            background-color: #f0f0f0;
+            margin-right: auto;
+            border-bottom-left-radius: 0;
+        }
         </style>
         """,
         unsafe_allow_html=True
@@ -837,6 +856,7 @@ def main():
 
     with col_right:
         st.subheader("Chatbot")
+
         if "chat_history" not in st.session_state:
             st.session_state["chat_history"] = []
 
@@ -847,13 +867,55 @@ def main():
                 bot_answer = answer_chat(user_input)
                 st.session_state["chat_history"].append(("bot", bot_answer))
 
-        st.markdown('<div class="scrollable-chat">', unsafe_allow_html=True)
+        # Chatverlauf in scrollbarem Container anzeigen
+        st.markdown('<div class="scrollable-chat" id="chat-container">', unsafe_allow_html=True)
         for role, msg_text in st.session_state["chat_history"]:
             if role == "user":
-                st.markdown(f"**Du**: {msg_text}")
+                st.markdown(
+                    f'<div class="message user-message"><strong>Du:</strong> {msg_text}</div>',
+                    unsafe_allow_html=True
+                )
             else:
-                st.markdown(f"**Bot**: {msg_text}")
+                st.markdown(
+                    f'<div class="message assistant-message"><strong>Bot:</strong> {msg_text}</div>',
+                    unsafe_allow_html=True
+                )
         st.markdown('</div>', unsafe_allow_html=True)
+
+        # JavaScript, um automatisch nach unten zu scrollen
+        st.markdown(
+            """
+            <script>
+                // Funktion zum automatischen Scrollen
+                function scrollToBottom() {
+                    var container = document.getElementById('chat-container');
+                    if(container) {
+                        container.scrollTop = container.scrollHeight;
+                    }
+                }
+                
+                // Scrollen nach dem Laden der Seite
+                document.addEventListener('DOMContentLoaded', function() {
+                    scrollToBottom();
+                });
+                
+                // Beobachter, der auf Veränderungen im Chat-Container reagiert
+                const observer = new MutationObserver(function(mutations) {
+                    scrollToBottom();
+                });
+                
+                // Sobald der Container existiert, wird der Observer gestartet
+                setTimeout(function() {
+                    var container = document.getElementById('chat-container');
+                    if(container) {
+                        observer.observe(container, { childList: true });
+                        scrollToBottom();
+                    }
+                }, 1000);
+            </script>
+            """,
+            unsafe_allow_html=True
+        )
 
 if __name__ == '__main__':
     main()
