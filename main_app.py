@@ -6,12 +6,47 @@ from io import BytesIO
 import re
 import datetime
 import sys
+import concurrent.futures
 
 from modules.online_api_filter import module_online_api_filter
 
 # Neuer Import für die Übersetzung mit google_trans_new
 from google_trans_new import google_translator
 
+# Hilfsfunktion zum Entfernen von HTML-Tags (außer <br>)
+def clean_html_except_br(text):
+    cleaned_text = re.sub(r'</?(?!br\b)[^>]*>', '', text)
+    return cleaned_text
+
+# Neue Funktion zur Übersetzung über OpenAI-Chatcompletions
+def translate_text_openai(text, source_language, target_language, api_key):
+    openai.api_key = api_key
+    prompt_system = (
+        f"You are a translation engine from {source_language} to {target_language} for a biotech company called Novogenia "
+        f"that focuses on lifestyle and health genetics and health analyses. The outputs you provide will be used directly as "
+        f"the translated text blocks. Please translate as accurately as possible in the context of health and lifestyle reporting. "
+        f"If there is no appropriate translation, the output should be 'TBD'. Keep the TAGS and do not add additional punctuation."
+    )
+    prompt_user = f"Translate the following text from {source_language} to {target_language}:\n'{text}'"
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": prompt_system},
+                {"role": "user", "content": prompt_user}
+            ],
+            temperature=0
+        )
+        translation = response.choices[0].message.content.strip()
+        if translation and translation[0] in ["'", '"', "‘", "„"]:
+            translation = translation[1:]
+            if translation and translation[-1] in ["'", '"']:
+                translation = translation[:-1]
+        translation = clean_html_except_br(translation)
+        return translation
+    except Exception as e:
+        st.warning("Übersetzungsfehler: " + str(e))
+        return text
 
 # -----------------------------------------
 # Login-Funktion mit [login]-Schlüssel
@@ -43,9 +78,6 @@ if not st.session_state["logged_in"]:
 # Wenn wir hier ankommen, ist man eingeloggt
 # -----------------------------------------
 
-# ------------------------------------------------------------
-# EINMALIGE set_page_config(...) hier ganz am Anfang
-# ------------------------------------------------------------
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
 ################################################################################
@@ -134,13 +166,11 @@ def search_pubmed_simple(query):
         idlist = data.get("esearchresult", {}).get("idlist", [])
         if not idlist:
             return out
-
         esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
         sum_params = {"db": "pubmed", "id": ",".join(idlist), "retmode": "json"}
         r2 = requests.get(esummary_url, params=sum_params, timeout=10)
         r2.raise_for_status()
         summary_data = r2.json().get("result", {})
-
         for pmid in idlist:
             info = summary_data.get(pmid, {})
             title = info.get("title", "n/a")
@@ -593,15 +623,12 @@ def page_analyze_paper():
                         st.stop()
                     result = analyzer.evaluate_relevance(text, topic, api_key)
     
-                # Übersetzung falls gewünscht (sofern nicht Deutsch ausgewählt) mit google_trans_new
+                # Übersetzung falls gewünscht (sofern nicht Deutsch ausgewählt) mit OpenAI-gestützter Übersetzung
                 if output_lang != "Deutsch":
-                    translator = google_translator()
-                    lang_map = {"Englisch": "en", "Portugiesisch": "pt", "Serbisch": "sr"}
-                    target_lang = lang_map.get(output_lang, "en")
-                    try:
-                        result = translator.translate(result, lang_tgt=target_lang)
-                    except Exception as e:
-                        st.warning("Übersetzungsfehler: " + str(e))
+                    # Wir gehen davon aus, dass der Originaltext in Deutsch vorliegt
+                    lang_map = {"Englisch": "English", "Portugiesisch": "Portuguese", "Serbisch": "Serbian"}
+                    target_lang = lang_map.get(output_lang, "English")
+                    result = translate_text_openai(result, "German", target_lang, api_key)
     
                 st.subheader("Ergebnis der Analyse")
                 st.markdown(result)
