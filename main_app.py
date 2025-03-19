@@ -432,7 +432,6 @@ class PaperAnalyzer:
     def analyze_with_openai(self, text, prompt_template, api_key):
         if len(text) > 15000:
             text = text[:15000] + "..."
-        
         prompt = prompt_template.format(text=text)
         openai.api_key = api_key
         response = openai.chat.completions.create(
