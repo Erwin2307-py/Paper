@@ -10,7 +10,8 @@ import sys
 from modules.online_api_filter import module_online_api_filter
 
 # Neuer Import für die Übersetzung
-from googletrans import Translator
+from google_trans_new import google_translator
+
 
 # -----------------------------------------
 # Login-Funktion mit [login]-Schlüssel
