@@ -18,9 +18,8 @@ def clean_html_except_br(text):
     cleaned_text = re.sub(r'</?(?!br\b)[^>]*>', '', text)
     return cleaned_text
 
-# Neue Funktion zur Übersetzung über OpenAI-Chatcompletions (wird in der Analyse genutzt)
+# Neue Funktion zur Übersetzung über OpenAI-Chatcompletions
 def translate_text_openai(text, source_language, target_language, api_key):
-    import openai
     openai.api_key = api_key
     prompt_system = (
         f"You are a translation engine from {source_language} to {target_language} for a biotech company called Novogenia "
@@ -56,6 +55,7 @@ def login():
     st.title("Login")
     user_input = st.text_input("Username")
     pass_input = st.text_input("Password", type="password")
+    
     if st.button("Login"):
         if (
             user_input == st.secrets["login"]["username"]
@@ -65,12 +65,18 @@ def login():
         else:
             st.error("Login failed. Please check your credentials!")
 
+# Falls noch nicht im Session State: Standard auf False setzen
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
+# Prüfe den Login-Status. Wenn NICHT eingeloggt, zeige Login-Seite an, dann stop.
 if not st.session_state["logged_in"]:
     login()
     st.stop()
+
+# -----------------------------------------
+# Wenn wir hier ankommen, ist man eingeloggt
+# -----------------------------------------
 
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
@@ -149,6 +155,7 @@ def check_pubmed_connection(timeout=10):
         return False
 
 def search_pubmed_simple(query):
+    """Kurze Version: Sucht nur, ohne Abstract / Details."""
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 100}
     out = []
@@ -182,6 +189,7 @@ def search_pubmed_simple(query):
         return []
 
 def fetch_pubmed_abstract(pmid):
+    """Holt den Abstract via efetch für eine gegebene PubMed-ID."""
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
     params = {"db": "pubmed", "id": pmid, "retmode": "xml"}
     try:
@@ -215,8 +223,14 @@ def check_europe_pmc_connection(timeout=10):
         return False
 
 def search_europe_pmc_simple(query):
+    """Kurze Version: Sucht nur, ohne erweiterte Details."""
     url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
-    params = {"query": query, "format": "json", "pageSize": 100, "resultType": "core"}
+    params = {
+        "query": query,
+        "format": "json",
+        "pageSize": 100,
+        "resultType": "core"
+    }
     out = []
     try:
         r = requests.get(url, params=params, timeout=10)
@@ -262,6 +276,7 @@ def fetch_openalex_data(entity_type, entity_id=None, params=None):
         return None
 
 def search_openalex_simple(query):
+    """Kurze Version: Liest die rohen Daten, prüft nur, ob was zurückkommt."""
     search_params = {"search": query}
     return fetch_openalex_data("works", params=search_params)
 
@@ -441,11 +456,17 @@ class PaperAnalyzer:
         response = openai.chat.completions.create(
             model=self.model,
             messages=[
-                {"role": "system", "content": (
-                    "Du bist ein Experte für die Analyse wissenschaftlicher Paper, "
-                    "besonders im Bereich Side-Channel Analysis."
-                )},
-                {"role": "user", "content": prompt}
+                {
+                    "role": "system",
+                    "content": (
+                        "Du bist ein Experte für die Analyse wissenschaftlicher Paper, "
+                        "besonders im Bereich Side-Channel Analysis."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
             ],
             temperature=0.3,
             max_tokens=1500
@@ -495,7 +516,7 @@ class AlleleFrequencyFinder:
     def __init__(self):
         self.ensembl_server = "https://rest.ensembl.org"
         self.max_retries = 3
-        self.retry_delay = 2
+        self.retry_delay = 2  # Sekunden zwischen Wiederholungsversuchen
 
     def get_allele_frequencies(self, rs_id: str, retry_count: int = 0) -> Optional[Dict[str, Any]]:
         if not rs_id.startswith("rs"):
@@ -521,6 +542,7 @@ class AlleleFrequencyFinder:
             return None
     
     def try_alternative_source(self, rs_id: str) -> Optional[Dict[str, Any]]:
+        """Platzhalter: alternativer Weg, falls Ensembl down ist."""
         return None
     
     def parse_and_display_data(self, data: Dict[str, Any]) -> None:
@@ -601,15 +623,12 @@ def page_analyze_paper():
                         st.stop()
                     result = analyzer.evaluate_relevance(text, topic, api_key)
     
-                # Übersetzung falls gewünscht (sofern nicht Deutsch ausgewählt) mit google_trans_new
+                # Übersetzung falls gewünscht (sofern nicht Deutsch ausgewählt) mit OpenAI-gestützter Übersetzung
                 if output_lang != "Deutsch":
-                    translator = google_translator()
-                    lang_map = {"Englisch": "en", "Portugiesisch": "pt", "Serbisch": "sr"}
-                    target_lang = lang_map.get(output_lang, "en")
-                    try:
-                        result = translator.translate(result, lang_tgt=target_lang)
-                    except Exception as e:
-                        st.warning("Übersetzungsfehler: " + str(e))
+                    # Wir gehen davon aus, dass der Originaltext in Deutsch vorliegt
+                    lang_map = {"Englisch": "English", "Portugiesisch": "Portuguese", "Serbisch": "Serbian"}
+                    target_lang = lang_map.get(output_lang, "English")
+                    result = translate_text_openai(result, "German", target_lang, api_key)
     
                 st.subheader("Ergebnis der Analyse")
                 st.markdown(result)
@@ -640,17 +659,6 @@ def page_analyze_paper():
                     st.stop()
     
                 relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
-                
-                # Übersetzung der Analyseergebnisse in Englisch für Excel (immer)
-                translator_excel = google_translator()
-                try:
-                    summary_result = translator_excel.translate(summary_result, lang_tgt="en")
-                    key_findings_result = translator_excel.translate(key_findings_result, lang_tgt="en")
-                    methods_result = translator_excel.translate(methods_result, lang_tgt="en")
-                    relevance_result = translator_excel.translate(relevance_result, lang_tgt="en")
-                except Exception as e:
-                    st.warning("Excel Übersetzungsfehler: " + str(e))
-    
                 final_relevance = f"{relevance_result}\n\n[Manuelle Bewertung: {user_relevance_score}]"
     
                 import openpyxl
