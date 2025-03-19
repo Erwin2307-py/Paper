@@ -606,7 +606,10 @@ def page_analyze_paper():
                     translator = google_translator()
                     lang_map = {"Englisch": "en", "Portugiesisch": "pt", "Serbisch": "sr"}
                     target_lang = lang_map.get(output_lang, "en")
-                    result = translator.translate(result, lang_tgt=target_lang)
+                    try:
+                        result = translator.translate(result, lang_tgt=target_lang)
+                    except Exception as e:
+                        st.warning("Übersetzungsfehler: " + str(e))
     
                 st.subheader("Ergebnis der Analyse")
                 st.markdown(result)
@@ -742,7 +745,7 @@ def page_analyze_paper():
             )
 
 ################################################################################
-# 6) Sidebar Module Navigation & Main
+# 6) Sidebar Module Navigation & Chatbot in rechter Sidebar
 ################################################################################
 
 def sidebar_module_navigation():
@@ -801,10 +804,42 @@ def main():
         """,
         unsafe_allow_html=True
     )
-    # Hier verwenden wir nur eine Spalte (kein separates Chatfenster)
-    page_fn = sidebar_module_navigation()
-    if page_fn is not None:
-        page_fn()
+    col_left, col_right = st.columns([4, 1])
+    with col_left:
+        page_fn = sidebar_module_navigation()
+        if page_fn is not None:
+            page_fn()
+    with col_right:
+        st.subheader("Chatbot")
+        if "chat_history" not in st.session_state:
+            st.session_state["chat_history"] = []
+        user_input = st.text_input("Deine Frage hier", key="chatbot_right_input")
+        if st.button("Absenden (Chat)", key="chatbot_right_send"):
+            if user_input.strip():
+                st.session_state["chat_history"].append(("user", user_input))
+                bot_answer = answer_chat(user_input)
+                st.session_state["chat_history"].append(("bot", bot_answer))
+        st.markdown(
+            """
+            <style>
+            .scrollable-chat {
+                height: 300px;
+                overflow-y: auto;
+                border: 1px solid #CCC;
+                padding: 8px;
+                margin-top: 10px;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+        st.markdown('<div class="scrollable-chat">', unsafe_allow_html=True)
+        for role, msg_text in st.session_state["chat_history"]:
+            if role == "user":
+                st.markdown(f"**Du**: {msg_text}")
+            else:
+                st.markdown(f"**Bot**: {msg_text}")
+        st.markdown('</div>', unsafe_allow_html=True)
 
 if __name__ == '__main__':
     main()
