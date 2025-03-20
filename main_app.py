@@ -601,6 +601,8 @@ def page_analyze_paper():
     model = st.sidebar.selectbox("OpenAI-Modell",
                                  ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4o"],
                                  index=0)
+    # Die UI-Auswahl der Analyseart wird weiterhin genutzt,
+    # jedoch fließt in die Excel-Ausgabe immer beides ein.
     action = st.sidebar.radio("Analyseart",
                               ["Zusammenfassung", "Wichtigste Erkenntnisse", "Methoden & Techniken", "Relevanz-Bewertung"],
                               index=0)
@@ -660,6 +662,7 @@ def page_analyze_paper():
                     st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
                     st.stop()
     
+                # Alle Analysen werden durchgeführt
                 summary_result = analyzer.summarize(text, api_key)
                 key_findings_result = analyzer.extract_key_findings(text, api_key)
                 methods_result = analyzer.identify_methods(text, api_key)
@@ -761,14 +764,17 @@ def page_analyze_paper():
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ws["J2"] = now_str
     
-                # Hier die Anpassungen für die Excel-Ausgabe:
-                if action == "Zusammenfassung":
-                    # Teile die Zusammenfassung in Ergebnisse und Schlussfolgerungen auf und schreibe in G21 und G22
-                    ergebnisse, schlussfolgerungen = split_summary(summary_result)
-                    ws["G21"] = ergebnisse
-                    ws["G22"] = schlussfolgerungen
-                elif action == "Wichtigste Erkenntnisse":
-                    ws["E20"] = key_findings_result
+                # --- Neuer Block: Beide Analysearten werden in Englisch in die Excel eingetragen ---
+                # Übersetze die Ergebnisse der Zusammenfassung und der wichtigsten Erkenntnisse in Englisch
+                eng_summary = translate_text_openai(summary_result, "German", "English", api_key)
+                eng_key_findings = translate_text_openai(key_findings_result, "German", "English", api_key)
+                # Teile die übersetzte Zusammenfassung in "Results" und "Conclusions" auf
+                ergebnisse, schlussfolgerungen = split_summary(eng_summary)
+                ws["G21"] = ergebnisse
+                ws["G22"] = schlussfolgerungen
+                # Trage die wichtigsten Erkenntnisse in Zelle E20 ein
+                ws["E20"] = eng_key_findings
+                # ------------------------------------------------------------------------------------
     
                 output = io.BytesIO()
                 wb.save(output)
