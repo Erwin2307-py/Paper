@@ -770,8 +770,8 @@ def page_analyze_paper():
                 eng_key_findings = translate_text_openai(key_findings_result, "German", "English", api_key)
                 # Teile die übersetzte Zusammenfassung in "Results" und "Conclusions" auf
                 ergebnisse, schlussfolgerungen = split_summary(eng_summary)
-                ws["G21"] = ergebnisse
-                ws["G22"] = schlussfolgerungen
+                ws["G21"] = ergebnisse         # Results in G21
+                ws["G22"] = schlussfolgerungen # Conclusions in G22
                 # Trage die wichtigsten Erkenntnisse in Zelle E20 ein
                 ws["E20"] = eng_key_findings
                 # ------------------------------------------------------------------------------------
