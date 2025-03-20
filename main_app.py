@@ -454,32 +454,34 @@ class PaperAnalyzer:
         return response.choices[0].message.content
     
     def summarize(self, text, api_key):
+        # Angepasste Zusammenfassungs-Prompt: Bitte erstelle eine strukturierte Zusammenfassung in English,
+        # wobei der Abschnitt mit den Ergebnissen mit "Results:" und der Abschnitt mit den Schlussfolgerungen mit "Conclusions:" beginnt.
         prompt = (
-            "Erstelle eine strukturierte Zusammenfassung des folgenden "
-            "wissenschaftlichen Papers. Gliedere es in: Hintergrund, Methodik, "
-            "Ergebnisse und Schlussfolgerungen. Verwende maximal 500 Wörter:\n\n{text}"
+            "Please create a structured summary of the following scientific paper in English. "
+            "Divide the summary into the following sections: Background, Methods, Results, and Conclusions. "
+            "Ensure that the Results section starts with 'Results:' and the Conclusions section starts with 'Conclusions:'. "
+            "Use a maximum of 500 words:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
     
     def extract_key_findings(self, text, api_key):
         prompt = (
-            "Extrahiere die 5 wichtigsten Erkenntnisse aus diesem wissenschaftlichen "
-            "Paper im Bereich Side-Channel Analysis. Liste sie mit Bulletpoints auf:\n\n{text}"
+            "Extract the 5 most important findings from the following scientific paper in the field of Side-Channel Analysis. "
+            "List them as bullet points. Use English:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
     
     def identify_methods(self, text, api_key):
         prompt = (
-            "Identifiziere und beschreibe die im Paper verwendeten Methoden "
-            "und Techniken zur Side-Channel-Analyse. Gib zu jeder Methode "
-            "eine kurze Erklärung:\n\n{text}"
+            "Identify and describe the methods and techniques used in the following scientific paper for Side-Channel Analysis. "
+            "Provide a brief explanation for each method in English:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
     
     def evaluate_relevance(self, text, topic, api_key):
         prompt = (
-            f"Bewerte die Relevanz dieses Papers für das Thema '{topic}' auf "
-            f"einer Skala von 1-10. Begründe deine Bewertung:\n\n{{text}}"
+            f"Evaluate the relevance of the following scientific paper for the topic '{topic}' on a scale from 1-10. "
+            f"Provide your reasoning in English:\n\n{{text}}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
 
@@ -492,11 +494,11 @@ import json
 from typing import Dict, Any, Optional
 
 class AlleleFrequencyFinder:
-    """Klasse zum Abrufen und Anzeigen von Allelfrequenzen aus verschiedenen Quellen."""
+    """Class for retrieving and displaying allele frequencies from various sources."""
     def __init__(self):
         self.ensembl_server = "https://rest.ensembl.org"
         self.max_retries = 3
-        self.retry_delay = 2  # Sekunden zwischen Wiederholungsversuchen
+        self.retry_delay = 2
 
     def get_allele_frequencies(self, rs_id: str, retry_count: int = 0) -> Optional[Dict[str, Any]]:
         if not rs_id.startswith("rs"):
@@ -551,25 +553,25 @@ class AlleleFrequencyFinder:
         return " | ".join(out)
 
 ################################################################################
-# Neue Hilfsfunktion: Zusammenfassung in Ergebnisse und Schlussfolgerungen aufteilen
+# Neue Hilfsfunktion: Zusammenfassung in Results und Conclusions aufteilen
 ################################################################################
 def split_summary(summary_text):
     import re
-    m = re.search(r'Ergebnisse\s*:\s*(.*?)\s*Schlussfolgerungen\s*:\s*(.*)', summary_text, re.DOTALL | re.IGNORECASE)
+    m = re.search(r'Results\s*:\s*(.*?)\s*Conclusions\s*:\s*(.*)', summary_text, re.DOTALL | re.IGNORECASE)
     if m:
-        ergebnisse = m.group(1).strip()
-        schlussfolgerungen = m.group(2).strip()
+        results_text = m.group(1).strip()
+        conclusions_text = m.group(2).strip()
     else:
         parts = summary_text.split("\n")
         if len(parts) > 1:
-            ergebnisse = parts[0].strip()
-            schlussfolgerungen = "\n".join(parts[1:]).strip()
+            results_text = parts[0].strip()
+            conclusions_text = "\n".join(parts[1:]).strip()
         else:
-            ergebnisse = summary_text.strip()
-            schlussfolgerungen = "No conclusions provided."
-    if not schlussfolgerungen:
-        schlussfolgerungen = "No conclusions provided."
-    return ergebnisse, schlussfolgerungen
+            results_text = summary_text.strip()
+            conclusions_text = "No conclusions provided."
+    if not conclusions_text:
+        conclusions_text = "No conclusions provided."
+    return results_text, conclusions_text
 
 ################################################################################
 # 5) PAGE "Analyze Paper" (Gen-Logik)
@@ -748,13 +750,13 @@ def page_analyze_paper():
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ws["J2"] = now_str
     
-                # --- Neuer Block: Zusammenfassung (Englisch) in Ergebnisse und Schlussfolgerungen aufteilen ---
+                # --- Neuer Block: Zusammenfassung (Englisch) in Results und Conclusions aufteilen ---
                 eng_summary = translate_text_openai(summary_result, "German", "English", api_key)
                 eng_key_findings = translate_text_openai(key_findings_result, "German", "English", api_key)
-                ergebnisse, schlussfolgerungen = split_summary(eng_summary)
-                ws["G21"] = ergebnisse         # Ergebnisse in G21
-                ws["G22"] = schlussfolgerungen # Schlussfolgerungen in G22
-                ws["E20"] = eng_key_findings   # Key Findings in E20
+                results_text, conclusions_text = split_summary(eng_summary)
+                ws["G21"] = results_text         # Ergebnisse in G21
+                ws["G22"] = conclusions_text     # Schlussfolgerungen in G22
+                ws["E20"] = eng_key_findings       # Key Findings in E20
                 # ------------------------------------------------------------------------------------
     
                 output = io.BytesIO()
