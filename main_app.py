@@ -584,30 +584,26 @@ def split_summary(summary_text):
         ergebnisse = m.group(1).strip()
         schlussfolgerungen = m.group(2).strip()
     else:
-        # Falls keine Trennung möglich ist, alles in Ergebnisse
         ergebnisse = summary_text
         schlussfolgerungen = ""
     return ergebnisse, schlussfolgerungen
 
 ################################################################################
-# NEU: parse_cohort_info - alte und neue Logik kombiniert
+# NEU: parse_cohort_info - Beide Logiken (alte + "693 Filipino children" etc.)
 ################################################################################
 
 def parse_cohort_info(summary_text: str) -> dict:
     """
-    Sucht nach:
-      - "(\d+) Filipino children and adolescents" (oder Chinese, etc.)
-      - (\d+)\s*Patient(?:en)?(?:[^\d]+)(\d+)\s*gesunde\s*Kontroll(?:personen)?
-      - (\d+)\s*Patient(?:en)?
-      - in\s*der\s+(\S+)\s+Bevölkerung
-
-    Gibt dict: {'study_size':..., 'origin':...}
+    Sucht nach Studiengröße & Herkunft in der Zusammenfassung.
+    Enthält sowohl die alte Logik (z.B. 130 Patienten / 130 Kontrollen) 
+    als auch die neue Logik für 'xxx Filipino children ...'.
     """
+
     info = {"study_size": "", "origin": ""}
 
-    # NEUE Logik: "693 Filipino children and adolescents"
+    # Zuerst: Neuer Regex, um z.B. "693 Filipino children and adolescents" zu erfassen
     pattern_nationality = re.compile(
-        r"(\d+)\s+(Filipino|Chinese|Japanese|[A-Za-z]+)\s+([Cc]hildren(?:\s+and\s+adolescents)?|adolescents?|participants?|subjects?)",
+        r"(\d+)\s+(Filipino|Chinese|Japanese|Han\sChinese|[A-Za-z]+)\s+([Cc]hildren(?:\s+and\s+adolescents)?|adolescents?|participants?|subjects?)",
         re.IGNORECASE
     )
     match_nat = pattern_nationality.search(summary_text)
@@ -615,10 +611,11 @@ def parse_cohort_info(summary_text: str) -> dict:
         num_str = match_nat.group(1)  # z.B. "693"
         origin_str = match_nat.group(2)  # z.B. "Filipino"
         group_str = match_nat.group(3)  # z.B. "children and adolescents"
+        # set info if not set yet:
         info["study_size"] = f"{num_str} {group_str}"
         info["origin"] = origin_str
 
-    # ALTE Logik 1: "(\d+)\s*Patient(?:en)?(?:[^\d]+)(\d+)\s*gesunde\s*Kontroll(?:personen)?"
+    # Alte Logik: "(\d+)\s*Patient(?:en)?(?:[^\d]+)(\d+)\s*gesunde\s*Kontroll(?:personen)?"
     pattern_both = re.compile(
         r"(\d+)\s*Patient(?:en)?(?:[^\d]+)(\d+)\s*gesunde\s*Kontroll(?:personen)?",
         re.IGNORECASE
@@ -628,19 +625,20 @@ def parse_cohort_info(summary_text: str) -> dict:
         p_count = m_both.group(1)
         c_count = m_both.group(2)
         info["study_size"] = f"{p_count} Patienten / {c_count} Kontrollpersonen"
-
     else:
-        # ALTE Logik 2: Nur Patienten, z.B. "(\d+)\s*Patient(?:en)?"
+        # Falls nur "(\d+)\s*Patient(en)?"
         pattern_single_p = re.compile(r"(\d+)\s*Patient(?:en)?", re.IGNORECASE)
         m_single_p = pattern_single_p.search(summary_text)
         if m_single_p and not info["study_size"]:
             info["study_size"] = f"{m_single_p.group(1)} Patienten"
-
-    # ALTE Logik 3: Herkunft "in der xyz Bevölkerung"
+    
+    # Herkunft / Population: "in der xyz Bevölkerung"
     pattern_origin = re.compile(r"in\s*der\s+(\S+)\s+Bevölkerung", re.IGNORECASE)
     m_orig = pattern_origin.search(summary_text)
-    if m_orig and not info["origin"]:
-        info["origin"] = m_orig.group(1).strip()
+    if m_orig:
+        # only overwrite origin if not set from nationality pattern
+        if not info["origin"]:
+            info["origin"] = m_orig.group(1).strip()
 
     return info
 
@@ -848,16 +846,14 @@ def page_analyze_paper():
     
                 # -------------------
                 # Studiengröße & Herkunft ermitteln, in E20 schreiben
-                # (Alte und neue Logik sind kombiniert in parse_cohort_info)
+                # (Beide Logiken: neu + alt) => parse_cohort_info(...)
                 # -------------------
                 cohort_data = parse_cohort_info(summary_result)
                 study_size = cohort_data.get("study_size", "")
                 origin = cohort_data.get("origin", "")
                 
-                # Kombiniere beides zu einem String (z.B. "Studiengröße: 130 Patienten / 130 Kontrollen, Herkunft: chinesischen")
                 combined_str = f"Studiengröße: {study_size} | Herkunft: {origin}"
                 
-                # Falls gewünscht, auch ins Englische übersetzen:
                 if output_lang != "Deutsch":
                     combined_str = translate_text_openai(combined_str, "German", "English", api_key)
                 
@@ -866,6 +862,7 @@ def page_analyze_paper():
                 # -------------------
                 # Datei speichern / Download
                 # -------------------
+                import io
                 output = io.BytesIO()
                 wb.save(output)
                 output.seek(0)
