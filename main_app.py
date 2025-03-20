@@ -569,17 +569,22 @@ class AlleleFrequencyFinder:
         return " | ".join(out)
 
 ################################################################################
-# (Alt) Hilfsfunktion: split_summary (NICHT mehr genutzt, aber belassen)
+# Hilfsfunktion: split_summary
 ################################################################################
 def split_summary(summary_text):
+    """
+    Sucht im Summary-Text nach zwei Abschnitten:
+      - 'Ergebnisse:' bis 'Schlussfolgerungen:'
+      - 'Schlussfolgerungen:' (Rest)
+    Gibt Tuple (ergebnisse, schlussfolgerungen) zurück.
+    """
     import re
-    # Versuche anhand der Schlüsselwörter "Ergebnisse:" und "Schlussfolgerungen:" zu splitten
     m = re.search(r'Ergebnisse\s*:\s*(.*?)\s*Schlussfolgerungen\s*:\s*(.*)', summary_text, re.DOTALL | re.IGNORECASE)
     if m:
         ergebnisse = m.group(1).strip()
         schlussfolgerungen = m.group(2).strip()
     else:
-        # Falls keine Trennung möglich ist, den gesamten Text als Ergebnisse nutzen
+        # Falls keine Trennung möglich ist, alles in Ergebnisse
         ergebnisse = summary_text
         schlussfolgerungen = ""
     return ergebnisse, schlussfolgerungen
@@ -764,28 +769,25 @@ def page_analyze_paper():
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ws["J2"] = now_str
     
-                # --------------------------------------------------
-                # NEUER Block: Wir teilen die Zusammenfassung in Absätze
-                # und speichern den 3. Absatz als "Results" in Zelle G21
-                # sowie den 4. Absatz als "Conclusions" in Zelle G22.
-                # --------------------------------------------------
-                paragraphs = [p.strip() for p in summary_result.split('\n\n') if p.strip()]
-
-                # Den 3. Absatz (Index 2) und 4. Absatz (Index 3), falls vorhanden
-                third_paragraph = paragraphs[2] if len(paragraphs) > 2 else "No 3rd paragraph found."
-                fourth_paragraph = paragraphs[3] if len(paragraphs) > 3 else "No 4th paragraph found."
+                # ------------------------------------
+                # Ergebnisse in G21, Schlussfolgerungen in G22
+                # ------------------------------------
+                # 1) Wir extrahieren aus 'summary_result' die Substrings, 
+                #    die nach 'Ergebnisse:' und 'Schlussfolgerungen:' benannt sind.
+                ergebnisse, schlussfolgerungen = split_summary(summary_result)
                 
-                # Übersetzen beider Absätze ins Englische, da im Excel "Results" und "Conclusions" üblicherweise Englisch sind
-                eng_third = translate_text_openai(third_paragraph, "German", "English", api_key)
-                eng_fourth = translate_text_openai(fourth_paragraph, "German", "English", api_key)
+                # 2) Übersetzen beides ins Englische, weil wir es ins Excel (Results/Conclusion) eintragen
+                eng_ergebnisse = translate_text_openai(ergebnisse, "German", "English", api_key)
+                eng_schlussfolgerungen = translate_text_openai(schlussfolgerungen, "German", "English", api_key)
                 
-                ws["G21"] = eng_third
-                ws["G22"] = eng_fourth
-                
-                # Wichtigste Erkenntnisse in Zelle E20 (ebenso Englisch)
+                # 3) Werte in die Zielzellen
+                ws["G21"] = eng_ergebnisse    # Results
+                ws["G22"] = eng_schlussfolgerungen    # Conclusion
+    
+                # Die wichtigsten Erkenntnisse in Zelle E20 (ebenfalls Englisch)
                 eng_key_findings = translate_text_openai(key_findings_result, "German", "English", api_key)
                 ws["E20"] = eng_key_findings
-                # --------------------------------------------------
+                # ------------------------------------
     
                 output = io.BytesIO()
                 wb.save(output)
