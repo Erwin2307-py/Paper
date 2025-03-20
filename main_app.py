@@ -590,6 +590,49 @@ def split_summary(summary_text):
     return ergebnisse, schlussfolgerungen
 
 ################################################################################
+# NEU: parse_cohort_info - Sucht nach Studiegröße und Herkunft in der Zusammenfassung
+################################################################################
+
+def parse_cohort_info(summary_text: str) -> dict:
+    """
+    Sucht nach Studiengröße (z.B. '130 Patienten', '130 gesunde Kontrollpersonen')
+    und nach Herkunft (z.B. 'in der chinesischen Bevölkerung').
+    Gibt ein Dictionary mit 'study_size' und 'origin' zurück.
+    
+    Regex einfaches Beispiel:
+      - (\d+)\s*Patient(?:en)?
+      - (\d+)\s*gesunde Kontroll(?:personen)?
+      - in der\s+(.*?)\s+Bevölkerung
+    """
+    info = {"study_size": "", "origin": ""}
+    
+    # Studiegröße (vereinfachtes Muster)
+    # Beispiel: "130 Patienten ... 130 gesunde Kontrollpersonen"
+    pattern_both = re.compile(
+        r"(\d+)\s*Patient(?:en)?(?:[^\d]+)(\d+)\s*gesunde\s*Kontroll(?:personen)?",
+        re.IGNORECASE
+    )
+    m_both = pattern_both.search(summary_text)
+    if m_both:
+        p_count = m_both.group(1)
+        c_count = m_both.group(2)
+        info["study_size"] = f"{p_count} Patienten / {c_count} Kontrollpersonen"
+    else:
+        # Nur Patienten oder nur Kontrollen?
+        pattern_single_p = re.compile(r"(\d+)\s*Patient(?:en)?", re.IGNORECASE)
+        m_single_p = pattern_single_p.search(summary_text)
+        if m_single_p:
+            info["study_size"] = f"{m_single_p.group(1)} Patienten"
+    
+    # Herkunft / Population
+    pattern_origin = re.compile(r"in\s*der\s+(\S+)\s+Bevölkerung", re.IGNORECASE)
+    m_orig = pattern_origin.search(summary_text)
+    if m_orig:
+        info["origin"] = m_orig.group(1).strip()
+    
+    return info
+
+################################################################################
 # 5) PAGE "Analyze Paper" (Gen-Logik)
 ################################################################################
 
@@ -667,7 +710,9 @@ def page_analyze_paper():
                     st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
                     st.stop()
     
-                # Alle Analysen werden durchgeführt
+                # -------------------
+                # Alle Analysen
+                # -------------------
                 summary_result = analyzer.summarize(text, api_key)
                 key_findings_result = analyzer.extract_key_findings(text, api_key)
                 methods_result = analyzer.identify_methods(text, api_key)
@@ -683,6 +728,9 @@ def page_analyze_paper():
                 import io
                 import datetime
     
+                # -------------------
+                # Gene-Detection (optional)
+                # -------------------
                 gene_via_text = None
                 pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                 match_text = re.search(pattern_obvious, text)
@@ -712,6 +760,9 @@ def page_analyze_paper():
                             found_gene = g
                             break
     
+                # -------------------
+                # Excel laden
+                # -------------------
                 try:
                     wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
                 except FileNotFoundError:
@@ -720,6 +771,9 @@ def page_analyze_paper():
     
                 ws = wb.active
     
+                # -------------------
+                # Zellen befüllen (Gene, rsID, Frequenzen, etc.)
+                # -------------------
                 if found_gene:
                     ws["D5"] = found_gene
     
@@ -769,26 +823,36 @@ def page_analyze_paper():
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ws["J2"] = now_str
     
-                # ------------------------------------
-                # Ergebnisse in G21, Schlussfolgerungen in G22
-                # ------------------------------------
-                # 1) Wir extrahieren aus 'summary_result' die Substrings, 
-                #    die nach 'Ergebnisse:' und 'Schlussfolgerungen:' benannt sind.
+                # -------------------
+                # Ergebnisse/Schlussfolgerungen (G21 / G22)
+                # -------------------
                 ergebnisse, schlussfolgerungen = split_summary(summary_result)
                 
-                # 2) Übersetzen beides ins Englische, weil wir es ins Excel (Results/Conclusion) eintragen
                 eng_ergebnisse = translate_text_openai(ergebnisse, "German", "English", api_key)
                 eng_schlussfolgerungen = translate_text_openai(schlussfolgerungen, "German", "English", api_key)
                 
-                # 3) Werte in die Zielzellen
                 ws["G21"] = eng_ergebnisse    # Results
                 ws["G22"] = eng_schlussfolgerungen    # Conclusion
     
-                # Die wichtigsten Erkenntnisse in Zelle E20 (ebenfalls Englisch)
-                eng_key_findings = translate_text_openai(key_findings_result, "German", "English", api_key)
-                ws["E20"] = eng_key_findings
-                # ------------------------------------
+                # -------------------
+                # Studiengröße & Herkunft ermitteln, in E20 schreiben
+                # -------------------
+                cohort_data = parse_cohort_info(summary_result)
+                study_size = cohort_data.get("study_size", "")
+                origin = cohort_data.get("origin", "")
+                
+                # Kombiniere beides zu einem String (z.B. "Studiengröße: 130 Patienten / 130 Kontrollen, Herkunft: chinesischen")
+                combined_str = f"Studiengröße: {study_size} | Herkunft: {origin}"
+                
+                # Falls gewünscht, auch ins Englische übersetzen:
+                if output_lang != "Deutsch":
+                    combined_str = translate_text_openai(combined_str, "German", "English", api_key)
+                
+                ws["E20"] = combined_str  # HIER stehen nun Studiengröße + Herkunft
     
+                # -------------------
+                # Datei speichern / Download
+                # -------------------
                 output = io.BytesIO()
                 wb.save(output)
                 output.seek(0)
