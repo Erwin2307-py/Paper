@@ -572,12 +572,6 @@ class AlleleFrequencyFinder:
 # Hilfsfunktion: split_summary
 ################################################################################
 def split_summary(summary_text):
-    """
-    Sucht im Summary-Text nach zwei Abschnitten:
-      - 'Ergebnisse:' bis 'Schlussfolgerungen:'
-      - 'Schlussfolgerungen:' (Rest)
-    Gibt Tuple (ergebnisse, schlussfolgerungen) zurück.
-    """
     import re
     m = re.search(r'Ergebnisse\s*:\s*(.*?)\s*Schlussfolgerungen\s*:\s*(.*)', summary_text, re.DOTALL | re.IGNORECASE)
     if m:
@@ -589,33 +583,31 @@ def split_summary(summary_text):
     return ergebnisse, schlussfolgerungen
 
 ################################################################################
-# NEU: parse_cohort_info - Beide Logiken (alte + "693 Filipino children" etc.)
+# NEU: parse_cohort_info - Beide Logiken
 ################################################################################
 
 def parse_cohort_info(summary_text: str) -> dict:
     """
-    Sucht nach Studiengröße & Herkunft in der Zusammenfassung.
-    Enthält sowohl die alte Logik (z.B. 130 Patienten / 130 Kontrollen) 
-    als auch die neue Logik für 'xxx Filipino children ...'.
+    Sucht nach Studiengröße & Herkunft. Enthält alte + neue Logik:
+      - z.B. "693 Filipino children and adolescents"
+      - z.B. "130 Patienten / 130 gesunde Kontrollpersonen"
     """
-
     info = {"study_size": "", "origin": ""}
 
-    # Zuerst: Neuer Regex, um z.B. "693 Filipino children and adolescents" zu erfassen
+    # Neue Logik: "(xxx) (Filipino|Chinese|...) (children|adolescents|...)"
     pattern_nationality = re.compile(
         r"(\d+)\s+(Filipino|Chinese|Japanese|Han\sChinese|[A-Za-z]+)\s+([Cc]hildren(?:\s+and\s+adolescents)?|adolescents?|participants?|subjects?)",
         re.IGNORECASE
     )
     match_nat = pattern_nationality.search(summary_text)
     if match_nat:
-        num_str = match_nat.group(1)  # z.B. "693"
-        origin_str = match_nat.group(2)  # z.B. "Filipino"
-        group_str = match_nat.group(3)  # z.B. "children and adolescents"
-        # set info if not set yet:
+        num_str = match_nat.group(1)
+        origin_str = match_nat.group(2)
+        group_str = match_nat.group(3)
         info["study_size"] = f"{num_str} {group_str}"
         info["origin"] = origin_str
 
-    # Alte Logik: "(\d+)\s*Patient(?:en)?(?:[^\d]+)(\d+)\s*gesunde\s*Kontroll(?:personen)?"
+    # Alte Logik
     pattern_both = re.compile(
         r"(\d+)\s*Patient(?:en)?(?:[^\d]+)(\d+)\s*gesunde\s*Kontroll(?:personen)?",
         re.IGNORECASE
@@ -626,24 +618,21 @@ def parse_cohort_info(summary_text: str) -> dict:
         c_count = m_both.group(2)
         info["study_size"] = f"{p_count} Patienten / {c_count} Kontrollpersonen"
     else:
-        # Falls nur "(\d+)\s*Patient(en)?"
         pattern_single_p = re.compile(r"(\d+)\s*Patient(?:en)?", re.IGNORECASE)
         m_single_p = pattern_single_p.search(summary_text)
         if m_single_p and not info["study_size"]:
             info["study_size"] = f"{m_single_p.group(1)} Patienten"
-    
+
     # Herkunft / Population: "in der xyz Bevölkerung"
     pattern_origin = re.compile(r"in\s*der\s+(\S+)\s+Bevölkerung", re.IGNORECASE)
     m_orig = pattern_origin.search(summary_text)
-    if m_orig:
-        # only overwrite origin if not set from nationality pattern
-        if not info["origin"]:
-            info["origin"] = m_orig.group(1).strip()
+    if m_orig and not info["origin"]:
+        info["origin"] = m_orig.group(1).strip()
 
     return info
 
 ################################################################################
-# 5) PAGE "Analyze Paper" (Gen-Logik)
+# 5) PAGE "Analyze Paper"
 ################################################################################
 
 def page_analyze_paper():
@@ -656,28 +645,35 @@ def page_analyze_paper():
     new_key_value = st.sidebar.text_input("OpenAI API Key", type="password", value=st.session_state["api_key"])
     st.session_state["api_key"] = new_key_value
     
-    model = st.sidebar.selectbox("OpenAI-Modell",
-                                 ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4o"],
-                                 index=0)
-    # Die UI-Auswahl der Analyseart wird weiterhin genutzt,
-    # jedoch fließt in die Excel-Ausgabe immer beides ein.
-    action = st.sidebar.radio("Analyseart",
-                              ["Zusammenfassung", "Wichtigste Erkenntnisse", "Methoden & Techniken", "Relevanz-Bewertung"],
-                              index=0)
-    topic = st.sidebar.text_input("Thema für Relevanz-Bewertung (falls relevant)")
+    model = st.sidebar.selectbox(
+        "OpenAI-Modell",
+        ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4o"],
+        index=0
+    )
     
-    output_lang = st.sidebar.selectbox("Ausgabesprache", ["Deutsch", "Englisch", "Portugiesisch", "Serbisch"], index=0)
+    action = st.sidebar.radio(
+        "Analyseart",
+        ["Zusammenfassung", "Wichtigste Erkenntnisse", "Methoden & Techniken", "Relevanz-Bewertung"],
+        index=0
+    )
+    topic = st.sidebar.text_input("Thema für Relevanz-Bewertung (falls relevant)")
+    output_lang = st.sidebar.selectbox(
+        "Ausgabesprache",
+        ["Deutsch", "Englisch", "Portugiesisch", "Serbisch"],
+        index=0
+    )
     
     uploaded_file = st.file_uploader("PDF-Datei hochladen", type="pdf")
     analyzer = PaperAnalyzer(model=model)
     api_key = st.session_state["api_key"]
     
+    # Einzel-Analyse
     if uploaded_file and api_key:
         if st.button("Analyse starten"):
             with st.spinner("Extrahiere Text aus PDF..."):
                 text = analyzer.extract_text_from_pdf(uploaded_file)
                 if not text.strip():
-                    st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
+                    st.error("Kein Text extrahierbar (evtl. PDF ohne OCR).")
                     st.stop()
                 st.success("Text wurde erfolgreich extrahiert!")
                 st.session_state["paper_text"] = text[:15000]
@@ -712,25 +708,22 @@ def page_analyze_paper():
     st.write("## Alle Analysen & Excel-Ausgabe")
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
     
+    # Kompletter Workflow
     if uploaded_file and api_key:
         if st.button("Alle Analysen durchführen & in Excel speichern"):
             with st.spinner("Analysiere alles..."):
                 text = analyzer.extract_text_from_pdf(uploaded_file)
                 if not text.strip():
-                    st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
+                    st.error("Kein Text extrahierbar (evtl. PDF ohne OCR).")
                     st.stop()
     
-                # -------------------
-                # Alle Analysen
-                # -------------------
+                # (1) Zusammenfassung & Key Findings
                 summary_result = analyzer.summarize(text, api_key)
                 key_findings_result = analyzer.extract_key_findings(text, api_key)
                 methods_result = analyzer.identify_methods(text, api_key)
-    
                 if not topic:
                     st.error("Bitte 'Thema für Relevanz-Bewertung' angeben!")
                     st.stop()
-    
                 relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
                 final_relevance = f"{relevance_result}\n\n[Manuelle Bewertung: {user_relevance_score}]"
     
@@ -738,9 +731,15 @@ def page_analyze_paper():
                 import io
                 import datetime
     
-                # -------------------
-                # Gene-Detection (optional)
-                # -------------------
+                # (2) Excel-Vorlage
+                try:
+                    wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
+                except FileNotFoundError:
+                    st.error("Vorlage 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
+                    st.stop()
+                ws = wb.active
+    
+                # (3) Gene-Detection (optional)
                 gene_via_text = None
                 pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                 match_text = re.search(pattern_obvious, text)
@@ -770,20 +769,7 @@ def page_analyze_paper():
                             found_gene = g
                             break
     
-                # -------------------
-                # Excel laden
-                # -------------------
-                try:
-                    wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
-                except FileNotFoundError:
-                    st.error("Vorlage 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
-                    st.stop()
-    
-                ws = wb.active
-    
-                # -------------------
-                # Zellen befüllen (Gene, rsID, Frequenzen, etc.)
-                # -------------------
+                # (4) Gene / rsID / ...
                 if found_gene:
                     ws["D5"] = found_gene
     
@@ -833,36 +819,32 @@ def page_analyze_paper():
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ws["J2"] = now_str
     
-                # -------------------
-                # Ergebnisse/Schlussfolgerungen (G21 / G22)
-                # -------------------
+                # (5) Ergebnisse / Schlussfolgerungen => G21 / G22 (in Englisch)
                 ergebnisse, schlussfolgerungen = split_summary(summary_result)
-                
                 eng_ergebnisse = translate_text_openai(ergebnisse, "German", "English", api_key)
                 eng_schlussfolgerungen = translate_text_openai(schlussfolgerungen, "German", "English", api_key)
-                
-                ws["G21"] = eng_ergebnisse    # Results
-                ws["G22"] = eng_schlussfolgerungen    # Conclusion
+                ws["G21"] = eng_ergebnisse
+                ws["G22"] = eng_schlussfolgerungen
     
-                # -------------------
-                # Studiengröße & Herkunft ermitteln, in E20 schreiben
-                # (Beide Logiken: neu + alt) => parse_cohort_info(...)
-                # -------------------
+                # (6) Studiengröße & Herkunft => D20, Key Findings => E20
+                #    => Alles in Englisch
                 cohort_data = parse_cohort_info(summary_result)
                 study_size = cohort_data.get("study_size", "")
                 origin = cohort_data.get("origin", "")
-                
-                combined_str = f"Studiengröße: {study_size} | Herkunft: {origin}"
-                
+                combined_str = f"Study Size: {study_size} | Ethnicity: {origin}"
+    
+                # Übersetzen (falls es noch Deutsch drin wäre)
+                # (Ansonsten ist das schon ziemlich englisch. Aber wir belassen hier die Logik.)
                 if output_lang != "Deutsch":
                     combined_str = translate_text_openai(combined_str, "German", "English", api_key)
                 
-                ws["E20"] = combined_str  # HIER stehen nun Studiengröße + Herkunft
+                ws["D20"] = combined_str  # D20 => study size & origin in English
+                
+                # Key Findings => E20 (englisch)
+                key_findings_en = translate_text_openai(key_findings_result, "German", "English", api_key)
+                ws["E20"] = key_findings_en
     
-                # -------------------
-                # Datei speichern / Download
-                # -------------------
-                import io
+                # (7) Excel speichern
                 output = io.BytesIO()
                 wb.save(output)
                 output.seek(0)
