@@ -78,18 +78,16 @@ if not st.session_state["logged_in"]:
 # -----------------------------------------
 # Wenn wir hier ankommen, ist man eingeloggt
 # -----------------------------------------
-
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
 ################################################################################
 # 1) Gemeinsame Funktionen & Klassen (unverändert)
 ################################################################################
-
 class CoreAPI:
     def __init__(self, api_key):
         self.base_url = "https://api.core.ac.uk/v3/"
         self.headers = {"Authorization": f"Bearer {api_key}"}
-
+        
     def search_publications(self, query, filters=None, sort=None, limit=100):
         endpoint = "search/works"
         params = {"q": query, "limit": limit}
@@ -143,7 +141,6 @@ def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
 ################################################################################
 # PubMed Connection Check + (Basis) Search (unverändert)
 ################################################################################
-
 def check_pubmed_connection(timeout=10):
     test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": "test", "retmode": "json"}
@@ -213,7 +210,6 @@ def fetch_pubmed_abstract(pmid):
 ################################################################################
 # Europe PMC Connection Check + (Basis) Search (unverändert)
 ################################################################################
-
 def check_europe_pmc_connection(timeout=10):
     test_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {"query": "test", "format": "json", "pageSize": 100}
@@ -261,7 +257,6 @@ def search_europe_pmc_simple(query):
 ################################################################################
 # OpenAlex API Communication (unverändert)
 ################################################################################
-
 BASE_URL = "https://api.openalex.org"
 
 def fetch_openalex_data(entity_type, entity_id=None, params=None):
@@ -286,7 +281,6 @@ def search_openalex_simple(query):
 ################################################################################
 # Google Scholar (Basis) Test (unverändert)
 ################################################################################
-
 from scholarly import scholarly
 
 class GoogleScholarSearch:
@@ -320,7 +314,6 @@ class GoogleScholarSearch:
 ################################################################################
 # Semantic Scholar API Communication (unverändert)
 ################################################################################
-
 def check_semantic_scholar_connection(timeout=10):
     try:
         url = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -374,7 +367,6 @@ class SemanticScholarSearch:
 ################################################################################
 # 3) Restliche Module + Seiten (unverändert)
 ################################################################################
-
 def module_paperqa2():
     st.subheader("PaperQA2 Module")
     st.write("Dies ist das PaperQA2 Modul. Hier kannst du weitere Einstellungen und Funktionen für PaperQA2 implementieren.")
@@ -579,15 +571,21 @@ def split_summary(summary_text):
         ergebnisse = m.group(1).strip()
         schlussfolgerungen = m.group(2).strip()
     else:
-        # Falls keine Trennung möglich ist, den gesamten Text als Ergebnisse nutzen
-        ergebnisse = summary_text
-        schlussfolgerungen = ""
+        # Fallback: Aufteilen an Zeilenumbrüchen, falls möglich, ansonsten Standardtext
+        parts = summary_text.split("\n")
+        if len(parts) > 1:
+            ergebnisse = parts[0].strip()
+            schlussfolgerungen = "\n".join(parts[1:]).strip()
+        else:
+            ergebnisse = summary_text.strip()
+            schlussfolgerungen = "No conclusions provided."
+    if not schlussfolgerungen:
+        schlussfolgerungen = "No conclusions provided."
     return ergebnisse, schlussfolgerungen
 
 ################################################################################
 # 5) PAGE "Analyze Paper" (Gen-Logik)
 ################################################################################
-
 def page_analyze_paper():
     st.title("Analyze Paper - Integriert")
     
@@ -791,7 +789,6 @@ def page_analyze_paper():
 ################################################################################
 # 6) Sidebar Module Navigation & Chatbot in rechter Sidebar
 ################################################################################
-
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
     pages = {
