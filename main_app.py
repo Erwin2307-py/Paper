@@ -82,7 +82,7 @@ if not st.session_state["logged_in"]:
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
 ################################################################################
-# 1) Gemeinsame Funktionen & Klassen (unverändert)
+# 1) Gemeinsame Funktionen & Klassen
 ################################################################################
 
 class CoreAPI:
@@ -110,6 +110,7 @@ class CoreAPI:
         return r.json()
 
 def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", timeout=15):
+    """Check CORE API connectivity."""
     try:
         core = CoreAPI(api_key)
         result = core.search_publications("test", limit=1)
@@ -118,6 +119,7 @@ def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", 
         return False
 
 def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
+    """Einfaches CORE-Suchbeispiel."""
     if not api_key:
         return []
     try:
@@ -141,7 +143,7 @@ def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
         return []
 
 ################################################################################
-# PubMed Connection Check + (Basis) Search (unverändert)
+# PubMed Check / Simple Search
 ################################################################################
 
 def check_pubmed_connection(timeout=10):
@@ -211,7 +213,7 @@ def fetch_pubmed_abstract(pmid):
         return f"(Error: {e})"
 
 ################################################################################
-# Europe PMC Connection Check + (Basis) Search (unverändert)
+# Europe PMC Check / Simple Search
 ################################################################################
 
 def check_europe_pmc_connection(timeout=10):
@@ -259,7 +261,7 @@ def search_europe_pmc_simple(query):
         return []
 
 ################################################################################
-# OpenAlex API Communication (unverändert)
+# OpenAlex
 ################################################################################
 
 BASE_URL = "https://api.openalex.org"
@@ -284,7 +286,7 @@ def search_openalex_simple(query):
     return fetch_openalex_data("works", params=search_params)
 
 ################################################################################
-# Google Scholar (Basis) Test (unverändert)
+# Google Scholar (einfach)
 ################################################################################
 
 from scholarly import scholarly
@@ -318,7 +320,7 @@ class GoogleScholarSearch:
             st.error(f"Fehler bei der Google Scholar-Suche: {e}")
 
 ################################################################################
-# Semantic Scholar API Communication (unverändert)
+# Semantic Scholar
 ################################################################################
 
 def check_semantic_scholar_connection(timeout=10):
@@ -367,9 +369,9 @@ class SemanticScholarSearch:
             st.error(f"Semantic Scholar: {e}")
 
 ################################################################################
-# 2) Neues Modul: "module_excel_online_search" (unverändert)
+# Neues Modul: module_excel_online_search (Dummy)
 ################################################################################
-# [unverändert...]
+# [unverändert oder leer]
 
 ################################################################################
 # 3) Restliche Module + Seiten (unverändert)
@@ -432,6 +434,7 @@ def page_online_api_filter():
 ################################################################################
 # 4) PAPER ANALYZER + Load Env/OPENAI key
 ################################################################################
+
 import os
 import PyPDF2
 import openai
@@ -502,8 +505,9 @@ class PaperAnalyzer:
         return self.analyze_with_openai(text, prompt, api_key)
 
 ################################################################################
-# NEU: Die Klasse AlleleFrequencyFinder
+# Die Klasse AlleleFrequencyFinder
 ################################################################################
+
 import time
 import json
 from typing import Dict, Any, Optional
@@ -565,16 +569,17 @@ class AlleleFrequencyFinder:
                 freq = pop.get('frequency', 'N/A')
                 out.append(f"{pop_name}:{allele}={freq}")
         else:
-            out.append("Keine Populationsdaten gefunden.")
+            out.append("No population frequency data found.")
         return " | ".join(out)
 
 ################################################################################
-# Hilfsfunktion: split_summary
+# split_summary: trennt Ergebnisse/Schlussfolgerungen
 ################################################################################
+
 def split_summary(summary_text):
     """
     Sucht im Summary-Text nach zwei Abschnitten:
-      - 'Ergebnisse:' bis 'Schlussfolgerungen:'
+      - 'Ergebnisse:' bis 'Schlussfolgerungen:' 
       - 'Schlussfolgerungen:' (Rest)
     Gibt Tuple (ergebnisse, schlussfolgerungen) zurück.
     """
@@ -584,13 +589,12 @@ def split_summary(summary_text):
         ergebnisse = m.group(1).strip()
         schlussfolgerungen = m.group(2).strip()
     else:
-        # Falls keine Trennung möglich ist, alles in Ergebnisse
         ergebnisse = summary_text
         schlussfolgerungen = ""
     return ergebnisse, schlussfolgerungen
 
 ################################################################################
-# NEU: parse_cohort_info - Sucht nach Studiegröße und Herkunft in der Zusammenfassung
+# parse_cohort_info - Sucht nach Studiegröße (deutscher Text) & Herkunft
 ################################################################################
 
 def parse_cohort_info(summary_text: str) -> dict:
@@ -598,16 +602,10 @@ def parse_cohort_info(summary_text: str) -> dict:
     Sucht nach Studiengröße (z.B. '130 Patienten', '130 gesunde Kontrollpersonen')
     und nach Herkunft (z.B. 'in der chinesischen Bevölkerung').
     Gibt ein Dictionary mit 'study_size' und 'origin' zurück.
-    
-    Regex einfaches Beispiel:
-      - (\d+)\s*Patient(?:en)?
-      - (\d+)\s*gesunde Kontroll(?:personen)?
-      - in der\s+(.*?)\s+Bevölkerung
     """
     info = {"study_size": "", "origin": ""}
     
-    # Studiegröße (vereinfachtes Muster)
-    # Beispiel: "130 Patienten ... 130 gesunde Kontrollpersonen"
+    # Bsp: "130 Patienten ... 130 gesunde Kontrollpersonen"
     pattern_both = re.compile(
         r"(\d+)\s*Patient(?:en)?(?:[^\d]+)(\d+)\s*gesunde\s*Kontroll(?:personen)?",
         re.IGNORECASE
@@ -618,12 +616,12 @@ def parse_cohort_info(summary_text: str) -> dict:
         c_count = m_both.group(2)
         info["study_size"] = f"{p_count} Patienten / {c_count} Kontrollpersonen"
     else:
-        # Nur Patienten oder nur Kontrollen?
+        # Nur Patienten?
         pattern_single_p = re.compile(r"(\d+)\s*Patient(?:en)?", re.IGNORECASE)
         m_single_p = pattern_single_p.search(summary_text)
         if m_single_p:
             info["study_size"] = f"{m_single_p.group(1)} Patienten"
-    
+
     # Herkunft / Population
     pattern_origin = re.compile(r"in\s*der\s+(\S+)\s+Bevölkerung", re.IGNORECASE)
     m_orig = pattern_origin.search(summary_text)
@@ -649,8 +647,7 @@ def page_analyze_paper():
     model = st.sidebar.selectbox("OpenAI-Modell",
                                  ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4o"],
                                  index=0)
-    # Die UI-Auswahl der Analyseart wird weiterhin genutzt,
-    # jedoch fließt in die Excel-Ausgabe immer beides ein.
+    # Die UI-Auswahl der Analyseart
     action = st.sidebar.radio("Analyseart",
                               ["Zusammenfassung", "Wichtigste Erkenntnisse", "Methoden & Techniken", "Relevanz-Bewertung"],
                               index=0)
@@ -662,6 +659,7 @@ def page_analyze_paper():
     analyzer = PaperAnalyzer(model=model)
     api_key = st.session_state["api_key"]
     
+    # --- Einzel-Analyse
     if uploaded_file and api_key:
         if st.button("Analyse starten"):
             with st.spinner("Extrahiere Text aus PDF..."):
@@ -685,6 +683,7 @@ def page_analyze_paper():
                         st.stop()
                     result = analyzer.evaluate_relevance(text, topic, api_key)
     
+                # Übersetzen ins gewählte Output-Lang, falls != Deutsch
                 if output_lang != "Deutsch":
                     lang_map = {"Englisch": "English", "Portugiesisch": "Portuguese", "Serbisch": "Serbian"}
                     target_lang = lang_map.get(output_lang, "English")
@@ -702,6 +701,7 @@ def page_analyze_paper():
     st.write("## Alle Analysen & Excel-Ausgabe")
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
     
+    # --- Komplett-Workflow
     if uploaded_file and api_key:
         if st.button("Alle Analysen durchführen & in Excel speichern"):
             with st.spinner("Analysiere alles..."):
@@ -710,9 +710,7 @@ def page_analyze_paper():
                     st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
                     st.stop()
     
-                # -------------------
-                # Alle Analysen
-                # -------------------
+                # 1) Wir holen alle Analysen (DE)
                 summary_result = analyzer.summarize(text, api_key)
                 key_findings_result = analyzer.extract_key_findings(text, api_key)
                 methods_result = analyzer.identify_methods(text, api_key)
@@ -720,7 +718,6 @@ def page_analyze_paper():
                 if not topic:
                     st.error("Bitte 'Thema für Relevanz-Bewertung' angeben!")
                     st.stop()
-    
                 relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
                 final_relevance = f"{relevance_result}\n\n[Manuelle Bewertung: {user_relevance_score}]"
     
@@ -728,53 +725,53 @@ def page_analyze_paper():
                 import io
                 import datetime
     
-                # -------------------
-                # Gene-Detection (optional)
-                # -------------------
-                gene_via_text = None
-                pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
-                match_text = re.search(pattern_obvious, text)
-                if match_text:
-                    gene_via_text = match_text.group(1)
-    
-                if gene_via_text:
-                    found_gene = gene_via_text
-                else:
-                    try:
-                        wb_gene = openpyxl.load_workbook("vorlage_gene.xlsx")
-                    except FileNotFoundError:
-                        st.error("Die Datei 'vorlage_gene.xlsx' wurde nicht gefunden!")
-                        st.stop()
-    
-                    ws_gene = wb_gene.active
-                    gene_names_from_excel = []
-                    for row in ws_gene.iter_rows(min_row=3, min_col=3, max_col=3, values_only=True):
-                        cell_value = row[0]
-                        if cell_value and isinstance(cell_value, str):
-                            gene_names_from_excel.append(cell_value.strip())
-    
-                    found_gene = None
-                    for g in gene_names_from_excel:
-                        pat = re.compile(r"\b" + re.escape(g) + r"\b", re.IGNORECASE)
-                        if re.search(pat, text):
-                            found_gene = g
-                            break
-    
-                # -------------------
-                # Excel laden
-                # -------------------
+                # 2) Excel-Template laden
                 try:
                     wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
                 except FileNotFoundError:
                     st.error("Vorlage 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
                     st.stop()
-    
                 ws = wb.active
     
-                # -------------------
-                # Zellen befüllen (Gene, rsID, Frequenzen, etc.)
-                # -------------------
-                if found_gene:
+                # 3) Aus summary: parse study size / origin
+                cohort_data = parse_cohort_info(summary_result)
+                study_size_de = cohort_data.get("study_size", "")
+                origin_de = cohort_data.get("origin", "")
+                
+                # Kombinieren beides in EN
+                # Beispiel: "Study size: 130 patients / 130 controls, Origin: Chinese"
+                # Zuerst DE => EN
+                combined_str_de = f"Studiengröße: {study_size_de}, Herkunft: {origin_de}"
+                combined_str_en = translate_text_openai(combined_str_de, "German", "English", api_key)
+                
+                # 4) Key findings => EN
+                key_findings_en = translate_text_openai(key_findings_result, "German", "English", api_key)
+                
+                # 5) Ergebnisse/Schlussfolgerungen => split, dann => EN
+                ergebnisse, schlussfolgerungen = split_summary(summary_result)
+                eng_ergebnisse = translate_text_openai(ergebnisse, "German", "English", api_key)
+                eng_schlussfolgerungen = translate_text_openai(schlussfolgerungen, "German", "English", api_key)
+    
+                # 6) Alle Felder in Excel (alle in EN):
+                #    - D20 => study size / origin
+                #    - E20 => key findings
+                #    - G21 => results
+                #    - G22 => conclusions
+                ws["D20"] = combined_str_en
+                ws["E20"] = key_findings_en
+                ws["G21"] = eng_ergebnisse
+                ws["G22"] = eng_schlussfolgerungen
+    
+                # 7) Zeitstempel
+                now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                ws["J2"] = now_str
+    
+                # 8) Gene / SNP-Infos etc. - optional
+                # (Beispiel wie vorher)
+                pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
+                match_text = re.search(pattern_obvious, text)
+                if match_text:
+                    found_gene = match_text.group(1)
                     ws["D5"] = found_gene
     
                 rs_pat = r"(rs\d+)"
@@ -784,80 +781,26 @@ def page_analyze_paper():
                     rs_num = found_rs.group(1)
                     ws["D6"] = rs_num
     
-                genotype_regex = r"\b([ACGT]{2,3})\b"
-                lines = text.split("\n")
-                found_pairs = []
-                for line in lines:
-                    matches = re.findall(genotype_regex, line)
-                    if matches:
-                        for m in matches:
-                            found_pairs.append((m, line.strip()))
-    
-                unique_geno_pairs = []
-                for gp in found_pairs:
-                    if gp not in unique_geno_pairs:
-                        unique_geno_pairs.append(gp)
-    
+                # Frequenz
                 aff = AlleleFrequencyFinder()
+                freq_info = ""
                 if rs_num:
                     data = aff.get_allele_frequencies(rs_num)
-                    if not data:
-                        data = aff.try_alternative_source(rs_num)
                     if data:
                         freq_info = aff.build_freq_info_text(data)
                     else:
-                        freq_info = "Keine Daten von Ensembl/dbSNP"
+                        freq_info = "No allele frequency data."
                 else:
-                    freq_info = "Keine rsID vorhanden"
+                    freq_info = "No rsID found."
     
-                if len(unique_geno_pairs) > 0:
-                    ws["D10"] = unique_geno_pairs[0][0]
-                    ws["F10"] = unique_geno_pairs[0][1]
-                    ws["E10"] = freq_info
+                ws["E10"] = freq_info
     
-                if len(unique_geno_pairs) > 1:
-                    ws["D11"] = unique_geno_pairs[1][0]
-                    ws["F11"] = unique_geno_pairs[1][1]
-                    ws["E11"] = freq_info
-    
-                now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                ws["J2"] = now_str
-    
-                # -------------------
-                # Ergebnisse/Schlussfolgerungen (G21 / G22)
-                # -------------------
-                ergebnisse, schlussfolgerungen = split_summary(summary_result)
-                
-                eng_ergebnisse = translate_text_openai(ergebnisse, "German", "English", api_key)
-                eng_schlussfolgerungen = translate_text_openai(schlussfolgerungen, "German", "English", api_key)
-                
-                ws["G21"] = eng_ergebnisse    # Results
-                ws["G22"] = eng_schlussfolgerungen    # Conclusion
-    
-                # -------------------
-                # Studiengröße & Herkunft ermitteln, in E20 schreiben
-                # -------------------
-                cohort_data = parse_cohort_info(summary_result)
-                study_size = cohort_data.get("study_size", "")
-                origin = cohort_data.get("origin", "")
-                
-                # Kombiniere beides zu einem String (z.B. "Studiengröße: 130 Patienten / 130 Kontrollen, Herkunft: chinesischen")
-                combined_str = f"Studiengröße: {study_size} | Herkunft: {origin}"
-                
-                # Falls gewünscht, auch ins Englische übersetzen:
-                if output_lang != "Deutsch":
-                    combined_str = translate_text_openai(combined_str, "German", "English", api_key)
-                
-                ws["E20"] = combined_str  # HIER stehen nun Studiengröße + Herkunft
-    
-                # -------------------
-                # Datei speichern / Download
-                # -------------------
+                # 9) Speichern
                 output = io.BytesIO()
                 wb.save(output)
                 output.seek(0)
     
-            st.success("Alle Analysen abgeschlossen – Excel-Datei erstellt und Felder befüllt!")
+            st.success("Alle Analysen abgeschlossen – Excel-Datei in Englisch befüllt!")
             st.download_button(
                 label="Download Excel",
                 data=output,
@@ -885,18 +828,18 @@ def sidebar_module_navigation():
     return pages.get(st.session_state["current_page"], page_home)
 
 def answer_chat(question: str) -> str:
-    """Einfaches Beispiel: Nutzt Paper-Text (falls vorhanden) aus st.session_state + GPT."""
+    """Einfacher Beispiel-Chat mit optionalem Paper-Kontext."""
     api_key = st.session_state.get("api_key", "")
     paper_text = st.session_state.get("paper_text", "")
     if not api_key:
-        return f"(Kein API-Key) Echo: {question}"
+        return f"(No API-Key) Echo: {question}"
     if not paper_text.strip():
-        sys_msg = "Du bist ein hilfreicher Assistent für allgemeine Fragen."
+        sys_msg = "You are a helpful assistant for general questions."
     else:
         sys_msg = (
-            "Du bist ein hilfreicher Assistent, und hier ist ein Paper als Kontext:\n\n"
+            "You are a helpful assistant, and here is a paper context:\n\n"
             + paper_text[:12000] + "\n\n"
-            "Bitte nutze es, um Fragen möglichst fachkundig zu beantworten."
+            "Please use it to answer questions knowledgeably."
         )
     import openai
     openai.api_key = api_key
@@ -912,7 +855,7 @@ def answer_chat(question: str) -> str:
         )
         return response.choices[0].message.content
     except Exception as e:
-        return f"OpenAI-Fehler: {e}"
+        return f"OpenAI error: {e}"
 
 def main():
     # CSS-Anpassungen für das scrollbare Chat-Fenster
@@ -924,8 +867,8 @@ def main():
             padding: 0;
         }
         .scrollable-chat {
-            max-height: 400px; /* feste oder maximale Höhe */
-            overflow-y: scroll; /* scrollbar wenn zu lang */
+            max-height: 400px;
+            overflow-y: scroll;
             border: 1px solid #CCC;
             padding: 8px;
             margin-top: 10px;
@@ -933,7 +876,6 @@ def main():
             background-color: #f9f9f9;
         }
         
-        /* Nachrichten-Styling */
         .message {
             padding: 0.5rem 1rem;
             border-radius: 15px;
@@ -968,8 +910,8 @@ def main():
         if "chat_history" not in st.session_state:
             st.session_state["chat_history"] = []
 
-        user_input = st.text_input("Deine Frage hier", key="chatbot_right_input")
-        if st.button("Absenden (Chat)", key="chatbot_right_send"):
+        user_input = st.text_input("Your question here", key="chatbot_right_input")
+        if st.button("Send (Chat)", key="chatbot_right_send"):
             if user_input.strip():
                 st.session_state["chat_history"].append(("user", user_input))
                 bot_answer = answer_chat(user_input)
@@ -980,7 +922,7 @@ def main():
         for role, msg_text in st.session_state["chat_history"]:
             if role == "user":
                 st.markdown(
-                    f'<div class="message user-message"><strong>Du:</strong> {msg_text}</div>',
+                    f'<div class="message user-message"><strong>You:</strong> {msg_text}</div>',
                     unsafe_allow_html=True
                 )
             else:
@@ -994,7 +936,6 @@ def main():
         st.markdown(
             """
             <script>
-                // Funktion zum automatischen Scrollen
                 function scrollToBottom() {
                     var container = document.getElementById('chat-container');
                     if(container) {
@@ -1002,17 +943,14 @@ def main():
                     }
                 }
                 
-                // Scrollen nach dem Laden der Seite
                 document.addEventListener('DOMContentLoaded', function() {
                     scrollToBottom();
                 });
                 
-                // Beobachter, der auf Veränderungen im Chat-Container reagiert
                 const observer = new MutationObserver(function(mutations) {
                     scrollToBottom();
                 });
                 
-                // Sobald der Container existiert, wird der Observer gestartet
                 setTimeout(function() {
                     var container = document.getElementById('chat-container');
                     if(container) {
