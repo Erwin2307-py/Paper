@@ -66,23 +66,30 @@ def login():
         else:
             st.error("Login failed. Please check your credentials!")
 
+# Falls noch nicht im Session State: Standard auf False setzen
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
+# Prüfe den Login-Status. Wenn NICHT eingeloggt, zeige Login-Seite an, dann stop.
 if not st.session_state["logged_in"]:
     login()
     st.stop()
+
+# -----------------------------------------
+# Wenn wir hier ankommen, ist man eingeloggt
+# -----------------------------------------
 
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
 
 ################################################################################
 # 1) Gemeinsame Funktionen & Klassen (unverändert)
 ################################################################################
+
 class CoreAPI:
     def __init__(self, api_key):
         self.base_url = "https://api.core.ac.uk/v3/"
         self.headers = {"Authorization": f"Bearer {api_key}"}
-        
+
     def search_publications(self, query, filters=None, sort=None, limit=100):
         endpoint = "search/works"
         params = {"q": query, "limit": limit}
@@ -136,6 +143,7 @@ def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
 ################################################################################
 # PubMed Connection Check + (Basis) Search (unverändert)
 ################################################################################
+
 def check_pubmed_connection(timeout=10):
     test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": "test", "retmode": "json"}
@@ -148,6 +156,7 @@ def check_pubmed_connection(timeout=10):
         return False
 
 def search_pubmed_simple(query):
+    """Kurze Version: Sucht nur, ohne Abstract / Details."""
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 100}
     out = []
@@ -183,6 +192,7 @@ def search_pubmed_simple(query):
         return []
 
 def fetch_pubmed_abstract(pmid):
+    """Holt den Abstract via efetch für eine gegebene PubMed-ID."""
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
     params = {"db": "pubmed", "id": pmid, "retmode": "xml"}
     try:
@@ -203,6 +213,7 @@ def fetch_pubmed_abstract(pmid):
 ################################################################################
 # Europe PMC Connection Check + (Basis) Search (unverändert)
 ################################################################################
+
 def check_europe_pmc_connection(timeout=10):
     test_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {"query": "test", "format": "json", "pageSize": 100}
@@ -215,6 +226,7 @@ def check_europe_pmc_connection(timeout=10):
         return False
 
 def search_europe_pmc_simple(query):
+    """Kurze Version: Sucht nur, ohne erweiterte Details."""
     url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {
         "query": query,
@@ -249,6 +261,7 @@ def search_europe_pmc_simple(query):
 ################################################################################
 # OpenAlex API Communication (unverändert)
 ################################################################################
+
 BASE_URL = "https://api.openalex.org"
 
 def fetch_openalex_data(entity_type, entity_id=None, params=None):
@@ -266,18 +279,20 @@ def fetch_openalex_data(entity_type, entity_id=None, params=None):
         return None
 
 def search_openalex_simple(query):
+    """Kurze Version: Liest die rohen Daten, prüft nur, ob was zurückkommt."""
     search_params = {"search": query}
     return fetch_openalex_data("works", params=search_params)
 
 ################################################################################
 # Google Scholar (Basis) Test (unverändert)
 ################################################################################
+
 from scholarly import scholarly
 
 class GoogleScholarSearch:
     def __init__(self):
         self.all_results = []
-    
+
     def search_google_scholar(self, base_query):
         try:
             search_results = scholarly.search_pubs(base_query)
@@ -305,6 +320,7 @@ class GoogleScholarSearch:
 ################################################################################
 # Semantic Scholar API Communication (unverändert)
 ################################################################################
+
 def check_semantic_scholar_connection(timeout=10):
     try:
         url = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -319,7 +335,7 @@ def check_semantic_scholar_connection(timeout=10):
 class SemanticScholarSearch:
     def __init__(self):
         self.all_results = []
-    
+
     def search_semantic_scholar(self, base_query):
         try:
             url = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -358,6 +374,7 @@ class SemanticScholarSearch:
 ################################################################################
 # 3) Restliche Module + Seiten (unverändert)
 ################################################################################
+
 def module_paperqa2():
     st.subheader("PaperQA2 Module")
     st.write("Dies ist das PaperQA2 Modul. Hier kannst du weitere Einstellungen und Funktionen für PaperQA2 implementieren.")
@@ -454,34 +471,33 @@ class PaperAnalyzer:
         return response.choices[0].message.content
     
     def summarize(self, text, api_key):
-        # Angepasste Zusammenfassungs-Prompt: Bitte erstelle eine strukturierte Zusammenfassung in English,
-        # wobei der Abschnitt mit den Ergebnissen mit "Results:" und der Abschnitt mit den Schlussfolgerungen mit "Conclusions:" beginnt.
         prompt = (
-            "Please create a structured summary of the following scientific paper in English. "
-            "Divide the summary into the following sections: Background, Methods, Results, and Conclusions. "
-            "Ensure that the Results section starts with 'Results:' and the Conclusions section starts with 'Conclusions:'. "
-            "Use a maximum of 500 words:\n\n{text}"
+            "Erstelle eine strukturierte Zusammenfassung des folgenden "
+            "wissenschaftlichen Papers. Gliedere sie in mindestens vier klar getrennte Abschnitte "
+            "(z.B. 1. Hintergrund, 2. Methodik, 3. Ergebnisse, 4. Schlussfolgerungen). "
+            "Verwende maximal 500 Wörter:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
     
     def extract_key_findings(self, text, api_key):
         prompt = (
-            "Extract the 5 most important findings from the following scientific paper in the field of Side-Channel Analysis. "
-            "List them as bullet points. Use English:\n\n{text}"
+            "Extrahiere die 5 wichtigsten Erkenntnisse aus diesem wissenschaftlichen "
+            "Paper im Bereich Side-Channel Analysis. Liste sie mit Bulletpoints auf:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
     
     def identify_methods(self, text, api_key):
         prompt = (
-            "Identify and describe the methods and techniques used in the following scientific paper for Side-Channel Analysis. "
-            "Provide a brief explanation for each method in English:\n\n{text}"
+            "Identifiziere und beschreibe die im Paper verwendeten Methoden "
+            "und Techniken zur Side-Channel-Analyse. Gib zu jeder Methode "
+            "eine kurze Erklärung:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
     
     def evaluate_relevance(self, text, topic, api_key):
         prompt = (
-            f"Evaluate the relevance of the following scientific paper for the topic '{topic}' on a scale from 1-10. "
-            f"Provide your reasoning in English:\n\n{{text}}"
+            f"Bewerte die Relevanz dieses Papers für das Thema '{topic}' auf "
+            f"einer Skala von 1-10. Begründe deine Bewertung:\n\n{{text}}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
 
@@ -489,16 +505,15 @@ class PaperAnalyzer:
 # NEU: Die Klasse AlleleFrequencyFinder
 ################################################################################
 import time
-import sys
 import json
 from typing import Dict, Any, Optional
 
 class AlleleFrequencyFinder:
-    """Class for retrieving and displaying allele frequencies from various sources."""
+    """Klasse zum Abrufen und Anzeigen von Allelfrequenzen aus verschiedenen Quellen."""
     def __init__(self):
         self.ensembl_server = "https://rest.ensembl.org"
         self.max_retries = 3
-        self.retry_delay = 2
+        self.retry_delay = 2  # Sekunden zwischen Wiederholungsversuchen
 
     def get_allele_frequencies(self, rs_id: str, retry_count: int = 0) -> Optional[Dict[str, Any]]:
         if not rs_id.startswith("rs"):
@@ -509,7 +524,7 @@ class AlleleFrequencyFinder:
             response = requests.get(url, headers={"Content-Type": "application/json"}, timeout=10)
             response.raise_for_status()
             return response.json()
-        except requests.exceptions.HTTPError as e:
+        except requests.exceptions.HTTPError:
             if response.status_code == 500 and retry_count < self.max_retries:
                 time.sleep(self.retry_delay)
                 return self.get_allele_frequencies(rs_id, retry_count + 1)
@@ -524,6 +539,7 @@ class AlleleFrequencyFinder:
             return None
     
     def try_alternative_source(self, rs_id: str) -> Optional[Dict[str, Any]]:
+        """Platzhalter: alternativer Weg, falls Ensembl down ist."""
         return None
     
     def parse_and_display_data(self, data: Dict[str, Any]) -> None:
@@ -553,29 +569,25 @@ class AlleleFrequencyFinder:
         return " | ".join(out)
 
 ################################################################################
-# Neue Hilfsfunktion: Zusammenfassung in Results und Conclusions aufteilen
+# (Alt) Hilfsfunktion: split_summary (NICHT mehr genutzt, aber belassen)
 ################################################################################
 def split_summary(summary_text):
     import re
-    m = re.search(r'Results\s*:\s*(.*?)\s*Conclusions\s*:\s*(.*)', summary_text, re.DOTALL | re.IGNORECASE)
+    # Versuche anhand der Schlüsselwörter "Ergebnisse:" und "Schlussfolgerungen:" zu splitten
+    m = re.search(r'Ergebnisse\s*:\s*(.*?)\s*Schlussfolgerungen\s*:\s*(.*)', summary_text, re.DOTALL | re.IGNORECASE)
     if m:
-        results_text = m.group(1).strip()
-        conclusions_text = m.group(2).strip()
+        ergebnisse = m.group(1).strip()
+        schlussfolgerungen = m.group(2).strip()
     else:
-        parts = summary_text.split("\n")
-        if len(parts) > 1:
-            results_text = parts[0].strip()
-            conclusions_text = "\n".join(parts[1:]).strip()
-        else:
-            results_text = summary_text.strip()
-            conclusions_text = "No conclusions provided."
-    if not conclusions_text:
-        conclusions_text = "No conclusions provided."
-    return results_text, conclusions_text
+        # Falls keine Trennung möglich ist, den gesamten Text als Ergebnisse nutzen
+        ergebnisse = summary_text
+        schlussfolgerungen = ""
+    return ergebnisse, schlussfolgerungen
 
 ################################################################################
 # 5) PAGE "Analyze Paper" (Gen-Logik)
 ################################################################################
+
 def page_analyze_paper():
     st.title("Analyze Paper - Integriert")
     
@@ -589,6 +601,8 @@ def page_analyze_paper():
     model = st.sidebar.selectbox("OpenAI-Modell",
                                  ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4o"],
                                  index=0)
+    # Die UI-Auswahl der Analyseart wird weiterhin genutzt,
+    # jedoch fließt in die Excel-Ausgabe immer beides ein.
     action = st.sidebar.radio("Analyseart",
                               ["Zusammenfassung", "Wichtigste Erkenntnisse", "Methoden & Techniken", "Relevanz-Bewertung"],
                               index=0)
@@ -648,7 +662,7 @@ def page_analyze_paper():
                     st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
                     st.stop()
     
-                # Immer beide Analysearten durchführen: Zusammenfassung und wichtigste Erkenntnisse
+                # Alle Analysen werden durchgeführt
                 summary_result = analyzer.summarize(text, api_key)
                 key_findings_result = analyzer.extract_key_findings(text, api_key)
                 methods_result = analyzer.identify_methods(text, api_key)
@@ -750,14 +764,28 @@ def page_analyze_paper():
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ws["J2"] = now_str
     
-                # --- Neuer Block: Zusammenfassung (Englisch) in Results und Conclusions aufteilen ---
-                eng_summary = translate_text_openai(summary_result, "German", "English", api_key)
+                # --------------------------------------------------
+                # NEUER Block: Wir teilen die Zusammenfassung in Absätze
+                # und speichern den 3. Absatz als "Results" in Zelle G21
+                # sowie den 4. Absatz als "Conclusions" in Zelle G22.
+                # --------------------------------------------------
+                paragraphs = [p.strip() for p in summary_result.split('\n\n') if p.strip()]
+
+                # Den 3. Absatz (Index 2) und 4. Absatz (Index 3), falls vorhanden
+                third_paragraph = paragraphs[2] if len(paragraphs) > 2 else "No 3rd paragraph found."
+                fourth_paragraph = paragraphs[3] if len(paragraphs) > 3 else "No 4th paragraph found."
+                
+                # Übersetzen beider Absätze ins Englische, da im Excel "Results" und "Conclusions" üblicherweise Englisch sind
+                eng_third = translate_text_openai(third_paragraph, "German", "English", api_key)
+                eng_fourth = translate_text_openai(fourth_paragraph, "German", "English", api_key)
+                
+                ws["G21"] = eng_third
+                ws["G22"] = eng_fourth
+                
+                # Wichtigste Erkenntnisse in Zelle E20 (ebenso Englisch)
                 eng_key_findings = translate_text_openai(key_findings_result, "German", "English", api_key)
-                results_text, conclusions_text = split_summary(eng_summary)
-                ws["G21"] = results_text         # Ergebnisse in G21
-                ws["G22"] = conclusions_text     # Schlussfolgerungen in G22
-                ws["E20"] = eng_key_findings       # Key Findings in E20
-                # ------------------------------------------------------------------------------------
+                ws["E20"] = eng_key_findings
+                # --------------------------------------------------
     
                 output = io.BytesIO()
                 wb.save(output)
@@ -774,6 +802,7 @@ def page_analyze_paper():
 ################################################################################
 # 6) Sidebar Module Navigation & Chatbot in rechter Sidebar
 ################################################################################
+
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
     pages = {
@@ -790,6 +819,7 @@ def sidebar_module_navigation():
     return pages.get(st.session_state["current_page"], page_home)
 
 def answer_chat(question: str) -> str:
+    """Einfaches Beispiel: Nutzt Paper-Text (falls vorhanden) aus st.session_state + GPT."""
     api_key = st.session_state.get("api_key", "")
     paper_text = st.session_state.get("paper_text", "")
     if not api_key:
@@ -819,6 +849,7 @@ def answer_chat(question: str) -> str:
         return f"OpenAI-Fehler: {e}"
 
 def main():
+    # CSS-Anpassungen für das scrollbare Chat-Fenster
     st.markdown(
         """
         <style>
@@ -827,14 +858,16 @@ def main():
             padding: 0;
         }
         .scrollable-chat {
-            max-height: 400px;
-            overflow-y: scroll;
+            max-height: 400px; /* feste oder maximale Höhe */
+            overflow-y: scroll; /* scrollbar wenn zu lang */
             border: 1px solid #CCC;
             padding: 8px;
             margin-top: 10px;
             border-radius: 4px;
             background-color: #f9f9f9;
         }
+        
+        /* Nachrichten-Styling */
         .message {
             padding: 0.5rem 1rem;
             border-radius: 15px;
@@ -856,26 +889,27 @@ def main():
         """,
         unsafe_allow_html=True
     )
-    
+
     col_left, col_right = st.columns([4, 1])
     with col_left:
         page_fn = sidebar_module_navigation()
         if page_fn is not None:
             page_fn()
-    
+
     with col_right:
         st.subheader("Chatbot")
-    
+
         if "chat_history" not in st.session_state:
             st.session_state["chat_history"] = []
-    
+
         user_input = st.text_input("Deine Frage hier", key="chatbot_right_input")
         if st.button("Absenden (Chat)", key="chatbot_right_send"):
             if user_input.strip():
                 st.session_state["chat_history"].append(("user", user_input))
                 bot_answer = answer_chat(user_input)
                 st.session_state["chat_history"].append(("bot", bot_answer))
-    
+
+        # Chatverlauf in scrollbarem Container anzeigen
         st.markdown('<div class="scrollable-chat" id="chat-container">', unsafe_allow_html=True)
         for role, msg_text in st.session_state["chat_history"]:
             if role == "user":
@@ -889,22 +923,30 @@ def main():
                     unsafe_allow_html=True
                 )
         st.markdown('</div>', unsafe_allow_html=True)
-    
+
+        # JavaScript, um automatisch nach unten zu scrollen
         st.markdown(
             """
             <script>
+                // Funktion zum automatischen Scrollen
                 function scrollToBottom() {
                     var container = document.getElementById('chat-container');
                     if(container) {
                         container.scrollTop = container.scrollHeight;
                     }
                 }
+                
+                // Scrollen nach dem Laden der Seite
                 document.addEventListener('DOMContentLoaded', function() {
                     scrollToBottom();
                 });
+                
+                // Beobachter, der auf Veränderungen im Chat-Container reagiert
                 const observer = new MutationObserver(function(mutations) {
                     scrollToBottom();
                 });
+                
+                // Sobald der Container existiert, wird der Observer gestartet
                 setTimeout(function() {
                     var container = document.getElementById('chat-container');
                     if(container) {
@@ -916,6 +958,6 @@ def main():
             """,
             unsafe_allow_html=True
         )
-    
+
 if __name__ == '__main__':
     main()
