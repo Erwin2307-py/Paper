@@ -569,6 +569,22 @@ class AlleleFrequencyFinder:
         return " | ".join(out)
 
 ################################################################################
+# Neue Hilfsfunktion: Zusammenfassung in Ergebnisse und Schlussfolgerungen aufteilen
+################################################################################
+def split_summary(summary_text):
+    import re
+    # Versuche anhand der Schlüsselwörter "Ergebnisse:" und "Schlussfolgerungen:" zu splitten
+    m = re.search(r'Ergebnisse\s*:\s*(.*?)\s*Schlussfolgerungen\s*:\s*(.*)', summary_text, re.DOTALL | re.IGNORECASE)
+    if m:
+        ergebnisse = m.group(1).strip()
+        schlussfolgerungen = m.group(2).strip()
+    else:
+        # Falls keine Trennung möglich ist, den gesamten Text als Ergebnisse nutzen
+        ergebnisse = summary_text
+        schlussfolgerungen = ""
+    return ergebnisse, schlussfolgerungen
+
+################################################################################
 # 5) PAGE "Analyze Paper" (Gen-Logik)
 ################################################################################
 
@@ -744,6 +760,15 @@ def page_analyze_paper():
     
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ws["J2"] = now_str
+    
+                # Hier die Anpassungen für die Excel-Ausgabe:
+                if action == "Zusammenfassung":
+                    # Teile die Zusammenfassung in Ergebnisse und Schlussfolgerungen auf und schreibe in G21 und G22
+                    ergebnisse, schlussfolgerungen = split_summary(summary_result)
+                    ws["G21"] = ergebnisse
+                    ws["G22"] = schlussfolgerungen
+                elif action == "Wichtigste Erkenntnisse":
+                    ws["E20"] = key_findings_result
     
                 output = io.BytesIO()
                 wb.save(output)
