@@ -599,8 +599,8 @@ def page_analyze_paper():
     model = st.sidebar.selectbox("OpenAI-Modell",
                                  ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4o"],
                                  index=0)
-    # Die UI-Auswahl der Analyseart wird weiterhin genutzt,
-    # jedoch fließt in die Excel-Ausgabe immer beides ein.
+    # Die UI-Auswahl der Analyseart wird zwar angezeigt, 
+    # aber beim Speichern der Excel-Datei werden immer beide Analysen (Zusammenfassung und wichtigste Erkenntnisse) durchgeführt.
     action = st.sidebar.radio("Analyseart",
                               ["Zusammenfassung", "Wichtigste Erkenntnisse", "Methoden & Techniken", "Relevanz-Bewertung"],
                               index=0)
@@ -623,6 +623,7 @@ def page_analyze_paper():
                 st.session_state["paper_text"] = text[:15000]
     
             with st.spinner(f"Führe {action}-Analyse durch..."):
+                # Hier wird die ausgewählte Analyseart ausgeführt und das Ergebnis angezeigt.
                 if action == "Zusammenfassung":
                     result = analyzer.summarize(text, api_key)
                 elif action == "Wichtigste Erkenntnisse":
@@ -660,7 +661,7 @@ def page_analyze_paper():
                     st.error("Kein Text extrahierbar (evtl. gescanntes PDF ohne OCR).")
                     st.stop()
     
-                # Alle Analysen werden durchgeführt
+                # Immer beide Analysearten durchführen: Zusammenfassung und wichtigste Erkenntnisse
                 summary_result = analyzer.summarize(text, api_key)
                 key_findings_result = analyzer.extract_key_findings(text, api_key)
                 methods_result = analyzer.identify_methods(text, api_key)
@@ -763,7 +764,7 @@ def page_analyze_paper():
                 ws["J2"] = now_str
     
                 # --- Neuer Block: Beide Analysearten werden in Englisch in die Excel eingetragen ---
-                # Übersetze die Ergebnisse der Zusammenfassung und der wichtigsten Erkenntnisse in Englisch
+                # Übersetze die Zusammenfassung (Zusammenfassung = Ergebnisse & Schlussfolgerungen) und die wichtigsten Erkenntnisse ins Englische
                 eng_summary = translate_text_openai(summary_result, "German", "English", api_key)
                 eng_key_findings = translate_text_openai(key_findings_result, "German", "English", api_key)
                 # Teile die übersetzte Zusammenfassung in "Results" und "Conclusions" auf
