@@ -605,7 +605,6 @@ def parse_cohort_info(summary_text: str) -> dict:
 
     return info
 
-
 def page_analyze_paper():
     st.title("Analyze Paper - Integriert")
     
@@ -625,7 +624,7 @@ def page_analyze_paper():
     # Compare Mode
     compare_mode = st.sidebar.checkbox("Alle Paper gemeinsam vergleichen (Outlier ausschließen)?")
 
-    # NEU: Radio: Hauptthema => 'manuell' oder 'GPT'
+    # Radio: Hauptthema => 'manuell' oder 'GPT'
     theme_mode = st.sidebar.radio(
         "Hauptthema bestimmen",
         ["Manuell", "GPT"]
@@ -643,7 +642,6 @@ def page_analyze_paper():
         index=0
     )
     
-    # Manuelles Thema, falls relevant
     user_defined_theme = ""
     if theme_mode == "Manuell":
         user_defined_theme = st.sidebar.text_input("Manuelles Hauptthema (bei Compare-Mode)")
@@ -659,19 +657,13 @@ def page_analyze_paper():
     analyzer = PaperAnalyzer(model=model)
     api_key = st.session_state["api_key"]
 
-    # Hier speichern wir die "relevant_papers" (Outlier-Check) global, damit wir
-    # in der Excel-Funktion nur diese verarbeiten
     if "relevant_papers_compare" not in st.session_state:
         st.session_state["relevant_papers_compare"] = None
     if "theme_compare" not in st.session_state:
         st.session_state["theme_compare"] = ""
 
-    # -------------------------------------
-    # Hilfsfunktion: Outlier-Logic
-    # -------------------------------------
     def do_outlier_logic(paper_map: dict) -> (list, str):
-        """Gibt (relevantPaperList, discoveredTheme) zurück."""
-        # If theme_mode == Manuell => ask GPT for relevance to user_defined_theme
+        """Outlier-Check logic: returns (relevantPaperList, discoveredTheme)."""
         if theme_mode == "Manuell":
             main_theme = user_defined_theme.strip()
             if not main_theme:
@@ -719,7 +711,7 @@ Nur das JSON, ohne weitere Erklärungen.
                 )
                 scope_decision = scope_resp.choices[0].message.content
             except Exception as e1:
-                st.error(f"GPT-Fehler bei Compare-Mode (Manuell): {e1}")
+                st.error(f"GPT-Fehler (Manueller Compare-Mode): {e1}")
                 return ([], "")
 
             st.markdown("#### GPT-Ausgabe (Outlier-Check / Manuell):")
@@ -817,16 +809,15 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
 
             return (relevant_papers_local, main_theme)
 
-
-    # -------------------------------------
+    # ---------------------------
     # Haupt-Analyse-Bereich
-    # -------------------------------------
+    # ---------------------------
     if uploaded_files and api_key:
         if compare_mode:
             st.write("### Vergleichsmodus: Outlier-Paper ausschließen")
 
             if st.button("Vergleichs-Analyse starten"):
-                # 1) ALLE Papertexte sammeln
+                # 1) Sammele Papertexte
                 paper_map = {}
                 for fpdf in uploaded_files:
                     txt = analyzer.extract_text_from_pdf(fpdf)
@@ -847,12 +838,12 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     st.error("Keine relevanten Paper nach Outlier-Check übrig.")
                     return
 
-                # 2) Kombiniere relevanten Papertext
+                # kombiniere text
                 combined_text = ""
                 for rp in relevant_papers:
                     combined_text += f"\n=== {rp} ===\n{paper_map[rp]}"
 
-                # 3) Führe gewählte Analyse durch
+                # Aktion
                 if action == "Tabellen & Grafiken":
                     final_result = "Tabellen & Grafiken nicht im kombinierten Compare-Mode implementiert."
                 else:
@@ -883,7 +874,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 st.write(final_result)
 
         else:
-            # Einzel- oder Multi-Modus ohne Compare
             st.write("### Einzel- oder Multi-Modus (kein Outlier-Check)")
 
             pdf_options = ["(Alle)"] + [f"{i+1}) {f.name}" for i, f in enumerate(uploaded_files)]
@@ -992,7 +982,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                                         else:
                                             st.write("Keine Bilder hier.")
 
-                                # Zusätzliche Suche "Table" im Volltext
+                                # Suche 'Table' im Volltext
                                 st.markdown(f"### Volltext-Suche 'Table' in {fpdf.name}")
                                 try:
                                     text_all_pages = ""
@@ -1061,14 +1051,15 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
         elif not uploaded_files:
             st.info("Bitte eine oder mehrere PDF-Dateien hochladen!")
 
+    # ---------------------------
+    # Excel-Erstellung (Multi)
+    # ---------------------------
     st.write("---")
     st.write("## Alle Analysen & Excel-Ausgabe (Multi-PDF)")
 
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
 
     if uploaded_files and api_key:
-        # Falls Compare-Mode => wir nutzen st.session_state["relevant_papers_compare"]
-        # Sonst => wir nehmen alle
         if st.button("Alle Analysen durchführen & in Excel speichern (Multi)"):
             with st.spinner("Analysiere alle hochgeladenen PDFs (für Excel)..."):
                 import openpyxl
@@ -1083,11 +1074,9 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 gen_sheets = {}
                 analyzer = PaperAnalyzer(model=model)
 
-                # check outlier logic
                 if compare_mode:
-                    # Falls wir relevant_papers_compare nicht haben, machen wir auto
                     if not st.session_state["relevant_papers_compare"]:
-                        # user hat den "Vergleichs-Analyse starten" Button nicht gedrückt => wir machen auto
+                        # user hat den Compare-Button nicht gedrückt => auto
                         paper_map_auto = {}
                         for fpdf in uploaded_files:
                             txt = analyzer.extract_text_from_pdf(fpdf)
@@ -1106,7 +1095,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         return
                     selected_files_for_excel = [f for f in uploaded_files if f.name in relevant_list_for_excel]
                 else:
-                    # Kein Compare => nimm alle
                     selected_files_for_excel = uploaded_files
 
                 for fpdf in selected_files_for_excel:
@@ -1115,24 +1103,19 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         st.error(f"Kein Text aus {fpdf.name} extrahierbar (evtl. kein OCR). Überspringe...")
                         continue
 
-                    # Standardanalysen
                     summary_result = analyzer.summarize(text, api_key)
                     key_findings_result = analyzer.extract_key_findings(text, api_key)
-                    # Relevanz erfordert topic
                     if not topic:
-                        # optional => user may have left it blank
                         relevance_result = "(No topic => no Relevanz-Bewertung)"
                     else:
                         relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
                     methods_result = analyzer.identify_methods(text, api_key)
 
-                    # Gens und Allele
                     pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                     match_text = re.search(pattern_obvious, text)
                     gene_via_text = match_text.group(1) if match_text else None
 
                     if not gene_via_text:
-                        # Falls nicht gefunden, in vorlage_gene.xlsx gucken
                         try:
                             wb_gene = openpyxl.load_workbook("vorlage_gene.xlsx")
                         except FileNotFoundError:
