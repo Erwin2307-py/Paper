@@ -64,11 +64,11 @@ if not st.session_state["logged_in"]:
 # ------------------------------------------------------------------
 
 def clean_html_except_br(text):
-    cleaned_text = re.sub(r'</?(?!br\b)[^>]*>', '', text)
-    return cleaned_text
+    """Entfernt alle HTML-Tags außer <br>."""
+    return re.sub(r'</?(?!br\b)[^>]*>', '', text)
 
 def translate_text_openai(text, source_language, target_language, api_key):
-    """Übersetzt Text über OpenAI-ChatCompletion (z.B. GPT-4)"""
+    """Übersetzt Text über OpenAI-ChatCompletion (z.B. GPT-4)."""
     import openai
     openai.api_key = api_key
     prompt_system = (
@@ -88,6 +88,7 @@ def translate_text_openai(text, source_language, target_language, api_key):
             temperature=0
         )
         translation = response.choices[0].message.content.strip()
+        # Entferne mögliche umschließende Anführungszeichen
         if translation and translation[0] in ["'", '"', "‘", "„"]:
             translation = translation[1:]
             if translation and translation[-1] in ["'", '"']:
@@ -99,6 +100,7 @@ def translate_text_openai(text, source_language, target_language, api_key):
         return text
 
 class CoreAPI:
+    """CORE-API (Beispiel)."""
     def __init__(self, api_key):
         self.base_url = "https://api.core.ac.uk/v3/"
         self.headers = {"Authorization": f"Bearer {api_key}"}
@@ -157,6 +159,7 @@ def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
 # 2) PubMed - Einfacher Check + Search
 # ------------------------------------------------------------------
 def check_pubmed_connection(timeout=10):
+    """Testet einfache Verbindung zu PubMed."""
     test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": "test", "retmode": "json"}
     try:
@@ -168,7 +171,7 @@ def check_pubmed_connection(timeout=10):
         return False
 
 def search_pubmed_simple(query):
-    """Kurze Version: Sucht nur, ohne Abstract / Details."""
+    """PubMed-Suche (vereinfacht)."""
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 100}
     out = []
@@ -204,7 +207,7 @@ def search_pubmed_simple(query):
         return []
 
 def fetch_pubmed_abstract(pmid):
-    """Holt den Abstract via efetch für eine gegebene PubMed-ID."""
+    """Holt Abstract via efetch für eine gegebene PubMed-ID."""
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
     params = {"db": "pubmed", "id": pmid, "retmode": "xml"}
     try:
@@ -605,27 +608,29 @@ def parse_cohort_info(summary_text: str) -> dict:
 
     return info
 
-
 def page_analyze_paper():
-    st.title("Analyze Paper - Integriert")
-    
+    """
+    Hauptseite für die Paper-Analyse + Excel-Ausgabe in EINEM Sheet.
+    Je Paper +5 Zeilen Offset (keine neuen Sheets).
+    """
+    st.title("Analyze Paper - Integriert (Ein Sheet, Offsets)")
+
     if "api_key" not in st.session_state:
         st.session_state["api_key"] = OPENAI_API_KEY or ""
-    
-    st.sidebar.header("Einstellungen - PaperAnalyzer")
+
+    st.sidebar.header("PaperAnalyzer-Einstellungen")
     new_key_value = st.sidebar.text_input("OpenAI API Key", type="password", value=st.session_state["api_key"])
     st.session_state["api_key"] = new_key_value
-    
+
     model = st.sidebar.selectbox(
         "OpenAI-Modell",
         ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4o"],
         index=0
     )
 
-    # Compare Mode
     compare_mode = st.sidebar.checkbox("Alle Paper gemeinsam vergleichen (Outlier ausschließen)?")
 
-    # NEU: Radio: Hauptthema => 'manuell' oder 'GPT'
+    # "Manuelles" oder "GPT" Theme
     theme_mode = st.sidebar.radio(
         "Hauptthema bestimmen",
         ["Manuell", "GPT"]
@@ -642,8 +647,7 @@ def page_analyze_paper():
         ],
         index=0
     )
-    
-    # Manuelles Thema, falls relevant
+
     user_defined_theme = ""
     if theme_mode == "Manuell":
         user_defined_theme = st.sidebar.text_input("Manuelles Hauptthema (bei Compare-Mode)")
@@ -659,23 +663,17 @@ def page_analyze_paper():
     analyzer = PaperAnalyzer(model=model)
     api_key = st.session_state["api_key"]
 
-    # Hier speichern wir die "relevant_papers" (Outlier-Check) global, damit wir
-    # in der Excel-Funktion nur diese verarbeiten
     if "relevant_papers_compare" not in st.session_state:
         st.session_state["relevant_papers_compare"] = None
     if "theme_compare" not in st.session_state:
         st.session_state["theme_compare"] = ""
 
-    # -------------------------------------
-    # Hilfsfunktion: Outlier-Logic
-    # -------------------------------------
     def do_outlier_logic(paper_map: dict) -> (list, str):
-        """Gibt (relevantPaperList, discoveredTheme) zurück."""
-        # If theme_mode == Manuell => ask GPT for relevance to user_defined_theme
+        """Stub: GPT-gestützter/Manueller Outlier-Check."""
         if theme_mode == "Manuell":
             main_theme = user_defined_theme.strip()
             if not main_theme:
-                st.error("Bitte ein manuelles Hauptthema eingeben!")
+                st.error("Kein manuelles Hauptthema angegeben!")
                 return ([], "")
 
             snippet_list = []
@@ -692,7 +690,7 @@ Hier sind mehrere Paper in JSON-Form. Entscheide pro Paper, ob es zu diesem Them
 Gib mir am Ende ein JSON-Format zurück:
 
 {{
-  "theme": "du wiederholst das user-defined theme",
+  "theme": "das user-defined theme",
   "papers": [
     {{
       "filename": "...",
@@ -719,7 +717,7 @@ Nur das JSON, ohne weitere Erklärungen.
                 )
                 scope_decision = scope_resp.choices[0].message.content
             except Exception as e1:
-                st.error(f"GPT-Fehler bei Compare-Mode (Manuell): {e1}")
+                st.error(f"GPT-Fehler (Manuell-Theme): {e1}")
                 return ([], "")
 
             st.markdown("#### GPT-Ausgabe (Outlier-Check / Manuell):")
@@ -728,6 +726,7 @@ Nur das JSON, ohne weitere Erklärungen.
             if json_str.startswith("```"):
                 json_str = re.sub(r"```[\w]*\n?", "", json_str)
                 json_str = re.sub(r"\n?```", "", json_str)
+
             try:
                 data_parsed = json.loads(json_str)
                 papers_info = data_parsed.get("papers", [])
@@ -746,11 +745,12 @@ Nur das JSON, ohne weitere Erklärungen.
                     relevant_papers_local.append(fname)
                     st.success(f"{fname} => relevant. Begründung: {reason}")
                 else:
-                    st.warning(f"{fname} => NICHT relevant. Begründung: {reason}")
+                    st.warning(f"{fname} => nicht relevant. Begründung: {reason}")
 
             return (relevant_papers_local, main_theme)
+
         else:
-            # GPT-based theme detection
+            # GPT-based auto
             snippet_list = []
             for name, txt_data in paper_map.items():
                 snippet = txt_data[:700].replace("\n"," ")
@@ -784,7 +784,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 )
                 scope_decision = scope_resp.choices[0].message.content
             except Exception as e1:
-                st.error(f"GPT-Fehler bei Compare-Mode: {e1}")
+                st.error(f"GPT-Fehler (Auto-Theme): {e1}")
                 return ([], "")
 
             st.markdown("#### GPT-Ausgabe (Outlier-Check / GPT):")
@@ -817,23 +817,22 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
 
             return (relevant_papers_local, main_theme)
 
-
-    # -------------------------------------
-    # Haupt-Analyse-Bereich
-    # -------------------------------------
+    # -----------------------------
+    # Hauptanzeige
+    # -----------------------------
     if uploaded_files and api_key:
+        # -- Compare Mode?
         if compare_mode:
-            st.write("### Vergleichsmodus: Outlier-Paper ausschließen")
+            st.write("### Vergleichsmodus (Outlier ausschließen)")
 
             if st.button("Vergleichs-Analyse starten"):
-                # 1) ALLE Papertexte sammeln
                 paper_map = {}
                 for fpdf in uploaded_files:
                     txt = analyzer.extract_text_from_pdf(fpdf)
                     if txt.strip():
                         paper_map[fpdf.name] = txt
                     else:
-                        st.warning(f"Kein Text aus {fpdf.name} extrahierbar (übersprungen).")
+                        st.warning(f"Kein Text aus {fpdf.name} extrahierbar.")
 
                 if not paper_map:
                     st.error("Keine verwertbaren Paper.")
@@ -844,17 +843,15 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 st.session_state["theme_compare"] = discovered_theme
 
                 if not relevant_papers:
-                    st.error("Keine relevanten Paper nach Outlier-Check übrig.")
+                    st.error("Alle Paper sind Outlier oder kein Thema.")
                     return
 
-                # 2) Kombiniere relevanten Papertext
                 combined_text = ""
                 for rp in relevant_papers:
                     combined_text += f"\n=== {rp} ===\n{paper_map[rp]}"
 
-                # 3) Führe gewählte Analyse durch
                 if action == "Tabellen & Grafiken":
-                    final_result = "Tabellen & Grafiken nicht im kombinierten Compare-Mode implementiert."
+                    final_result = "(Tabellen & Grafiken im Compare-Mode: nicht implementiert.)"
                 else:
                     if action == "Zusammenfassung":
                         final_result = analyzer.summarize(combined_text, api_key)
@@ -864,11 +861,11 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         final_result = analyzer.identify_methods(combined_text, api_key)
                     elif action == "Relevanz-Bewertung":
                         if not topic:
-                            st.error("Bitte Thema angeben!")
+                            st.error("Bitte Thema eingeben für Relevanz.")
                             return
                         final_result = analyzer.evaluate_relevance(combined_text, topic, api_key)
                     else:
-                        final_result = "(Keine Analyseart gewählt.)"
+                        final_result = "(Keine Analyse gewählt.)"
 
                 if output_lang != "Deutsch":
                     lang_map = {
@@ -879,17 +876,17 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     target_lang = lang_map.get(output_lang, "English")
                     final_result = translate_text_openai(final_result, "German", target_lang, api_key)
 
-                st.subheader("Ergebnis des Compare-Mode:")
+                st.subheader("Ergebnis - Compare Mode")
                 st.write(final_result)
 
         else:
-            # Einzel- oder Multi-Modus ohne Compare
-            st.write("### Einzel- oder Multi-Modus (kein Outlier-Check)")
+            # Kein Compare => simpler Modus
+            st.write("### Einzel- oder Multi-Modus (kein Outlier)")
 
             pdf_options = ["(Alle)"] + [f"{i+1}) {f.name}" for i, f in enumerate(uploaded_files)]
-            selected_pdf = st.selectbox("Wähle eine PDF für Einzel-Analyse oder '(Alle)' für alle", pdf_options)
+            selected_pdf = st.selectbox("Wähle eine PDF oder '(Alle)'", pdf_options)
 
-            if st.button("Analyse starten (Einzel-Modus)"):
+            if st.button("Analyse starten (Einzel)"):
                 if selected_pdf == "(Alle)":
                     files_to_process = uploaded_files
                 else:
@@ -898,151 +895,139 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
 
                 final_result_text = []
                 for fpdf in files_to_process:
-                    text_data = ""
                     if action != "Tabellen & Grafiken":
-                        with st.spinner(f"Extrahiere Text aus {fpdf.name}..."):
-                            text_data = analyzer.extract_text_from_pdf(fpdf)
-                            if not text_data.strip():
-                                st.error(f"Kein Text aus {fpdf.name} extrahierbar.")
-                                continue
-                            st.success(f"Text aus {fpdf.name} extrahiert!")
-                            st.session_state["paper_text"] = text_data[:15000]
+                        text_data = analyzer.extract_text_from_pdf(fpdf)
+                        if not text_data.strip():
+                            st.warning(f"Kein Text in {fpdf.name}.")
+                            continue
+                        st.session_state["paper_text"] = text_data[:15000]
+                    else:
+                        text_data = ""
 
                     result = ""
                     if action == "Zusammenfassung":
-                        with st.spinner(f"Erstelle Zusammenfassung für {fpdf.name}..."):
-                            result = analyzer.summarize(text_data, api_key)
-
+                        result = analyzer.summarize(text_data, api_key)
                     elif action == "Wichtigste Erkenntnisse":
-                        with st.spinner(f"Extrahiere Erkenntnisse aus {fpdf.name}..."):
-                            result = analyzer.extract_key_findings(text_data, api_key)
-
+                        result = analyzer.extract_key_findings(text_data, api_key)
                     elif action == "Methoden & Techniken":
-                        with st.spinner(f"Identifiziere Methoden aus {fpdf.name}..."):
-                            result = analyzer.identify_methods(text_data, api_key)
-
+                        result = analyzer.identify_methods(text_data, api_key)
                     elif action == "Relevanz-Bewertung":
                         if not topic:
-                            st.error("Bitte Thema angeben!")
+                            st.error("Bitte Thema eingeben für Relevanz!")
                             return
-                        with st.spinner(f"Bewerte Relevanz von {fpdf.name}..."):
-                            result = analyzer.evaluate_relevance(text_data, topic, api_key)
-
+                        result = analyzer.evaluate_relevance(text_data, topic, api_key)
                     elif action == "Tabellen & Grafiken":
-                        with st.spinner(f"Suche Tabellen/Grafiken in {fpdf.name}..."):
-                            all_tables_text = []
-                            try:
-                                with pdfplumber.open(fpdf) as pdf_:
-                                    for page_number, page in enumerate(pdf_.pages, start=1):
-                                        st.markdown(f"### Seite {page_number} in {fpdf.name}")
-                                        tables = page.extract_tables()
-                                        if tables:
-                                            st.markdown("**Tabellen auf dieser Seite**")
-                                            for table_idx, table_data in enumerate(tables, start=1):
-                                                if not table_data:
-                                                    st.write("Leere Tabelle erkannt.")
-                                                    continue
-                                                first_row = table_data[0]
-                                                data_rows = table_data[1:]
-                                                if not data_rows:
-                                                    st.write("Nur Header vorhanden.")
-                                                    data_rows = table_data
-                                                    first_row = [f"Col_{i}" for i in range(len(data_rows[0]))]
+                        # Tabellensuche
+                        all_tables_text = []
+                        try:
+                            with pdfplumber.open(fpdf) as pdf_:
+                                for page_number, page in enumerate(pdf_.pages, start=1):
+                                    st.markdown(f"### Seite {page_number} in {fpdf.name}")
+                                    tables = page.extract_tables()
+                                    if tables:
+                                        st.markdown("**Tabellen**")
+                                        for table_idx, table_data in enumerate(tables, start=1):
+                                            if not table_data:
+                                                st.write("Leere Tabelle.")
+                                                continue
+                                            first_row = table_data[0]
+                                            data_rows = table_data[1:]
+                                            if not data_rows:
+                                                data_rows = table_data
+                                                first_row = [f"Col_{i}" for i in range(len(data_rows[0]))]
 
-                                                new_header = []
-                                                used_cols = {}
-                                                for col in first_row:
-                                                    col_str = col if col else "N/A"
-                                                    if col_str not in used_cols:
-                                                        used_cols[col_str] = 1
-                                                        new_header.append(col_str)
-                                                    else:
-                                                        used_cols[col_str] += 1
-                                                        new_header.append(f"{col_str}.{used_cols[col_str]}")
-
-                                                if any(len(row) != len(new_header) for row in data_rows):
-                                                    st.write("Warnung: Inkonsistente Spaltenanzahl.")
-                                                    df = pd.DataFrame(table_data)
+                                            new_header = []
+                                            used_cols = {}
+                                            for col in first_row:
+                                                col_str = col if col else "N/A"
+                                                if col_str not in used_cols:
+                                                    used_cols[col_str] = 1
+                                                    new_header.append(col_str)
                                                 else:
-                                                    df = pd.DataFrame(data_rows, columns=new_header)
+                                                    used_cols[col_str] += 1
+                                                    new_header.append(f"{col_str}.{used_cols[col_str]}")
 
-                                                st.write(f"**Tabelle {table_idx}** in {fpdf.name}:")
-                                                st.dataframe(df)
-                                                table_str = df.to_csv(index=False)
-                                                all_tables_text.append(
-                                                    f"Seite {page_number} - Tabelle {table_idx}\n{table_str}\n"
-                                                )
-                                        else:
-                                            st.write("Keine Tabellen hier.")
+                                            if any(len(row) != len(new_header) for row in data_rows):
+                                                st.write("Warnung: Inkonsistente Spalten.")
+                                                df = pd.DataFrame(table_data)
+                                            else:
+                                                df = pd.DataFrame(data_rows, columns=new_header)
 
-                                        images = page.images
-                                        if images:
-                                            st.markdown("**Bilder/Grafiken auf dieser Seite**")
-                                            for img_index, img_dict in enumerate(images, start=1):
-                                                xref = img_dict.get("xref")
-                                                if xref is not None:
-                                                    extracted_img = page.extract_image(xref)
-                                                    if extracted_img:
-                                                        image_data = extracted_img["image"]
-                                                        image = Image.open(io.BytesIO(image_data))
-                                                        st.write(f"**Bild {img_index}** in {fpdf.name}:")
-                                                        st.image(image, use_column_width=True)
-                                                    else:
-                                                        st.write(f"Bild {img_index} konnte nicht extrahiert werden.")
-                                        else:
-                                            st.write("Keine Bilder hier.")
-
-                                # Zusätzliche Suche "Table" im Volltext
-                                st.markdown(f"### Volltext-Suche 'Table' in {fpdf.name}")
-                                try:
-                                    text_all_pages = ""
-                                    with pdfplumber.open(fpdf) as pdf2:
-                                        for pg in pdf2.pages:
-                                            t_ = pg.extract_text() or ""
-                                            text_all_pages += t_ + "\n"
-                                    lines = text_all_pages.splitlines()
-                                    matches = [ln for ln in lines if "Table" in ln]
-                                    if matches:
-                                        st.write("Zeilen mit 'Table':")
-                                        for ln in matches:
-                                            st.write(f"- {ln}")
+                                            st.write(f"**Tabelle {table_idx}**:")
+                                            st.dataframe(df)
+                                            table_str = df.to_csv(index=False)
+                                            all_tables_text.append(
+                                                f"Seite {page_number} - Tabelle {table_idx}\n{table_str}\n"
+                                            )
                                     else:
-                                        st.write("Keine Erwähnung von 'Table'.")
-                                except Exception as e2:
-                                    st.warning(f"Fehler bei Volltext-Suche 'Table': {e2}")
+                                        st.write("Keine Tabellen hier.")
 
-                                if len(all_tables_text) > 0:
-                                    combined_tables_text = "\n".join(all_tables_text)
-                                    if len(combined_tables_text) > 14000:
-                                        combined_tables_text = combined_tables_text[:14000] + "..."
-                                    
-                                    gpt_prompt = (
-                                        "Bitte analysiere die folgenden Tabellen aus einem wissenschaftlichen PDF. "
-                                        "Fasse die wichtigsten Erkenntnisse zusammen und gib (wenn möglich) eine "
-                                        "kurze Interpretation in Bezug auf Lifestyle und Health Genetics:\n\n"
-                                        f"{combined_tables_text}"
+                                    # Bilder
+                                    images = page.images
+                                    if images:
+                                        st.markdown("**Bilder/Grafiken**")
+                                        for img_index, img_dict in enumerate(images, start=1):
+                                            xref = img_dict.get("xref")
+                                            if xref is not None:
+                                                extracted_img = page.extract_image(xref)
+                                                if extracted_img:
+                                                    image_data = extracted_img["image"]
+                                                    image = Image.open(io.BytesIO(image_data))
+                                                    st.write(f"**Bild {img_index}** (Seite {page_number}):")
+                                                    st.image(image, use_column_width=True)
+                                                else:
+                                                    st.write(f"Bild {img_index} konnte nicht extrahiert werden.")
+                                    else:
+                                        st.write("Keine Bilder hier.")
+
+                            # Zusätzliche Volltext-Suche
+                            st.markdown(f"### Volltext-Suche 'Table' in {fpdf.name}")
+                            text_all_pages = ""
+                            with pdfplumber.open(fpdf) as pdf2:
+                                for pg in pdf2.pages:
+                                    t_ = pg.extract_text() or ""
+                                    text_all_pages += t_ + "\n"
+                            lines = text_all_pages.splitlines()
+                            matches = [ln for ln in lines if "Table" in ln]
+                            if matches:
+                                st.write("Erwähnung 'Table':")
+                                for ln in matches:
+                                    st.write(f"- {ln}")
+                            else:
+                                st.write("Keine Erwähnung von 'Table' im Volltext.")
+
+                            if all_tables_text:
+                                combined_tables_text = "\n".join(all_tables_text)
+                                if len(combined_tables_text) > 14000:
+                                    combined_tables_text = combined_tables_text[:14000] + "..."
+                                gpt_prompt = (
+                                    "Bitte analysiere die folgenden Tabellen aus einem wissenschaftlichen PDF. "
+                                    "Fasse die wichtigsten Erkenntnisse zusammen und gib (wenn möglich) eine "
+                                    "kurze Interpretation in Bezug auf Lifestyle und Health Genetics:\n\n"
+                                    f"{combined_tables_text}"
+                                )
+                                try:
+                                    openai.api_key = api_key
+                                    gpt_resp = openai.chat.completions.create(
+                                        model=model,
+                                        messages=[
+                                            {"role": "system", "content": "Du bist ein Experte für PDF-Tabellenanalyse."},
+                                            {"role": "user", "content": gpt_prompt}
+                                        ],
+                                        temperature=0.3,
+                                        max_tokens=1000
                                     )
-                                    try:
-                                        openai.api_key = api_key
-                                        gpt_resp = openai.chat.completions.create(
-                                            model=model,
-                                            messages=[
-                                                {"role": "system", "content": "Du bist ein Experte für PDF-Tabellenanalyse."},
-                                                {"role": "user", "content": gpt_prompt}
-                                            ],
-                                            temperature=0.3,
-                                            max_tokens=1000
-                                        )
-                                        result = gpt_resp.choices[0].message.content
-                                    except Exception as e2:
-                                        st.error(f"Fehler bei GPT-Tabellenanalyse: {str(e2)}")
-                                        result = "(Fehler bei GPT-Auswertung)"
-                                else:
-                                    result = f"In {fpdf.name} keine Tabellen erkannt."
-                            except Exception as e_:
-                                st.error(f"Fehler in {fpdf.name}: {str(e_)}")
-                                result = f"(Fehler in {fpdf.name})"
+                                    result = gpt_resp.choices[0].message.content
+                                except Exception as e2:
+                                    st.error(f"Fehler bei GPT-Tabellenanalyse: {str(e2)}")
+                                    result = "(Fehler bei GPT-Auswertung)"
+                            else:
+                                result = "Keine Tabellen erkannt."
+                        except Exception as e_:
+                            st.error(f"Fehler in {fpdf.name}: {str(e_)}")
+                            result = f"(Fehler in {fpdf.name})"
 
+                    # Übersetzen
                     if action != "Tabellen & Grafiken" and result:
                         if output_lang != "Deutsch":
                             lang_map = {"Englisch": "English", "Portugiesisch": "Portuguese", "Serbisch": "Serbian"}
@@ -1062,32 +1047,30 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
             st.info("Bitte eine oder mehrere PDF-Dateien hochladen!")
 
     st.write("---")
-    st.write("## Alle Analysen & Excel-Ausgabe (Multi-PDF)")
+    st.write("## Alle Analysen & Excel-Ausgabe (Ein Sheet, Offsets)")
 
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
 
     if uploaded_files and api_key:
-        # Falls Compare-Mode => wir nutzen st.session_state["relevant_papers_compare"]
-        # Sonst => wir nehmen alle
-        if st.button("Alle Analysen durchführen & in Excel speichern (Multi)"):
-            with st.spinner("Analysiere alle hochgeladenen PDFs (für Excel)..."):
+        if st.button("Alle Analysen durchführen & in **EINEM** Excel-Sheet speichern"):
+            with st.spinner("Analysiere alle PDFs..."):
                 import openpyxl
                 import datetime
 
                 try:
                     wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
                 except FileNotFoundError:
-                    st.error("Vorlage 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
-                    st.stop()
+                    st.error("Vorlage 'vorlage_paperqa2.xlsx' nicht gefunden!")
+                    return
 
-                gen_sheets = {}
+                sheet = wb.active  # EIN Sheet, wir beschreiben es blockweise
+
                 analyzer = PaperAnalyzer(model=model)
 
-                # check outlier logic
+                # Falls Compare => nimm nur relevante
                 if compare_mode:
-                    # Falls wir relevant_papers_compare nicht haben, machen wir auto
                     if not st.session_state["relevant_papers_compare"]:
-                        # user hat den "Vergleichs-Analyse starten" Button nicht gedrückt => wir machen auto
+                        # auto generieren
                         paper_map_auto = {}
                         for fpdf in uploaded_files:
                             txt = analyzer.extract_text_from_pdf(fpdf)
@@ -1102,129 +1085,116 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
 
                     relevant_list_for_excel = st.session_state["relevant_papers_compare"] or []
                     if not relevant_list_for_excel:
-                        st.error("Keine relevanten Paper nach Outlier-Check für Excel.")
+                        st.error("Keine relevanten Paper nach Outlier-Check verfügbar.")
                         return
-                    selected_files_for_excel = [f for f in uploaded_files if f.name in relevant_list_for_excel]
+                    files_for_excel = [f for f in uploaded_files if f.name in relevant_list_for_excel]
                 else:
-                    # Kein Compare => nimm alle
-                    selected_files_for_excel = uploaded_files
+                    files_for_excel = uploaded_files
 
-                for fpdf in selected_files_for_excel:
-                    text = analyzer.extract_text_from_pdf(fpdf)
-                    if not text.strip():
-                        st.error(f"Kein Text aus {fpdf.name} extrahierbar (evtl. kein OCR). Überspringe...")
+                i_paper = 0
+
+                for fpdf in files_for_excel:
+                    i_paper += 1
+                    offset = (i_paper - 1) * 5
+
+                    text_data = analyzer.extract_text_from_pdf(fpdf)
+                    if not text_data.strip():
+                        st.warning(f"Kein Text in {fpdf.name}. Überspringe.")
                         continue
 
-                    # Standardanalysen
-                    summary_result = analyzer.summarize(text, api_key)
-                    key_findings_result = analyzer.extract_key_findings(text, api_key)
-                    # Relevanz erfordert topic
-                    if not topic:
-                        # optional => user may have left it blank
-                        relevance_result = "(No topic => no Relevanz-Bewertung)"
+                    # analyses
+                    summary_res = analyzer.summarize(text_data, api_key)
+                    keyfindings_res = analyzer.extract_key_findings(text_data, api_key)
+                    methods_res = analyzer.identify_methods(text_data, api_key)
+
+                    # Relevanz
+                    if topic.strip():
+                        rel_res = analyzer.evaluate_relevance(text_data, topic, api_key)
                     else:
-                        relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
-                    methods_result = analyzer.identify_methods(text, api_key)
+                        rel_res = "(No topic => no Relevanz)"
 
-                    # Gens und Allele
-                    pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
-                    match_text = re.search(pattern_obvious, text)
-                    gene_via_text = match_text.group(1) if match_text else None
+                    # parse
+                    ergebnisse, schlussfolgerungen = split_summary(summary_res)
+                    cohort_data = parse_cohort_info(summary_res)
+                    study_size = cohort_data.get("study_size","")
 
-                    if not gene_via_text:
-                        # Falls nicht gefunden, in vorlage_gene.xlsx gucken
-                        try:
-                            wb_gene = openpyxl.load_workbook("vorlage_gene.xlsx")
-                        except FileNotFoundError:
-                            st.error("Die Datei 'vorlage_gene.xlsx' wurde nicht gefunden!")
-                            st.stop()
-                        ws_gene = wb_gene.active
-                        gene_names_from_excel = []
-                        for row in ws_gene.iter_rows(min_row=3, min_col=3, max_col=3, values_only=True):
-                            cell_value = row[0]
-                            if cell_value and isinstance(cell_value, str):
-                                gene_names_from_excel.append(cell_value.strip())
-                        for g in gene_names_from_excel:
-                            pat = re.compile(r"\b" + re.escape(g) + r"\b", re.IGNORECASE)
-                            if re.search(pat, text):
-                                gene_via_text = g
-                                break
+                    # gene
+                    pat_gene = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
+                    m_g = pat_gene.search(text_data)
+                    gene_via_text = m_g.group(1) if m_g else None
 
-                    found_gene = gene_via_text
-                    rs_pat = r"(rs\d+)"
-                    found_rs_match = re.search(rs_pat, text)
-                    rs_num = found_rs_match.group(1) if found_rs_match else None
+                    # rs
+                    pat_rs = r"(rs\d+)"
+                    m_rs = re.search(pat_rs, text_data)
+                    rs_num = m_rs.group(1) if m_rs else None
 
+                    # genotype
                     genotype_regex = r"\b([ACGT]{2,3})\b"
-                    lines = text.split("\n")
-                    found_pairs = []
+                    lines = text_data.split("\n")
+                    found_genos = []
                     for line in lines:
                         matches = re.findall(genotype_regex, line)
                         if matches:
-                            for m in matches:
-                                found_pairs.append((m, line.strip()))
+                            found_genos.extend(matches)
+                    unique_genos = list(dict.fromkeys(found_genos))
 
-                    unique_geno_pairs = []
-                    for gp in found_pairs:
-                        if gp not in unique_geno_pairs:
-                            unique_geno_pairs.append(gp)
-
+                    # freq
                     aff = AlleleFrequencyFinder()
                     freq_info = "Keine rsID vorhanden"
                     if rs_num:
                         data = aff.get_allele_frequencies(rs_num)
-                        if not data:
-                            data = aff.try_alternative_source(rs_num)
                         if data:
                             freq_info = aff.build_freq_info_text(data)
 
-                    sheet_name = found_gene if found_gene else "GEN_UNKNOWN"
-                    sheet_name = sheet_name[:27]
+                    # Excel-Felder => EIN Sheet, block-Offset
+                    # D(5+offset) => gene
+                    # D(6+offset) => rs
+                    # D(10+offset)/E(10+offset), D(11+offset)/E(11+offset), D(12+offset)/E(12+offset)
+                    # => genotype, freq
+                    # C(20+offset) => Date => kein Datum
+                    # D(20+offset) => study
+                    # E(20+offset) => keyFindings
+                    # G(21+offset) => ergebnisse
+                    # G(22+offset) => schlussfolgerungen
+                    # H(22+offset) => Relevanz (manuell + GPT)
+                    row_gene = 5 + offset
+                    row_rs = 6 + offset
 
-                    if sheet_name not in gen_sheets:
-                        try:
-                            new_sheet = wb.create_sheet(sheet_name)
-                            new_sheet["A1"] = "Dateiname"
-                            new_sheet["B1"] = "Gene"
-                            new_sheet["C1"] = "rsID"
-                            new_sheet["D1"] = "Genotype Pairs"
-                            new_sheet["E1"] = "Freq Info"
-                            new_sheet["F1"] = "Summary"
-                            new_sheet["G1"] = "Key Findings"
-                            new_sheet["H1"] = "Methods"
-                            new_sheet["I1"] = "Relevance"
-                            new_sheet["J1"] = "Timestamp"
-                            gen_sheets[sheet_name] = new_sheet
-                        except:
-                            gen_sheets[sheet_name] = wb[sheet_name]
-                    else:
-                        new_sheet = gen_sheets[sheet_name]
+                    sheet[f"D{row_gene}"] = gene_via_text if gene_via_text else "(kein Gene)"
+                    sheet[f"D{row_rs}"] = rs_num if rs_num else "(kein RS)"
 
-                    next_row = new_sheet.max_row + 1
+                    # genotypes => 3Zeilen => D(10..12 + offset), E(10..12 + offset)
+                    for g_i in range(3):
+                        row_g = 10 + g_i + offset
+                        if g_i < len(unique_genos):
+                            sheet[f"D{row_g}"] = unique_genos[g_i]
+                            sheet[f"E{row_g}"] = freq_info
+                        else:
+                            sheet[f"D{row_g}"] = "(n/a)"
+                            sheet[f"E{row_g}"] = "(n/a)"
 
-                    new_sheet.cell(row=next_row, column=1).value = fpdf.name
-                    new_sheet.cell(row=next_row, column=2).value = found_gene
-                    new_sheet.cell(row=next_row, column=3).value = rs_num
-                    all_gps = ",".join([x[0] for x in unique_geno_pairs])
-                    new_sheet.cell(row=next_row, column=4).value = all_gps
-                    new_sheet.cell(row=next_row, column=5).value = freq_info
-                    new_sheet.cell(row=next_row, column=6).value = summary_result
-                    new_sheet.cell(row=next_row, column=7).value = key_findings_result
-                    new_sheet.cell(row=next_row, column=8).value = methods_result
-                    combined_relevance = f"{relevance_result}\n(Manuell:{user_relevance_score})"
-                    new_sheet.cell(row=next_row, column=9).value = combined_relevance
-                    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    new_sheet.cell(row=next_row, column=10).value = now_str
+                    date_row = 20 + offset
+                    sheet[f"C{date_row}"] = "(kein Datum)"  # kein Datum vorhanden
+                    sheet[f"D{date_row}"] = study_size if study_size else "(keine Size)"
+                    sheet[f"E{date_row}"] = keyfindings_res
 
-            output_buffer = io.BytesIO()
-            wb.save(output_buffer)
-            output_buffer.seek(0)
+                    # G21/G22 => offset => G(21+offset), G(22+offset)
+                    sheet[f"G{21 + offset}"] = ergebnisse
+                    sheet[f"G{22 + offset}"] = schlussfolgerungen
+                    # manuelle relevanz = user_relevance_score + GPT rel
+                    comb_relevance = f"{rel_res}\n(Manuell:{user_relevance_score})"
+                    sheet[f"H{22 + offset}"] = comb_relevance
 
-            st.success("Alle PDFs verarbeitet – Excel-Datei mit mehreren Sheets erstellt!")
+                # Speichern
+                out_buffer = io.BytesIO()
+                wb.save(out_buffer)
+                out_buffer.seek(0)
+
+            st.success("Excel in EINEM Sheet befüllt!")
             st.download_button(
-                label="Download Excel (Multi-Gene)",
-                data=output_buffer,
-                file_name="analysis_results_multi.xlsx",
+                label="Download Excel (One-Sheet)",
+                data=out_buffer,
+                file_name="analysis_results_onesheet.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
 
@@ -1246,7 +1216,7 @@ def sidebar_module_navigation():
     return pages.get(st.session_state["current_page"], page_home)
 
 def answer_chat(question: str) -> str:
-    """Einfaches Beispiel: Nutzt Paper-Text (falls vorhanden) aus st.session_state + GPT."""
+    """Einfacher Beispiel-Chat."""
     api_key = st.session_state.get("api_key", "")
     paper_text = st.session_state.get("paper_text", "")
     if not api_key:
@@ -1277,6 +1247,7 @@ def answer_chat(question: str) -> str:
         return f"OpenAI-Fehler: {e}"
 
 def main():
+    # CSS für Chat-Fenster
     st.markdown(
         """
         <style>
@@ -1285,8 +1256,8 @@ def main():
             padding: 0;
         }
         .scrollable-chat {
-            max-height: 400px; 
-            overflow-y: scroll; 
+            max-height: 400px;
+            overflow-y: scroll;
             border: 1px solid #CCC;
             padding: 8px;
             margin-top: 10px;
@@ -1349,6 +1320,7 @@ def main():
                 )
         st.markdown('</div>', unsafe_allow_html=True)
 
+        # Automatisches Scrollen
         st.markdown(
             """
             <script>
