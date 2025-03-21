@@ -621,8 +621,14 @@ def page_analyze_paper():
         index=0
     )
 
-    # NEU: Compare Mode
-    compare_mode = st.sidebar.checkbox("Alle Paper gemeinsam vergleichen? (mit Outlier-Check)")
+    # Compare Mode
+    compare_mode = st.sidebar.checkbox("Alle Paper gemeinsam vergleichen (Outlier ausschließen)?")
+
+    # NEU: Radio: Hauptthema => 'manuell' oder 'GPT'
+    theme_mode = st.sidebar.radio(
+        "Hauptthema bestimmen",
+        ["Manuell", "GPT"]
+    )
 
     action = st.sidebar.radio(
         "Analyseart",
@@ -636,6 +642,11 @@ def page_analyze_paper():
         index=0
     )
     
+    # Manuelles Thema, falls relevant
+    user_defined_theme = ""
+    if theme_mode == "Manuell":
+        user_defined_theme = st.sidebar.text_input("Manuelles Hauptthema (bei Compare-Mode)")
+
     topic = st.sidebar.text_input("Thema für Relevanz-Bewertung (falls relevant)")
     output_lang = st.sidebar.selectbox(
         "Ausgabesprache",
@@ -647,37 +658,42 @@ def page_analyze_paper():
     analyzer = PaperAnalyzer(model=model)
     api_key = st.session_state["api_key"]
 
-    # ---------------------------- NEW Compare Mode Logic ----------------------------
     if uploaded_files and api_key:
         if compare_mode:
-            st.write("### Vergleiche alle Paper gemeinsam (mit thematischer Outlier-Erkennung)")
+            st.write("### Vergleichsmodus: Outlier-Paper ausschließen")
 
             if st.button("Vergleichs-Analyse starten"):
-                # 1) ALLE Papertext-Auszüge sammeln
-                all_texts = []
+                # 1) ALLE Papertexte sammeln
                 paper_map = {}
                 for fpdf in uploaded_files:
-                    text_data = analyzer.extract_text_from_pdf(fpdf)
-                    if text_data.strip():
-                        paper_map[fpdf.name] = text_data
+                    txt = analyzer.extract_text_from_pdf(fpdf)
+                    if txt.strip():
+                        paper_map[fpdf.name] = txt
                     else:
-                        st.warning(f"Kein Text aus {fpdf.name} extrahierbar.")
+                        st.warning(f"Kein Text aus {fpdf.name} extrahierbar (übersprungen).")
+
                 if not paper_map:
-                    st.error("Keine Paper extrahierbar – Abbruch.")
+                    st.error("Keine verwertbaren Paper.")
                     return
 
-                # 2) JSON-kompatible Prompt: GPT soll uns JSON liefern
-                # wir kürzen die Texte auf ~700 Zeichen für Übersicht
-                # Paper-Name = key
-                snippet_list = []
-                for name, txt in paper_map.items():
-                    snippet = txt[:700].replace("\n"," ")
-                    # Format: { "filename": "foo.pdf", "snippet": "..." }
-                    snippet_list.append(f'{{"filename": "{name}", "snippet": "{snippet}"}}')
+                if theme_mode == "Manuell":
+                    # => user_defined_theme: wir ignorieren Outlier Logic,
+                    #   da GPT das Thema NICHT bestimmt und NICHT outlier-checkt
+                    # => wir nehmen einfach ALLE Paper als relevant
+                    st.write(f"Hauptthema (manuell): {user_defined_theme}")
+                    relevant_papers = list(paper_map.keys())
+                    st.info("Keine Outlier ausgeschlossen, da 'Manuell' gewählt.")
+                else:
+                    # => GPT-basierter Outlier-Check
+                    #   JSON snippet etc.
+                    snippet_list = []
+                    for name, txt in paper_map.items():
+                        snippet = txt[:700].replace("\n"," ")
+                        snippet_list.append(f'{{"filename": "{name}", "snippet": "{snippet}"}}')
+                    big_snippet = ",\n".join(snippet_list)
 
-                big_snippet = ",\n".join(snippet_list)
-                big_input = f"""
-Hier sind mehrere Paper in JSON-Form. Bitte ermittele das gemeinsame Hauptthema. 
+                    big_input = f"""
+Hier sind mehrere Paper in JSON-Form. Bitte ermittele das gemeinsame Hauptthema.
 Dann antworte mir in folgendem JSON-Format: 
 {{
   "main_theme": "Kurzbeschreibung des gemeinsamen Themas",
@@ -690,10 +706,8 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
 
 [{big_snippet}]
 """
-                # GPT-Aufruf
-                with st.spinner("Prüfe Paper-Outlier..."):
-                    openai.api_key = api_key
                     try:
+                        openai.api_key = api_key
                         scope_resp = openai.chat.completions.create(
                             model=model,
                             messages=[
@@ -701,66 +715,54 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                                 {"role": "user", "content": big_input}
                             ],
                             temperature=0.0,
-                            max_tokens=1500
+                            max_tokens=1800
                         )
                         scope_decision = scope_resp.choices[0].message.content
-                    except Exception as ee:
-                        st.error(f"Fehler bei Compare-Mode: {ee}")
+                    except Exception as e1:
+                        st.error(f"GPT-Fehler bei Compare-Mode: {e1}")
                         return
 
-                st.markdown("#### GPT-Ausgabe (JSON):")
-                st.code(scope_decision, language="json")
+                    st.markdown("#### GPT-Ausgabe (JSON):")
+                    st.code(scope_decision, language="json")
 
-                # 3) JSON parse
-                try:
-                    # Wir suchen nach dem JSON-Block
-                    # Falls GPT Zusätze liefert, wir extrahieren so gut wie möglich
+                    # JSON parse
                     json_str = scope_decision.strip()
-                    # naive parse
-                    # Falls GPT "```json" ... "```" generiert hat, entfernen wir
                     if json_str.startswith("```"):
                         json_str = re.sub(r"```[\w]*\n?", "", json_str)
                         json_str = re.sub(r"\n?```", "", json_str)
+                    try:
+                        data_parsed = json.loads(json_str)
+                        main_theme = data_parsed.get("main_theme", "No theme extracted.")
+                        papers_info = data_parsed.get("papers", [])
+                    except Exception as parse_e:
+                        st.error(f"Fehler beim JSON-Parsing: {parse_e}")
+                        return
 
-                    data_parsed = json.loads(json_str)
-                    main_theme = data_parsed.get("main_theme", "No theme extracted.")
-                    papers_info = data_parsed.get("papers", [])
-                except Exception as parse_e:
-                    st.error(f"Fehler beim JSON-Parsing: {parse_e}")
-                    return
+                    st.write(f"**Hauptthema (GPT)**: {main_theme}")
+                    relevant_papers = []
+                    st.write("**Paper-Einstufung**:")
+                    for p in papers_info:
+                        fname = p.get("filename","?")
+                        rel = p.get("relevant", False)
+                        reason = p.get("reason","(none)")
+                        if rel:
+                            relevant_papers.append(fname)
+                            st.success(f"{fname} => relevant. Begründung: {reason}")
+                        else:
+                            st.warning(f"{fname} => NICHT relevant. Begründung: {reason}")
 
-                st.write(f"**Hauptthema (laut GPT)**: {main_theme}")
+                    if not relevant_papers:
+                        st.error("Keine relevanten Paper übrig.")
+                        return
 
-                # "papers": [ { "filename":"...", "relevant":bool, "reason":"..."}, ...]
-                relevant_papers = []
-                st.write("**Paper-Einstufung**:")
-                for p in papers_info:
-                    fname = p.get("filename","?")
-                    rel = p.get("relevant", False)
-                    reason = p.get("reason","(keine Begründung)")
-                    if rel:
-                        relevant_papers.append(fname)
-                        st.success(f"{fname} => relevant. Begründung: {reason}")
-                    else:
-                        st.warning(f"{fname} => nicht relevant. Begründung: {reason}")
-
-                # Falls gar keine Paper übrig
-                if not relevant_papers:
-                    st.error("GPT hat alle Paper als 'nicht relevant' eingestuft.")
-                    return
-
-                # 4) Kombiniere alle relevanten Paper
+                # 2) Kombiniere relevanten Papertext
                 combined_text = ""
                 for rp in relevant_papers:
-                    txt = paper_map[rp]
-                    combined_text += f"\n=== {rp} ===\n{txt}\n"
+                    combined_text += f"\n=== {rp} ===\n{paper_map[rp]}"
 
-                # 5) Führe gewählte Analyse (action) auf combined_text durch
+                # 3) Führe gewählte Analyse durch
                 if action == "Tabellen & Grafiken":
-                    final_result = (
-                        "Im Vergleichsmodus sind Tabellen-Analysen nicht implementiert. "
-                        "Bitte Einzelmodus nutzen."
-                    )
+                    final_result = "Tabellen & Grafiken nicht im kombinierten Compare-Mode implementiert."
                 else:
                     if action == "Zusammenfassung":
                         final_result = analyzer.summarize(combined_text, api_key)
@@ -774,9 +776,8 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                             return
                         final_result = analyzer.evaluate_relevance(combined_text, topic, api_key)
                     else:
-                        final_result = "Keine Analyseart gewählt."
+                        final_result = "(Keine Analyseart gewählt.)"
 
-                # Optional: Übersetzen
                 if output_lang != "Deutsch":
                     lang_map = {
                         "Englisch": "English",
@@ -786,15 +787,17 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     target_lang = lang_map.get(output_lang, "English")
                     final_result = translate_text_openai(final_result, "German", target_lang, api_key)
 
-                st.subheader("Ergebnis der gemeinsamen Analyse (Compare Mode):")
+                st.subheader("Ergebnis des Compare-Mode:")
                 st.write(final_result)
 
         else:
-            # Normaler (Einzel-)Modus wie gehabt
+            # Einzel-Modus:
+            st.write("### Einzel- oder Multi-Modus (kein Outlier-Check)")
+
             pdf_options = ["(Alle)"] + [f"{i+1}) {f.name}" for i, f in enumerate(uploaded_files)]
             selected_pdf = st.selectbox("Wähle eine PDF für Einzel-Analyse oder '(Alle)' für alle", pdf_options)
 
-            if st.button("Analyse starten"):
+            if st.button("Analyse starten (Einzel-Modus)"):
                 if selected_pdf == "(Alle)":
                     files_to_process = uploaded_files
                 else:
@@ -802,7 +805,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     files_to_process = [uploaded_files[idx]]
 
                 final_result_text = []
-                
                 for fpdf in files_to_process:
                     text_data = ""
                     if action != "Tabellen & Grafiken":
@@ -829,8 +831,8 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
 
                     elif action == "Relevanz-Bewertung":
                         if not topic:
-                            st.error("Bitte Thema angeben für die Relevanz-Bewertung!")
-                            st.stop()
+                            st.error("Bitte Thema angeben!")
+                            return
                         with st.spinner(f"Bewerte Relevanz von {fpdf.name}..."):
                             result = analyzer.evaluate_relevance(text_data, topic, api_key)
 
@@ -898,7 +900,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                                         else:
                                             st.write("Keine Bilder hier.")
 
-                                # Suche im Volltext "Table"
+                                # Zusätzliche Suche "Table" im Volltext
                                 st.markdown(f"### Volltext-Suche 'Table' in {fpdf.name}")
                                 try:
                                     text_all_pages = ""
@@ -929,6 +931,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                                         f"{combined_tables_text}"
                                     )
                                     try:
+                                        openai.api_key = api_key
                                         gpt_resp = openai.chat.completions.create(
                                             model=model,
                                             messages=[
@@ -966,7 +969,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
         elif not uploaded_files:
             st.info("Bitte eine oder mehrere PDF-Dateien hochladen!")
 
-    # ----------------------------------------------------------------------------
     st.write("---")
     st.write("## Alle Analysen & Excel-Ausgabe (Multi-PDF)")
 
