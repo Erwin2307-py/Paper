@@ -7,19 +7,69 @@ import re
 import datetime
 import sys
 import concurrent.futures
+import os
+import PyPDF2
+import openai
+import time
+import json
+import pdfplumber
+import io
+
+from typing import Dict, Any, Optional
+from dotenv import load_dotenv
+from PIL import Image
+from scholarly import scholarly
 
 from modules.online_api_filter import module_online_api_filter
 
 # Neuer Import für die Übersetzung mit google_trans_new
 from google_trans_new import google_translator
 
-# Hilfsfunktion zum Entfernen von HTML-Tags (außer <br>)
+# ------------------------------------------------------------------
+# Umgebungsvariablen laden (für OPENAI_API_KEY, falls vorhanden)
+# ------------------------------------------------------------------
+load_dotenv()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+# ------------------------------------------------------------------
+# Streamlit-Konfiguration
+# ------------------------------------------------------------------
+st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
+
+# ------------------------------------------------------------------
+# Login-Funktionalität
+# ------------------------------------------------------------------
+def login():
+    st.title("Login")
+    user_input = st.text_input("Username")
+    pass_input = st.text_input("Password", type="password")
+    
+    if st.button("Login"):
+        if (
+            user_input == st.secrets["login"]["username"]
+            and pass_input == st.secrets["login"]["password"]
+        ):
+            st.session_state["logged_in"] = True
+        else:
+            st.error("Login failed. Please check your credentials!")
+
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
+
+if not st.session_state["logged_in"]:
+    login()
+    st.stop()
+
+# ------------------------------------------------------------------
+# 1) Gemeinsame Funktionen & Klassen
+# ------------------------------------------------------------------
+
 def clean_html_except_br(text):
     cleaned_text = re.sub(r'</?(?!br\b)[^>]*>', '', text)
     return cleaned_text
 
-# Neue Funktion zur Übersetzung über OpenAI-Chatcompletions
 def translate_text_openai(text, source_language, target_language, api_key):
+    """Übersetzt Text über OpenAI-ChatCompletion (z.B. GPT-4)"""
     import openai
     openai.api_key = api_key
     prompt_system = (
@@ -31,7 +81,7 @@ def translate_text_openai(text, source_language, target_language, api_key):
     prompt_user = f"Translate the following text from {source_language} to {target_language}:\n'{text}'"
     try:
         response = openai.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o",  # Falls Ihr Account dieses Modell unterstützt
             messages=[
                 {"role": "system", "content": prompt_system},
                 {"role": "user", "content": prompt_user}
@@ -48,42 +98,6 @@ def translate_text_openai(text, source_language, target_language, api_key):
     except Exception as e:
         st.warning("Übersetzungsfehler: " + str(e))
         return text
-
-# -----------------------------------------
-# Login-Funktion mit [login]-Schlüssel
-# -----------------------------------------
-def login():
-    st.title("Login")
-    user_input = st.text_input("Username")
-    pass_input = st.text_input("Password", type="password")
-    
-    if st.button("Login"):
-        if (
-            user_input == st.secrets["login"]["username"]
-            and pass_input == st.secrets["login"]["password"]
-        ):
-            st.session_state["logged_in"] = True
-        else:
-            st.error("Login failed. Please check your credentials!")
-
-# Falls noch nicht im Session State: Standard auf False setzen
-if "logged_in" not in st.session_state:
-    st.session_state["logged_in"] = False
-
-# Prüfe den Login-Status. Wenn NICHT eingeloggt, zeige Login-Seite an, dann stop.
-if not st.session_state["logged_in"]:
-    login()
-    st.stop()
-
-# -----------------------------------------
-# Wenn wir hier ankommen, ist man eingeloggt
-# -----------------------------------------
-
-st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
-
-################################################################################
-# 1) Gemeinsame Funktionen & Klassen (unverändert)
-################################################################################
 
 class CoreAPI:
     def __init__(self, api_key):
@@ -140,10 +154,9 @@ def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
         st.error(f"CORE search error: {e}")
         return []
 
-################################################################################
-# PubMed Connection Check + (Basis) Search (unverändert)
-################################################################################
-
+# ------------------------------------------------------------------
+# 2) PubMed - Einfacher Check + Search
+# ------------------------------------------------------------------
 def check_pubmed_connection(timeout=10):
     test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": "test", "retmode": "json"}
@@ -210,10 +223,9 @@ def fetch_pubmed_abstract(pmid):
     except Exception as e:
         return f"(Error: {e})"
 
-################################################################################
-# Europe PMC Connection Check + (Basis) Search (unverändert)
-################################################################################
-
+# ------------------------------------------------------------------
+# 3) Europe PMC Check + Search
+# ------------------------------------------------------------------
 def check_europe_pmc_connection(timeout=10):
     test_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {"query": "test", "format": "json", "pageSize": 100}
@@ -258,10 +270,9 @@ def search_europe_pmc_simple(query):
         st.error(f"Europe PMC search error: {e}")
         return []
 
-################################################################################
-# OpenAlex API Communication (unverändert)
-################################################################################
-
+# ------------------------------------------------------------------
+# 4) OpenAlex API
+# ------------------------------------------------------------------
 BASE_URL = "https://api.openalex.org"
 
 def fetch_openalex_data(entity_type, entity_id=None, params=None):
@@ -283,12 +294,9 @@ def search_openalex_simple(query):
     search_params = {"search": query}
     return fetch_openalex_data("works", params=search_params)
 
-################################################################################
-# Google Scholar (Basis) Test (unverändert)
-################################################################################
-
-from scholarly import scholarly
-
+# ------------------------------------------------------------------
+# 5) Google Scholar (Test)
+# ------------------------------------------------------------------
 class GoogleScholarSearch:
     def __init__(self):
         self.all_results = []
@@ -317,10 +325,9 @@ class GoogleScholarSearch:
         except Exception as e:
             st.error(f"Fehler bei der Google Scholar-Suche: {e}")
 
-################################################################################
-# Semantic Scholar API Communication (unverändert)
-################################################################################
-
+# ------------------------------------------------------------------
+# 6) Semantic Scholar
+# ------------------------------------------------------------------
 def check_semantic_scholar_connection(timeout=10):
     try:
         url = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -366,15 +373,15 @@ class SemanticScholarSearch:
         except Exception as e:
             st.error(f"Semantic Scholar: {e}")
 
-################################################################################
-# 2) Neues Modul: "module_excel_online_search" (unverändert)
-################################################################################
-# [unverändert...]
+# ------------------------------------------------------------------
+# 7) Excel Online Search - Placeholder
+# ------------------------------------------------------------------
+# (Hier könnte Ihr Modul code stehen, falls benötigt)
+# ------------------------------------------------------------------
 
-################################################################################
-# 3) Restliche Module + Seiten (unverändert)
-################################################################################
-
+# ------------------------------------------------------------------
+# 8) Weitere Module + Seiten
+# ------------------------------------------------------------------
 def module_paperqa2():
     st.subheader("PaperQA2 Module")
     st.write("Dies ist das PaperQA2 Modul. Hier kannst du weitere Einstellungen und Funktionen für PaperQA2 implementieren.")
@@ -429,29 +436,25 @@ def page_online_api_filter():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-################################################################################
-# 4) PAPER ANALYZER + Load Env/OPENAI key
-################################################################################
-import os
-import PyPDF2
-import openai
-from dotenv import load_dotenv
-
-load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
+# ------------------------------------------------------------------
+# 9) PAPER ANALYZER + Klasse PaperAnalyzer
+# ------------------------------------------------------------------
 class PaperAnalyzer:
     def __init__(self, model="gpt-3.5-turbo"):
         self.model = model
     
     def extract_text_from_pdf(self, pdf_file):
+        """Extrahiert reinen Text via PyPDF2 (ggf. OCR nötig, falls PDF nicht durchsuchbar)."""
         reader = PyPDF2.PdfReader(pdf_file)
         text = ""
         for page in reader.pages:
-            text += page.extract_text() + "\n"
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text + "\n"
         return text
     
     def analyze_with_openai(self, text, prompt_template, api_key):
+        """Allgemeine Hilfsfunktion, um Text an OpenAI-ChatCompletion zu schicken."""
         if len(text) > 15000:
             text = text[:15000] + "..."
         prompt = prompt_template.format(text=text)
@@ -501,13 +504,9 @@ class PaperAnalyzer:
         )
         return self.analyze_with_openai(text, prompt, api_key)
 
-################################################################################
-# NEU: Die Klasse AlleleFrequencyFinder
-################################################################################
-import time
-import json
-from typing import Dict, Any, Optional
-
+# ------------------------------------------------------------------
+# 10) Neue Klasse AlleleFrequencyFinder
+# ------------------------------------------------------------------
 class AlleleFrequencyFinder:
     """Klasse zum Abrufen und Anzeigen von Allelfrequenzen aus verschiedenen Quellen."""
     def __init__(self):
@@ -568,11 +567,10 @@ class AlleleFrequencyFinder:
             out.append("Keine Populationsdaten gefunden.")
         return " | ".join(out)
 
-################################################################################
-# Hilfsfunktion: split_summary
-################################################################################
+# ------------------------------------------------------------------
+# 11) Hilfsfunktionen
+# ------------------------------------------------------------------
 def split_summary(summary_text):
-    import re
     m = re.search(r'Ergebnisse\s*:\s*(.*?)\s*Schlussfolgerungen\s*:\s*(.*)', summary_text, re.DOTALL | re.IGNORECASE)
     if m:
         ergebnisse = m.group(1).strip()
@@ -581,10 +579,6 @@ def split_summary(summary_text):
         ergebnisse = summary_text
         schlussfolgerungen = ""
     return ergebnisse, schlussfolgerungen
-
-################################################################################
-# NEU: parse_cohort_info - Beide Logiken
-################################################################################
 
 def parse_cohort_info(summary_text: str) -> dict:
     """
@@ -631,10 +625,9 @@ def parse_cohort_info(summary_text: str) -> dict:
 
     return info
 
-################################################################################
-# 5) PAGE "Analyze Paper"
-################################################################################
-
+# ------------------------------------------------------------------
+# 12) PAGE "Analyze Paper" (inkl. 5. Analyseart: Tabellen & Grafiken)
+# ------------------------------------------------------------------
 def page_analyze_paper():
     st.title("Analyze Paper - Integriert")
     
@@ -651,11 +644,19 @@ def page_analyze_paper():
         index=0
     )
     
+    # NEU: 5. Eintrag "Tabellen & Grafiken"
     action = st.sidebar.radio(
         "Analyseart",
-        ["Zusammenfassung", "Wichtigste Erkenntnisse", "Methoden & Techniken", "Relevanz-Bewertung"],
+        [
+            "Zusammenfassung", 
+            "Wichtigste Erkenntnisse", 
+            "Methoden & Techniken", 
+            "Relevanz-Bewertung",
+            "Tabellen & Grafiken"  # <-- NEU
+        ],
         index=0
     )
+    
     topic = st.sidebar.text_input("Thema für Relevanz-Bewertung (falls relevant)")
     output_lang = st.sidebar.selectbox(
         "Ausgabesprache",
@@ -667,48 +668,143 @@ def page_analyze_paper():
     analyzer = PaperAnalyzer(model=model)
     api_key = st.session_state["api_key"]
     
-    # Einzel-Analyse
+    # ---------- EINZEL-ANALYSE ----------
     if uploaded_file and api_key:
         if st.button("Analyse starten"):
-            with st.spinner("Extrahiere Text aus PDF..."):
-                text = analyzer.extract_text_from_pdf(uploaded_file)
-                if not text.strip():
-                    st.error("Kein Text extrahierbar (evtl. PDF ohne OCR).")
-                    st.stop()
-                st.success("Text wurde erfolgreich extrahiert!")
-                st.session_state["paper_text"] = text[:15000]
-    
-            with st.spinner(f"Führe {action}-Analyse durch..."):
-                if action == "Zusammenfassung":
-                    result = analyzer.summarize(text, api_key)
-                elif action == "Wichtigste Erkenntnisse":
-                    result = analyzer.extract_key_findings(text, api_key)
-                elif action == "Methoden & Techniken":
-                    result = analyzer.identify_methods(text, api_key)
-                elif action == "Relevanz-Bewertung":
-                    if not topic:
-                        st.error("Bitte Thema angeben für die Relevanz-Bewertung!")
+            # (A) Falls NICHT "Tabellen & Grafiken", extrahieren wir klassisch den Text
+            text = ""
+            if action != "Tabellen & Grafiken":
+                with st.spinner("Extrahiere Text aus PDF..."):
+                    text = analyzer.extract_text_from_pdf(uploaded_file)
+                    if not text.strip():
+                        st.error("Kein Text extrahierbar (evtl. PDF ohne OCR).")
                         st.stop()
+                    st.success("Text wurde erfolgreich extrahiert!")
+                    st.session_state["paper_text"] = text[:15000]
+
+            # (B) Abhängig vom gewählten Modus
+            if action == "Zusammenfassung":
+                with st.spinner("Erstelle Zusammenfassung..."):
+                    result = analyzer.summarize(text, api_key)
+
+            elif action == "Wichtigste Erkenntnisse":
+                with st.spinner("Extrahiere wichtigste Erkenntnisse..."):
+                    result = analyzer.extract_key_findings(text, api_key)
+
+            elif action == "Methoden & Techniken":
+                with st.spinner("Identifiziere Methoden & Techniken..."):
+                    result = analyzer.identify_methods(text, api_key)
+
+            elif action == "Relevanz-Bewertung":
+                if not topic:
+                    st.error("Bitte Thema angeben für die Relevanz-Bewertung!")
+                    st.stop()
+                with st.spinner("Bewerte Relevanz..."):
                     result = analyzer.evaluate_relevance(text, topic, api_key)
-    
-                if output_lang != "Deutsch":
+
+            # NEU: Tabellen & Grafiken
+            elif action == "Tabellen & Grafiken":
+                with st.spinner("Suche nach Tabellen und Grafiken..."):
+                    all_tables_text = []
+                    try:
+                        with pdfplumber.open(uploaded_file) as pdf:
+                            for page_number, page in enumerate(pdf.pages, start=1):
+                                st.markdown(f"### Seite {page_number}")
+                                
+                                # ----- Tabellen extrahieren -----
+                                tables = page.extract_tables()
+                                if tables:
+                                    st.markdown("**Tabellen auf dieser Seite**")
+                                    for table_idx, table in enumerate(tables, start=1):
+                                        df = pd.DataFrame(table[1:], columns=table[0])
+                                        st.write(f"**Tabelle {table_idx}**:")
+                                        st.dataframe(df)
+                                        # Für GPT: Wir verwandeln die Tabelle in reinen Text
+                                        table_str = df.to_csv(index=False)
+                                        # Wir speichern sie in "all_tables_text" ab
+                                        all_tables_text.append(f"Seite {page_number} - Tabelle {table_idx}\n{table_str}\n")
+                                else:
+                                    st.write("Keine Tabellen auf dieser Seite gefunden.")
+                                
+                                # ----- Bilder extrahieren -----
+                                images = page.images
+                                if images:
+                                    st.markdown("**Bilder/Grafiken auf dieser Seite**")
+                                    for img_index, img_dict in enumerate(images, start=1):
+                                        x_object = page._extract_xobject(img_dict)
+                                        # x_object["image"] enthält die eigentlichen Bytes
+                                        image = Image.open(io.BytesIO(x_object["image"]))
+                                        st.write(f"**Bild {img_index}**:")
+                                        st.image(image, use_column_width=True)
+                                else:
+                                    st.write("Keine Bilder auf dieser Seite gefunden.")
+                    
+                    except Exception as e:
+                        st.error(f"Fehler beim Auslesen von Tabellen/Bildern: {str(e)}")
+                        result = "(Keine Auswertung möglich)"
+                    else:
+                        # Wenn wir mindestens eine Tabelle haben, lassen wir GPT analysieren
+                        if len(all_tables_text) > 0:
+                            # Wir limitieren ggf. die Länge des Textes
+                            combined_tables_text = "\n".join(all_tables_text)
+                            if len(combined_tables_text) > 14000:
+                                combined_tables_text = combined_tables_text[:14000] + "..."
+                            
+                            # Kurze Auswertung
+                            gpt_prompt = (
+                                "Bitte analysiere die folgenden Tabellen aus einem wissenschaftlichen PDF. "
+                                "Fasse die wichtigsten Erkenntnisse zusammen und gib (wenn möglich) eine "
+                                "kurze Interpretation in Bezug auf Lifestyle und Health Genetics:\n\n"
+                                f"{combined_tables_text}"
+                            )
+                            with st.spinner("GPT analysiert Tabellen..."):
+                                openai.api_key = api_key
+                                try:
+                                    gpt_resp = openai.chat.completions.create(
+                                        model=model,
+                                        messages=[
+                                            {"role": "system", "content": "Du bist ein Experte für PDF-Tabellenanalyse."},
+                                            {"role": "user", "content": gpt_prompt}
+                                        ],
+                                        temperature=0.3,
+                                        max_tokens=1000
+                                    )
+                                    result = gpt_resp.choices[0].message.content
+                                except Exception as e2:
+                                    st.error(f"Fehler bei GPT-Auswertung der Tabellen: {str(e2)}")
+                                    result = "(Fehler bei GPT-Auswertung)"
+                        else:
+                            result = "Keine Tabellen gefunden, daher keine Auswertung."
+
+            # Ausgabe: Optionale Übersetzung
+            if action != "Tabellen & Grafiken":
+                # Bei den ersten 4 Analysearten haben wir 'result' direkt. 
+                # Bei "Tabellen & Grafiken" kommt result erst unten.
+                if output_lang != "Deutsch" and (action != "Tabellen & Grafiken"):
                     lang_map = {"Englisch": "English", "Portugiesisch": "Portuguese", "Serbisch": "Serbian"}
                     target_lang = lang_map.get(output_lang, "English")
                     result = translate_text_openai(result, "German", target_lang, api_key)
-    
-                st.subheader("Ergebnis der Analyse")
-                st.markdown(result)
+            
+            # Falls wir nach "Tabellen & Grafiken" das Ergebnis noch übersetzen wollen:
+            if action == "Tabellen & Grafiken" and result and output_lang != "Deutsch":
+                lang_map = {"Englisch": "English", "Portugiesisch": "Portuguese", "Serbisch": "Serbian"}
+                target_lang = lang_map.get(output_lang, "English")
+                result = translate_text_openai(result, "German", target_lang, api_key)
+
+            # Finale Ausgabe
+            st.subheader("Ergebnis der Analyse:")
+            st.markdown(result)
     else:
         if not api_key:
             st.warning("Bitte OpenAI API-Key eingeben!")
         elif not uploaded_file:
             st.info("Bitte eine PDF-Datei hochladen!")
     
+    # ----------- GESAMT-WORKFLOW + Excel-Ausgabe (optional) -----------
     st.write("---")
     st.write("## Alle Analysen & Excel-Ausgabe")
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
     
-    # Kompletter Workflow
     if uploaded_file and api_key:
         if st.button("Alle Analysen durchführen & in Excel speichern"):
             with st.spinner("Analysiere alles..."):
@@ -728,10 +824,9 @@ def page_analyze_paper():
                 final_relevance = f"{relevance_result}\n\n[Manuelle Bewertung: {user_relevance_score}]"
     
                 import openpyxl
-                import io
                 import datetime
     
-                # (2) Excel-Vorlage
+                # (2) Excel-Vorlage laden
                 try:
                     wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
                 except FileNotFoundError:
@@ -739,16 +834,15 @@ def page_analyze_paper():
                     st.stop()
                 ws = wb.active
     
-                # (3) Gene-Detection (optional)
-                gene_via_text = None
+                # (3) Gene-Detection
                 pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                 match_text = re.search(pattern_obvious, text)
-                if match_text:
-                    gene_via_text = match_text.group(1)
-    
+                gene_via_text = match_text.group(1) if match_text else None
+
                 if gene_via_text:
                     found_gene = gene_via_text
                 else:
+                    # Falls wir in vorlage_gene.xlsx nach möglichen Genen suchen wollen
                     try:
                         wb_gene = openpyxl.load_workbook("vorlage_gene.xlsx")
                     except FileNotFoundError:
@@ -769,7 +863,7 @@ def page_analyze_paper():
                             found_gene = g
                             break
     
-                # (4) Gene / rsID / ...
+                # (4) rsID / Allele Frequencies
                 if found_gene:
                     ws["D5"] = found_gene
     
@@ -833,9 +927,9 @@ def page_analyze_paper():
                 origin = cohort_data.get("origin", "")
                 combined_str = f"Study Size: {study_size} | Ethnicity: {origin}"
     
-                # Übersetzen (falls es noch Deutsch drin wäre)
-                # (Ansonsten ist das schon ziemlich englisch. Aber wir belassen hier die Logik.)
-                if output_lang != "Deutsch":
+                # Übersetzen (falls nötig)
+                if combined_str.strip() and (not re.search(r"[a-zA-Z]", combined_str) or "Patienten" in combined_str):
+                    # Nur wenn da noch Deutsch drin sein könnte
                     combined_str = translate_text_openai(combined_str, "German", "English", api_key)
                 
                 ws["D20"] = combined_str  # D20 => study size & origin in English
@@ -845,22 +939,21 @@ def page_analyze_paper():
                 ws["E20"] = key_findings_en
     
                 # (7) Excel speichern
-                output = io.BytesIO()
-                wb.save(output)
-                output.seek(0)
+                output_buffer = io.BytesIO()
+                wb.save(output_buffer)
+                output_buffer.seek(0)
     
             st.success("Alle Analysen abgeschlossen – Excel-Datei erstellt und Felder befüllt!")
             st.download_button(
                 label="Download Excel",
-                data=output,
+                data=output_buffer,
                 file_name="analysis_results.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
 
-################################################################################
-# 6) Sidebar Module Navigation & Chatbot in rechter Sidebar
-################################################################################
-
+# ------------------------------------------------------------------
+# 13) Sidebar & Chatbot
+# ------------------------------------------------------------------
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
     pages = {
@@ -872,8 +965,10 @@ def sidebar_module_navigation():
     for label, page in pages.items():
         if st.sidebar.button(label, key=label):
             st.session_state["current_page"] = label
+
     if "current_page" not in st.session_state:
         st.session_state["current_page"] = "Home"
+
     return pages.get(st.session_state["current_page"], page_home)
 
 def answer_chat(question: str) -> str:
@@ -882,6 +977,7 @@ def answer_chat(question: str) -> str:
     paper_text = st.session_state.get("paper_text", "")
     if not api_key:
         return f"(Kein API-Key) Echo: {question}"
+    
     if not paper_text.strip():
         sys_msg = "Du bist ein hilfreicher Assistent für allgemeine Fragen."
     else:
@@ -890,7 +986,7 @@ def answer_chat(question: str) -> str:
             + paper_text[:12000] + "\n\n"
             "Bitte nutze es, um Fragen möglichst fachkundig zu beantworten."
         )
-    import openai
+    
     openai.api_key = api_key
     try:
         response = openai.chat.completions.create(
@@ -906,6 +1002,9 @@ def answer_chat(question: str) -> str:
     except Exception as e:
         return f"OpenAI-Fehler: {e}"
 
+# ------------------------------------------------------------------
+# 14) Hauptfunktion (Startpunkt)
+# ------------------------------------------------------------------
 def main():
     # CSS-Anpassungen für das scrollbare Chat-Fenster
     st.markdown(
@@ -1017,5 +1116,8 @@ def main():
             unsafe_allow_html=True
         )
 
+# ------------------------------------------------------------------
+# Skriptstart
+# ------------------------------------------------------------------
 if __name__ == '__main__':
     main()
