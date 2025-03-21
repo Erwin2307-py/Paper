@@ -605,6 +605,7 @@ def parse_cohort_info(summary_text: str) -> dict:
 
     return info
 
+
 def page_analyze_paper():
     st.title("Analyze Paper - Integriert")
     
@@ -676,11 +677,97 @@ def page_analyze_paper():
                     st.error("Keine verwertbaren Paper.")
                     return
 
+                # ------------------------------------------------------------------
+                # Wenn manuell: wir nutzen das vom User eingegebene Thema,
+                # aber wir lassen GPT trotzdem checken, ob Paper relevant sind
+                # oder Outlier => "Has the snippet relation to user_defined_theme?"
+                # ------------------------------------------------------------------
                 if theme_mode == "Manuell":
-                    st.write(f"Hauptthema (manuell): {user_defined_theme}")
-                    relevant_papers = list(paper_map.keys())
-                    st.info("Keine Outlier ausgeschlossen, da 'Manuell' gewählt.")
+                    main_theme = user_defined_theme.strip()
+                    if not main_theme:
+                        st.error("Bitte ein manuelles Hauptthema eingeben!")
+                        return
+
+                    # GPT-Logik: Wir geben GPT den user-defined theme und snippet
+                    snippet_list = []
+                    for name, txt_data in paper_map.items():
+                        snippet = txt_data[:700].replace("\n"," ")
+                        snippet_list.append(f'{{"filename": "{name}", "snippet": "{snippet}"}}')
+
+                    big_snippet = ",\n".join(snippet_list)
+
+                    # GPT-Prompt: "Given the user-defined theme, decide if each snippet is relevant"
+                    big_input = f"""
+The user has defined the main theme as: '{main_theme}'.
+
+Here are multiple papers in JSON form. For each snippet (paper), decide if it is relevant to the theme or not. Return a JSON:
+
+{{
+  "theme": "just echo the user-defined theme",
+  "papers": [
+    {{
+      "filename": "...",
+      "relevant": true/false,
+      "reason": "short reason"
+    }}
+  ]
+}}
+
+PLEASE provide ONLY the JSON, no other text.
+
+[{big_snippet}]
+"""
+                    try:
+                        openai.api_key = api_key
+                        scope_resp = openai.chat.completions.create(
+                            model=model,
+                            messages=[
+                                {"role": "system", "content": "You check paper snippets for relevance to a user-provided theme."},
+                                {"role": "user", "content": big_input}
+                            ],
+                            temperature=0.0,
+                            max_tokens=1800
+                        )
+                        scope_decision = scope_resp.choices[0].message.content
+                    except Exception as e1:
+                        st.error(f"GPT-Fehler bei Compare-Mode (manuell theme): {e1}")
+                        return
+
+                    st.markdown("#### GPT-Ausgabe (JSON) (manuell Mode):")
+                    st.code(scope_decision, language="json")
+
+                    json_str = scope_decision.strip()
+                    if json_str.startswith("```"):
+                        json_str = re.sub(r"```[\w]*\n?", "", json_str)
+                        json_str = re.sub(r"\n?```", "", json_str)
+                    try:
+                        data_parsed = json.loads(json_str)
+                        # read out "theme" (we expect the user-defined theme repeated)
+                        # read out "papers"
+                        papers_info = data_parsed.get("papers", [])
+                    except Exception as parse_e:
+                        st.error(f"Fehler beim JSON-Parsing: {parse_e}")
+                        return
+
+                    st.write(f"**Hauptthema (Manuell)**: {main_theme}")
+                    relevant_papers = []
+                    st.write("**Paper-Einstufung**:")
+                    for p in papers_info:
+                        fname = p.get("filename","?")
+                        rel = p.get("relevant", False)
+                        reason = p.get("reason","(none)")
+                        if rel:
+                            relevant_papers.append(fname)
+                            st.success(f"{fname} => relevant. Begründung: {reason}")
+                        else:
+                            st.warning(f"{fname} => NICHT relevant. Begründung: {reason}")
+
+                    if not relevant_papers:
+                        st.error("Keine relevanten Paper übrig (manuell Mode).")
+                        return
+
                 else:
+                    # => GPT-based theme detection
                     snippet_list = []
                     for name, txt in paper_map.items():
                         snippet = txt[:700].replace("\n"," ")
@@ -749,10 +836,12 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         st.error("Keine relevanten Paper übrig.")
                         return
 
+                # 2) Kombiniere relevanten Papertext
                 combined_text = ""
                 for rp in relevant_papers:
                     combined_text += f"\n=== {rp} ===\n{paper_map[rp]}"
 
+                # 3) Führe gewählte Analyse durch
                 if action == "Tabellen & Grafiken":
                     final_result = "Tabellen & Grafiken nicht im kombinierten Compare-Mode implementiert."
                 else:
@@ -783,6 +872,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 st.write(final_result)
 
         else:
+            # Einzel- oder Multi-Modus ohne Compare
             st.write("### Einzel- oder Multi-Modus (kein Outlier-Check)")
 
             pdf_options = ["(Alle)"] + [f"{i+1}) {f.name}" for i, f in enumerate(uploaded_files)]
