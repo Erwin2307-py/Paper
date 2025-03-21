@@ -39,3 +39,4 @@ pdf2image
 img2table
 opencv-python
 google_trans_new==1.1.9
+Pillow
