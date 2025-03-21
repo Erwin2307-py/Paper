@@ -435,9 +435,6 @@ def page_online_api_filter():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-# ------------------------------------------------------------------
-# 9) PAPER ANALYZER + Klasse PaperAnalyzer
-# ------------------------------------------------------------------
 class PaperAnalyzer:
     def __init__(self, model="gpt-3.5-turbo"):
         self.model = model
@@ -453,7 +450,6 @@ class PaperAnalyzer:
         return text
     
     def analyze_with_openai(self, text, prompt_template, api_key):
-        """Allgemeine Hilfsfunktion, um Text an OpenAI-ChatCompletion zu schicken."""
         if len(text) > 15000:
             text = text[:15000] + "..."
         prompt = prompt_template.format(text=text)
@@ -503,9 +499,6 @@ class PaperAnalyzer:
         )
         return self.analyze_with_openai(text, prompt, api_key)
 
-# ------------------------------------------------------------------
-# 10) Neue Klasse AlleleFrequencyFinder
-# ------------------------------------------------------------------
 class AlleleFrequencyFinder:
     """Klasse zum Abrufen und Anzeigen von Allelfrequenzen aus verschiedenen Quellen."""
     def __init__(self):
@@ -537,7 +530,6 @@ class AlleleFrequencyFinder:
             return None
     
     def try_alternative_source(self, rs_id: str) -> Optional[Dict[str, Any]]:
-        """Platzhalter: alternativer Weg, falls Ensembl down ist."""
         return None
     
     def parse_and_display_data(self, data: Dict[str, Any]) -> None:
@@ -566,9 +558,6 @@ class AlleleFrequencyFinder:
             out.append("Keine Populationsdaten gefunden.")
         return " | ".join(out)
 
-# ------------------------------------------------------------------
-# 11) Hilfsfunktionen
-# ------------------------------------------------------------------
 def split_summary(summary_text):
     m = re.search(r'Ergebnisse\s*:\s*(.*?)\s*Schlussfolgerungen\s*:\s*(.*)', summary_text, re.DOTALL | re.IGNORECASE)
     if m:
@@ -580,14 +569,8 @@ def split_summary(summary_text):
     return ergebnisse, schlussfolgerungen
 
 def parse_cohort_info(summary_text: str) -> dict:
-    """
-    Sucht nach Studiengröße & Herkunft. Enthält alte + neue Logik:
-      - z.B. "693 Filipino children and adolescents"
-      - z.B. "130 Patienten / 130 gesunde Kontrollpersonen"
-    """
     info = {"study_size": "", "origin": ""}
 
-    # Neue Logik: "(xxx) (Filipino|Chinese|...) (children|adolescents|...)"
     pattern_nationality = re.compile(
         r"(\d+)\s+(Filipino|Chinese|Japanese|Han\sChinese|[A-Za-z]+)\s+([Cc]hildren(?:\s+and\s+adolescents)?|adolescents?|participants?|subjects?)",
         re.IGNORECASE
@@ -600,7 +583,6 @@ def parse_cohort_info(summary_text: str) -> dict:
         info["study_size"] = f"{num_str} {group_str}"
         info["origin"] = origin_str
 
-    # Alte Logik
     pattern_both = re.compile(
         r"(\d+)\s*Patient(?:en)?(?:[^\d]+)(\d+)\s*gesunde\s*Kontroll(?:personen)?",
         re.IGNORECASE
@@ -616,7 +598,6 @@ def parse_cohort_info(summary_text: str) -> dict:
         if m_single_p and not info["study_size"]:
             info["study_size"] = f"{m_single_p.group(1)} Patienten"
 
-    # Herkunft / Population: "in der xyz Bevölkerung"
     pattern_origin = re.compile(r"in\s*der\s+(\S+)\s+Bevölkerung", re.IGNORECASE)
     m_orig = pattern_origin.search(summary_text)
     if m_orig and not info["origin"]:
@@ -624,9 +605,6 @@ def parse_cohort_info(summary_text: str) -> dict:
 
     return info
 
-# ------------------------------------------------------------------
-# 12) PAGE "Analyze Paper" (inkl. 5. Analyseart: Tabellen & Grafiken)
-# ------------------------------------------------------------------
 def page_analyze_paper():
     st.title("Analyze Paper - Integriert")
     
@@ -643,7 +621,6 @@ def page_analyze_paper():
         index=0
     )
     
-    # NEU: 5. Eintrag "Tabellen & Grafiken"
     action = st.sidebar.radio(
         "Analyseart",
         [
@@ -651,7 +628,7 @@ def page_analyze_paper():
             "Wichtigste Erkenntnisse", 
             "Methoden & Techniken", 
             "Relevanz-Bewertung",
-            "Tabellen & Grafiken"  # <-- NEU
+            "Tabellen & Grafiken"
         ],
         index=0
     )
@@ -667,10 +644,8 @@ def page_analyze_paper():
     analyzer = PaperAnalyzer(model=model)
     api_key = st.session_state["api_key"]
     
-    # ---------- EINZEL-ANALYSE ----------
     if uploaded_file and api_key:
         if st.button("Analyse starten"):
-            # (A) Falls NICHT "Tabellen & Grafiken", extrahieren wir klassisch den Text
             text = ""
             if action != "Tabellen & Grafiken":
                 with st.spinner("Extrahiere Text aus PDF..."):
@@ -681,7 +656,6 @@ def page_analyze_paper():
                     st.success("Text wurde erfolgreich extrahiert!")
                     st.session_state["paper_text"] = text[:15000]
 
-            # (B) Abhängig vom gewählten Modus
             if action == "Zusammenfassung":
                 with st.spinner("Erstelle Zusammenfassung..."):
                     result = analyzer.summarize(text, api_key)
@@ -701,7 +675,6 @@ def page_analyze_paper():
                 with st.spinner("Bewerte Relevanz..."):
                     result = analyzer.evaluate_relevance(text, topic, api_key)
 
-            # NEU: Tabellen & Grafiken
             elif action == "Tabellen & Grafiken":
                 with st.spinner("Suche nach Tabellen und Grafiken..."):
                     all_tables_text = []
@@ -710,7 +683,6 @@ def page_analyze_paper():
                             for page_number, page in enumerate(pdf.pages, start=1):
                                 st.markdown(f"### Seite {page_number}")
                                 
-                                # ----- Tabellen extrahieren -----
                                 tables = page.extract_tables()
                                 if tables:
                                     st.markdown("**Tabellen auf dieser Seite**")
@@ -718,19 +690,14 @@ def page_analyze_paper():
                                         if not table_data:
                                             st.write("Leere Tabelle erkannt.")
                                             continue
-                                        # Wir nehmen an, dass table_data[0] der Header ist;
-                                        # aber wir korrigieren Duplikate oder leere Spaltennamen:
                                         first_row = table_data[0]
                                         data_rows = table_data[1:]
 
-                                        # Falls gar keine Datenzeilen vorhanden sind:
                                         if not data_rows:
-                                            # Dann behandeln wir alles als Daten ohne richtigen Header
                                             st.write("Diese Tabelle enthält nur eine Zeile (vermutlich Header).")
-                                            data_rows = table_data  # fallback
+                                            data_rows = table_data
                                             first_row = [f"Col_{i}" for i in range(len(data_rows[0]))]
 
-                                        # Duplikate entfernen / umbenennen
                                         new_header = []
                                         used_cols = {}
                                         for col in first_row:
@@ -742,9 +709,8 @@ def page_analyze_paper():
                                                 used_cols[col_str] += 1
                                                 new_header.append(f"{col_str}.{used_cols[col_str]}")
 
-                                        # Prüfen, ob Spaltenanzahl passt
                                         if any(len(row) != len(new_header) for row in data_rows):
-                                            st.write("Warnung: Inkonsistente Spaltenanzahl. Erzeuge generische Namen.")
+                                            st.write("Warnung: Inkonsistente Spaltenanzahl.")
                                             df = pd.DataFrame(table_data)
                                         else:
                                             df = pd.DataFrame(data_rows, columns=new_header)
@@ -752,7 +718,6 @@ def page_analyze_paper():
                                         st.write(f"**Tabelle {table_idx}**:")
                                         st.dataframe(df)
 
-                                        # Für GPT: Wir verwandeln die Tabelle in reinen Text (CSV-Format)
                                         table_str = df.to_csv(index=False)
                                         all_tables_text.append(
                                             f"Seite {page_number} - Tabelle {table_idx}\n{table_str}\n"
@@ -760,12 +725,10 @@ def page_analyze_paper():
                                 else:
                                     st.write("Keine Tabellen auf dieser Seite gefunden.")
                                 
-                                # ----- Bilder extrahieren -----
                                 images = page.images
                                 if images:
                                     st.markdown("**Bilder/Grafiken auf dieser Seite**")
                                     for img_index, img_dict in enumerate(images, start=1):
-                                        # KORREKTES Extrahieren via xref:
                                         xref = img_dict.get("xref")
                                         if xref is not None:
                                             extracted_img = page.extract_image(xref)
@@ -783,12 +746,8 @@ def page_analyze_paper():
                         st.error(f"Fehler beim Auslesen von Tabellen/Bildern: {str(e)}")
                         result = "(Keine Auswertung möglich)"
                     else:
-                        # ----------------------------
-                        # NEU: Suche nach "Table" im gesamten PDF-Text
-                        # ----------------------------
                         st.markdown("### Zusätzliche Suche nach 'Table' im gesamten PDF-Inhalt:")
                         try:
-                            # Hier extrahieren wir den Gesamttext des PDFs
                             text_all_pages = ""
                             with pdfplumber.open(uploaded_file) as pdf2:
                                 for pg in pdf2.pages:
@@ -796,7 +755,6 @@ def page_analyze_paper():
                                     text_all_pages += t_ + "\n"
 
                             lines = text_all_pages.splitlines()
-                            # Alle Zeilen herausfiltern, in denen "Table" vorkommt
                             matches = [ln for ln in lines if "Table" in ln]
                             if matches:
                                 st.write("Zeilen mit 'Table' im Text:")
@@ -807,14 +765,11 @@ def page_analyze_paper():
                         except Exception as e2:
                             st.warning(f"Fehler bei der Volltext-Suche nach 'Table': {e2}")
 
-                        # Wenn wir mindestens eine Tabelle haben, lassen wir GPT analysieren
                         if len(all_tables_text) > 0:
-                            # Wir limitieren ggf. die Länge des Textes
                             combined_tables_text = "\n".join(all_tables_text)
                             if len(combined_tables_text) > 14000:
                                 combined_tables_text = combined_tables_text[:14000] + "..."
                             
-                            # Kurze Auswertung
                             gpt_prompt = (
                                 "Bitte analysiere die folgenden Tabellen aus einem wissenschaftlichen PDF. "
                                 "Fasse die wichtigsten Erkenntnisse zusammen und gib (wenn möglich) eine "
@@ -840,22 +795,17 @@ def page_analyze_paper():
                         else:
                             result = "Keine Tabellen gefunden, daher keine Auswertung."
 
-            # Ausgabe: Optionale Übersetzung
             if action != "Tabellen & Grafiken":
-                # Bei den ersten 4 Analysearten haben wir 'result' direkt. 
-                # Bei "Tabellen & Grafiken" kommt result erst unten.
                 if output_lang != "Deutsch" and (action != "Tabellen & Grafiken"):
                     lang_map = {"Englisch": "English", "Portugiesisch": "Portuguese", "Serbisch": "Serbian"}
                     target_lang = lang_map.get(output_lang, "English")
                     result = translate_text_openai(result, "German", target_lang, api_key)
             
-            # Falls wir nach "Tabellen & Grafiken" das Ergebnis noch übersetzen wollen:
             if action == "Tabellen & Grafiken" and result and output_lang != "Deutsch":
                 lang_map = {"Englisch": "English", "Portugiesisch": "Portuguese", "Serbisch": "Serbian"}
                 target_lang = lang_map.get(output_lang, "English")
                 result = translate_text_openai(result, "German", target_lang, api_key)
 
-            # Finale Ausgabe
             st.subheader("Ergebnis der Analyse:")
             st.markdown(result)
     else:
@@ -863,21 +813,20 @@ def page_analyze_paper():
             st.warning("Bitte OpenAI API-Key eingeben!")
         elif not uploaded_file:
             st.info("Bitte eine PDF-Datei hochladen!")
-    
-    # ----------- GESAMT-WORKFLOW + Excel-Ausgabe (optional) -----------
+
     st.write("---")
     st.write("## Alle Analysen & Excel-Ausgabe")
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
     
     if uploaded_file and api_key:
         if st.button("Alle Analysen durchführen & in Excel speichern"):
+            analyzer = PaperAnalyzer(model=model)
             with st.spinner("Analysiere alles..."):
                 text = analyzer.extract_text_from_pdf(uploaded_file)
                 if not text.strip():
                     st.error("Kein Text extrahierbar (evtl. PDF ohne OCR).")
                     st.stop()
-    
-                # (1) Zusammenfassung & Key Findings
+
                 summary_result = analyzer.summarize(text, api_key)
                 key_findings_result = analyzer.extract_key_findings(text, api_key)
                 methods_result = analyzer.identify_methods(text, api_key)
@@ -886,19 +835,17 @@ def page_analyze_paper():
                     st.stop()
                 relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
                 final_relevance = f"{relevance_result}\n\n[Manuelle Bewertung: {user_relevance_score}]"
-    
+
                 import openpyxl
                 import datetime
-    
-                # (2) Excel-Vorlage laden
+
                 try:
                     wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
                 except FileNotFoundError:
                     st.error("Vorlage 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
                     st.stop()
                 ws = wb.active
-    
-                # (3) Gene-Detection
+
                 pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                 match_text = re.search(pattern_obvious, text)
                 gene_via_text = match_text.group(1) if match_text else None
@@ -906,38 +853,36 @@ def page_analyze_paper():
                 if gene_via_text:
                     found_gene = gene_via_text
                 else:
-                    # Falls wir in vorlage_gene.xlsx nach möglichen Genen suchen wollen
                     try:
                         wb_gene = openpyxl.load_workbook("vorlage_gene.xlsx")
                     except FileNotFoundError:
                         st.error("Die Datei 'vorlage_gene.xlsx' wurde nicht gefunden!")
                         st.stop()
-    
+
                     ws_gene = wb_gene.active
                     gene_names_from_excel = []
                     for row in ws_gene.iter_rows(min_row=3, min_col=3, max_col=3, values_only=True):
                         cell_value = row[0]
                         if cell_value and isinstance(cell_value, str):
                             gene_names_from_excel.append(cell_value.strip())
-    
+
                     found_gene = None
                     for g in gene_names_from_excel:
                         pat = re.compile(r"\b" + re.escape(g) + r"\b", re.IGNORECASE)
                         if re.search(pat, text):
                             found_gene = g
                             break
-    
-                # (4) rsID / Allele Frequencies
+
                 if found_gene:
                     ws["D5"] = found_gene
-    
+
                 rs_pat = r"(rs\d+)"
                 found_rs = re.search(rs_pat, text)
                 rs_num = None
                 if found_rs:
                     rs_num = found_rs.group(1)
                     ws["D6"] = rs_num
-    
+
                 genotype_regex = r"\b([ACGT]{2,3})\b"
                 lines = text.split("\n")
                 found_pairs = []
@@ -946,12 +891,13 @@ def page_analyze_paper():
                     if matches:
                         for m in matches:
                             found_pairs.append((m, line.strip()))
-    
+
                 unique_geno_pairs = []
                 for gp in found_pairs:
                     if gp not in unique_geno_pairs:
                         unique_geno_pairs.append(gp)
-    
+
+                from modules.online_api_filter import module_online_api_filter
                 aff = AlleleFrequencyFinder()
                 if rs_num:
                     data = aff.get_allele_frequencies(rs_num)
@@ -963,49 +909,42 @@ def page_analyze_paper():
                         freq_info = "Keine Daten von Ensembl/dbSNP"
                 else:
                     freq_info = "Keine rsID vorhanden"
-    
+
                 if len(unique_geno_pairs) > 0:
                     ws["D10"] = unique_geno_pairs[0][0]
                     ws["F10"] = unique_geno_pairs[0][1]
                     ws["E10"] = freq_info
-    
+
                 if len(unique_geno_pairs) > 1:
                     ws["D11"] = unique_geno_pairs[1][0]
                     ws["F11"] = unique_geno_pairs[1][1]
                     ws["E11"] = freq_info
-    
+
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ws["J2"] = now_str
-    
-                # (5) Ergebnisse / Schlussfolgerungen => G21 / G22 (in Englisch)
+
                 ergebnisse, schlussfolgerungen = split_summary(summary_result)
                 eng_ergebnisse = translate_text_openai(ergebnisse, "German", "English", api_key)
                 eng_schlussfolgerungen = translate_text_openai(schlussfolgerungen, "German", "English", api_key)
                 ws["G21"] = eng_ergebnisse
                 ws["G22"] = eng_schlussfolgerungen
-    
-                # (6) Studiengröße & Herkunft => D20, Key Findings => E20
-                #    => Alles in Englisch
+
                 cohort_data = parse_cohort_info(summary_result)
                 study_size = cohort_data.get("study_size", "")
                 origin = cohort_data.get("origin", "")
                 combined_str = f"Study Size: {study_size} | Ethnicity: {origin}"
-    
-                # Übersetzen (falls nötig)
                 if combined_str.strip() and (not re.search(r"[a-zA-Z]", combined_str) or "Patienten" in combined_str):
                     combined_str = translate_text_openai(combined_str, "German", "English", api_key)
-                
-                ws["D20"] = combined_str  # D20 => study size & origin in English
-                
-                # Key Findings => E20 (englisch)
+
+                ws["D20"] = combined_str
+
                 key_findings_en = translate_text_openai(key_findings_result, "German", "English", api_key)
                 ws["E20"] = key_findings_en
-    
-                # (7) Excel speichern
+
                 output_buffer = io.BytesIO()
                 wb.save(output_buffer)
                 output_buffer.seek(0)
-    
+
             st.success("Alle Analysen abgeschlossen – Excel-Datei erstellt und Felder befüllt!")
             st.download_button(
                 label="Download Excel",
@@ -1014,9 +953,6 @@ def page_analyze_paper():
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
 
-# ------------------------------------------------------------------
-# 13) Sidebar & Chatbot
-# ------------------------------------------------------------------
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
     pages = {
@@ -1035,7 +971,6 @@ def sidebar_module_navigation():
     return pages.get(st.session_state["current_page"], page_home)
 
 def answer_chat(question: str) -> str:
-    """Einfaches Beispiel: Nutzt Paper-Text (falls vorhanden) aus st.session_state + GPT."""
     api_key = st.session_state.get("api_key", "")
     paper_text = st.session_state.get("paper_text", "")
     if not api_key:
@@ -1065,11 +1000,7 @@ def answer_chat(question: str) -> str:
     except Exception as e:
         return f"OpenAI-Fehler: {e}"
 
-# ------------------------------------------------------------------
-# 14) Hauptfunktion (Startpunkt)
-# ------------------------------------------------------------------
 def main():
-    # CSS-Anpassungen für das scrollbare Chat-Fenster
     st.markdown(
         """
         <style>
@@ -1078,8 +1009,8 @@ def main():
             padding: 0;
         }
         .scrollable-chat {
-            max-height: 400px; /* feste oder maximale Höhe */
-            overflow-y: scroll; /* scrollbar wenn zu lang */
+            max-height: 400px; 
+            overflow-y: scroll; 
             border: 1px solid #CCC;
             padding: 8px;
             margin-top: 10px;
@@ -1087,7 +1018,6 @@ def main():
             background-color: #f9f9f9;
         }
         
-        /* Nachrichten-Styling */
         .message {
             padding: 0.5rem 1rem;
             border-radius: 15px;
@@ -1129,7 +1059,6 @@ def main():
                 bot_answer = answer_chat(user_input)
                 st.session_state["chat_history"].append(("bot", bot_answer))
 
-        # Chatverlauf in scrollbarem Container anzeigen
         st.markdown('<div class="scrollable-chat" id="chat-container">', unsafe_allow_html=True)
         for role, msg_text in st.session_state["chat_history"]:
             if role == "user":
@@ -1144,29 +1073,21 @@ def main():
                 )
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # JavaScript, um automatisch nach unten zu scrollen
         st.markdown(
             """
             <script>
-                // Funktion zum automatischen Scrollen
                 function scrollToBottom() {
                     var container = document.getElementById('chat-container');
                     if(container) {
                         container.scrollTop = container.scrollHeight;
                     }
                 }
-                
-                // Scrollen nach dem Laden der Seite
                 document.addEventListener('DOMContentLoaded', function() {
                     scrollToBottom();
                 });
-                
-                // Beobachter, der auf Veränderungen im Chat-Container reagiert
                 const observer = new MutationObserver(function(mutations) {
                     scrollToBottom();
                 });
-                
-                // Sobald der Container existiert, wird der Observer gestartet
                 setTimeout(function() {
                     var container = document.getElementById('chat-container');
                     if(container) {
