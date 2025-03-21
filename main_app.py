@@ -605,6 +605,7 @@ def parse_cohort_info(summary_text: str) -> dict:
 
     return info
 
+
 def page_analyze_paper():
     st.title("Analyze Paper - Integriert")
     
@@ -658,6 +659,168 @@ def page_analyze_paper():
     analyzer = PaperAnalyzer(model=model)
     api_key = st.session_state["api_key"]
 
+    # Hier speichern wir die "relevant_papers" (Outlier-Check) global, damit wir
+    # in der Excel-Funktion nur diese verarbeiten
+    if "relevant_papers_compare" not in st.session_state:
+        st.session_state["relevant_papers_compare"] = None
+    if "theme_compare" not in st.session_state:
+        st.session_state["theme_compare"] = ""
+
+    # -------------------------------------
+    # Hilfsfunktion: Outlier-Logic
+    # -------------------------------------
+    def do_outlier_logic(paper_map: dict) -> (list, str):
+        """Gibt (relevantPaperList, discoveredTheme) zurück."""
+        # If theme_mode == Manuell => ask GPT for relevance to user_defined_theme
+        if theme_mode == "Manuell":
+            main_theme = user_defined_theme.strip()
+            if not main_theme:
+                st.error("Bitte ein manuelles Hauptthema eingeben!")
+                return ([], "")
+
+            snippet_list = []
+            for name, txt_data in paper_map.items():
+                snippet = txt_data[:700].replace("\n"," ")
+                snippet_list.append(f'{{"filename": "{name}", "snippet": "{snippet}"}}')
+
+            big_snippet = ",\n".join(snippet_list)
+
+            big_input = f"""
+Der Nutzer hat folgendes Hauptthema definiert: '{main_theme}'.
+
+Hier sind mehrere Paper in JSON-Form. Entscheide pro Paper, ob es zu diesem Thema passt oder nicht.
+Gib mir am Ende ein JSON-Format zurück:
+
+{{
+  "theme": "du wiederholst das user-defined theme",
+  "papers": [
+    {{
+      "filename": "...",
+      "relevant": true/false,
+      "reason": "Kurzer Grund"
+    }}
+  ]
+}}
+
+Nur das JSON, ohne weitere Erklärungen.
+
+[{big_snippet}]
+"""
+            try:
+                openai.api_key = api_key
+                scope_resp = openai.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": "Du checkst Paper-Snippets auf Relevanz zum user-Thema."},
+                        {"role": "user", "content": big_input}
+                    ],
+                    temperature=0.0,
+                    max_tokens=1800
+                )
+                scope_decision = scope_resp.choices[0].message.content
+            except Exception as e1:
+                st.error(f"GPT-Fehler bei Compare-Mode (Manuell): {e1}")
+                return ([], "")
+
+            st.markdown("#### GPT-Ausgabe (Outlier-Check / Manuell):")
+            st.code(scope_decision, language="json")
+            json_str = scope_decision.strip()
+            if json_str.startswith("```"):
+                json_str = re.sub(r"```[\w]*\n?", "", json_str)
+                json_str = re.sub(r"\n?```", "", json_str)
+            try:
+                data_parsed = json.loads(json_str)
+                papers_info = data_parsed.get("papers", [])
+            except Exception as parse_e:
+                st.error(f"Fehler beim JSON-Parsing: {parse_e}")
+                return ([], "")
+
+            st.write(f"**Hauptthema (Manuell)**: {main_theme}")
+            relevant_papers_local = []
+            st.write("**Paper-Einstufung**:")
+            for p in papers_info:
+                fname = p.get("filename","?")
+                rel = p.get("relevant", False)
+                reason = p.get("reason","(none)")
+                if rel:
+                    relevant_papers_local.append(fname)
+                    st.success(f"{fname} => relevant. Begründung: {reason}")
+                else:
+                    st.warning(f"{fname} => NICHT relevant. Begründung: {reason}")
+
+            return (relevant_papers_local, main_theme)
+        else:
+            # GPT-based theme detection
+            snippet_list = []
+            for name, txt_data in paper_map.items():
+                snippet = txt_data[:700].replace("\n"," ")
+                snippet_list.append(f'{{"filename": "{name}", "snippet": "{snippet}"}}')
+            big_snippet = ",\n".join(snippet_list)
+
+            big_input = f"""
+Hier sind mehrere Paper in JSON-Form. Bitte ermittele das gemeinsame Hauptthema.
+Dann antworte mir in folgendem JSON-Format: 
+{{
+  "main_theme": "Kurzbeschreibung des gemeinsamen Themas",
+  "papers": [
+    {{"filename":"...","relevant":true/false,"reason":"Kurzer Grund"}}
+  ]
+}}
+
+Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
+
+[{big_snippet}]
+"""
+            try:
+                openai.api_key = api_key
+                scope_resp = openai.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": "Du bist ein Assistent, der Paper thematisch filtert."},
+                        {"role": "user", "content": big_input}
+                    ],
+                    temperature=0.0,
+                    max_tokens=1800
+                )
+                scope_decision = scope_resp.choices[0].message.content
+            except Exception as e1:
+                st.error(f"GPT-Fehler bei Compare-Mode: {e1}")
+                return ([], "")
+
+            st.markdown("#### GPT-Ausgabe (Outlier-Check / GPT):")
+            st.code(scope_decision, language="json")
+
+            json_str = scope_decision.strip()
+            if json_str.startswith("```"):
+                json_str = re.sub(r"```[\w]*\n?", "", json_str)
+                json_str = re.sub(r"\n?```", "", json_str)
+            try:
+                data_parsed = json.loads(json_str)
+                main_theme = data_parsed.get("main_theme", "No theme extracted.")
+                papers_info = data_parsed.get("papers", [])
+            except Exception as parse_e:
+                st.error(f"Fehler beim JSON-Parsing: {parse_e}")
+                return ([], "")
+
+            st.write(f"**Hauptthema (GPT)**: {main_theme}")
+            relevant_papers_local = []
+            st.write("**Paper-Einstufung**:")
+            for p in papers_info:
+                fname = p.get("filename","?")
+                rel = p.get("relevant", False)
+                reason = p.get("reason","(none)")
+                if rel:
+                    relevant_papers_local.append(fname)
+                    st.success(f"{fname} => relevant. Begründung: {reason}")
+                else:
+                    st.warning(f"{fname} => NICHT relevant. Begründung: {reason}")
+
+            return (relevant_papers_local, main_theme)
+
+
+    # -------------------------------------
+    # Haupt-Analyse-Bereich
+    # -------------------------------------
     if uploaded_files and api_key:
         if compare_mode:
             st.write("### Vergleichsmodus: Outlier-Paper ausschließen")
@@ -676,84 +839,13 @@ def page_analyze_paper():
                     st.error("Keine verwertbaren Paper.")
                     return
 
-                if theme_mode == "Manuell":
-                    # => user_defined_theme: wir ignorieren Outlier Logic,
-                    #   da GPT das Thema NICHT bestimmt und NICHT outlier-checkt
-                    # => wir nehmen einfach ALLE Paper als relevant
-                    st.write(f"Hauptthema (manuell): {user_defined_theme}")
-                    relevant_papers = list(paper_map.keys())
-                    st.info("Keine Outlier ausgeschlossen, da 'Manuell' gewählt.")
-                else:
-                    # => GPT-basierter Outlier-Check
-                    #   JSON snippet etc.
-                    snippet_list = []
-                    for name, txt in paper_map.items():
-                        snippet = txt[:700].replace("\n"," ")
-                        snippet_list.append(f'{{"filename": "{name}", "snippet": "{snippet}"}}')
-                    big_snippet = ",\n".join(snippet_list)
+                relevant_papers, discovered_theme = do_outlier_logic(paper_map)
+                st.session_state["relevant_papers_compare"] = relevant_papers
+                st.session_state["theme_compare"] = discovered_theme
 
-                    big_input = f"""
-Hier sind mehrere Paper in JSON-Form. Bitte ermittele das gemeinsame Hauptthema.
-Dann antworte mir in folgendem JSON-Format: 
-{{
-  "main_theme": "Kurzbeschreibung des gemeinsamen Themas",
-  "papers": [
-    {{"filename":"...","relevant":true/false,"reason":"Kurzer Grund"}}
-  ]
-}}
-
-Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
-
-[{big_snippet}]
-"""
-                    try:
-                        openai.api_key = api_key
-                        scope_resp = openai.chat.completions.create(
-                            model=model,
-                            messages=[
-                                {"role": "system", "content": "Du bist ein Assistent, der Paper thematisch filtert."},
-                                {"role": "user", "content": big_input}
-                            ],
-                            temperature=0.0,
-                            max_tokens=1800
-                        )
-                        scope_decision = scope_resp.choices[0].message.content
-                    except Exception as e1:
-                        st.error(f"GPT-Fehler bei Compare-Mode: {e1}")
-                        return
-
-                    st.markdown("#### GPT-Ausgabe (JSON):")
-                    st.code(scope_decision, language="json")
-
-                    # JSON parse
-                    json_str = scope_decision.strip()
-                    if json_str.startswith("```"):
-                        json_str = re.sub(r"```[\w]*\n?", "", json_str)
-                        json_str = re.sub(r"\n?```", "", json_str)
-                    try:
-                        data_parsed = json.loads(json_str)
-                        main_theme = data_parsed.get("main_theme", "No theme extracted.")
-                        papers_info = data_parsed.get("papers", [])
-                    except Exception as parse_e:
-                        st.error(f"Fehler beim JSON-Parsing: {parse_e}")
-                        return
-
-                    st.write(f"**Hauptthema (GPT)**: {main_theme}")
-                    relevant_papers = []
-                    st.write("**Paper-Einstufung**:")
-                    for p in papers_info:
-                        fname = p.get("filename","?")
-                        rel = p.get("relevant", False)
-                        reason = p.get("reason","(none)")
-                        if rel:
-                            relevant_papers.append(fname)
-                            st.success(f"{fname} => relevant. Begründung: {reason}")
-                        else:
-                            st.warning(f"{fname} => NICHT relevant. Begründung: {reason}")
-
-                    if not relevant_papers:
-                        st.error("Keine relevanten Paper übrig.")
-                        return
+                if not relevant_papers:
+                    st.error("Keine relevanten Paper nach Outlier-Check übrig.")
+                    return
 
                 # 2) Kombiniere relevanten Papertext
                 combined_text = ""
@@ -970,29 +1062,32 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
             st.info("Bitte eine oder mehrere PDF-Dateien hochladen!")
 
     st.write("---")
-    st.write("## Alle Analysen & Excel-Ausgabe (Ein Sheet, Offsets)")
+    st.write("## Alle Analysen & Excel-Ausgabe (Multi-PDF)")
+
+    user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
 
     if uploaded_files and api_key:
-        if st.button("Alle Analysen durchführen & Excel-Dateien erstellen"):
-            with st.spinner("Analysiere alle hochgeladenen PDFs..."):
+        # Falls Compare-Mode => wir nutzen st.session_state["relevant_papers_compare"]
+        # Sonst => wir nehmen alle
+        if st.button("Alle Analysen durchführen & in Excel speichern (Multi)"):
+            with st.spinner("Analysiere alle hochgeladenen PDFs (für Excel)..."):
                 import openpyxl
                 import datetime
-                import os
-                import shutil
-                
-                # Temporäres Verzeichnis für die einzelnen Excel-Dateien
-                temp_dir = "temp_excel_files"
-                os.makedirs(temp_dir, exist_ok=True)
-                
-                # Liste der erstellten Excel-Dateien
-                excel_files = []
-                
+
+                try:
+                    wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
+                except FileNotFoundError:
+                    st.error("Vorlage 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
+                    st.stop()
+
+                gen_sheets = {}
                 analyzer = PaperAnalyzer(model=model)
 
-                # Check outlier logic
+                # check outlier logic
                 if compare_mode:
                     # Falls wir relevant_papers_compare nicht haben, machen wir auto
                     if not st.session_state["relevant_papers_compare"]:
+                        # user hat den "Vergleichs-Analyse starten" Button nicht gedrückt => wir machen auto
                         paper_map_auto = {}
                         for fpdf in uploaded_files:
                             txt = analyzer.extract_text_from_pdf(fpdf)
@@ -1013,21 +1108,12 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 else:
                     # Kein Compare => nimm alle
                     selected_files_for_excel = uploaded_files
-                
-                # Für jedes Paper eine eigene Excel-Datei erstellen
-                for i, fpdf in enumerate(selected_files_for_excel):
+
+                for fpdf in selected_files_for_excel:
                     text = analyzer.extract_text_from_pdf(fpdf)
                     if not text.strip():
                         st.error(f"Kein Text aus {fpdf.name} extrahierbar (evtl. kein OCR). Überspringe...")
                         continue
-                        
-                    # Vorlage für jedes Paper neu laden
-                    try:
-                        wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
-                        sheet = wb.active
-                    except FileNotFoundError:
-                        st.error("Vorlage 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
-                        return
 
                     # Standardanalysen
                     summary_result = analyzer.summarize(text, api_key)
@@ -1046,6 +1132,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     gene_via_text = match_text.group(1) if match_text else None
 
                     if not gene_via_text:
+                        # Falls nicht gefunden, in vorlage_gene.xlsx gucken
                         try:
                             wb_gene = openpyxl.load_workbook("vorlage_gene.xlsx")
                         except FileNotFoundError:
@@ -1076,7 +1163,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         if matches:
                             for m in matches:
                                 found_pairs.append((m, line.strip()))
-                    
+
                     unique_geno_pairs = []
                     for gp in found_pairs:
                         if gp not in unique_geno_pairs:
@@ -1091,100 +1178,56 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         if data:
                             freq_info = aff.build_freq_info_text(data)
 
-                    # Daten in die Excel-Vorlage eintragen
-                    # Zellen nach Vorgabe:
-                    # D5 => Gene, D6 => rs, Genotypen: D10/E10, D11/E11, D12/E12
-                    # Date (C20), Study size (D20), Key Findings (E20),
-                    # Results (G21), Conclusion (G22)
-                    sheet["D5"] = found_gene
-                    sheet["D6"] = rs_num
-                    
-                    # Genotypen in die Zeilen 10-12 eintragen
-                    for i, gp in enumerate(unique_geno_pairs[:3]):  # Maximal 3 Genotypen
-                        row = 10 + i
-                        sheet[f"D{row}"] = gp[0]
-                        sheet[f"E{row}"] = freq_info
-                    
-                    sheet["C20"] = datetime.datetime.now().strftime("%Y-%m-%d")
-                    sheet["D20"] = fpdf.name  # Dateiname als Studienname
-                    sheet["E20"] = key_findings_result
-                    
-                    ergebnisse, schlussfolgerungen = split_summary(summary_result)
-                    sheet["G21"] = ergebnisse
-                    sheet["G22"] = schlussfolgerungen
-                    
-                    combined_relevance = f"{relevance_result}\n(Manuell:{user_relevance_score})"
-                    sheet["H22"] = combined_relevance
-                    
-                    safe_filename = re.sub(r'[\\/*?:"<>|]', "_", fpdf.name)
-                    excel_path = os.path.join(temp_dir, f"{safe_filename}.xlsx")
-                    wb.save(excel_path)
-                    excel_files.append(excel_path)
-                    
-                    st.success(f"Excel-Datei für {fpdf.name} erstellt")
-        
-                if excel_files:
-                    # Neue Workbook für die kombinierte Datei erstellen
-                    combined_wb = openpyxl.Workbook()
-                    combined_wb.remove(combined_wb.active)
-                    
-                    for excel_file in excel_files:
-                        sheet_name = os.path.basename(excel_file).replace('.xlsx', '')
-                        if len(sheet_name) > 31:
-                            sheet_name = sheet_name[:31]
-                        
-                        source_wb = openpyxl.load_workbook(excel_file)
-                        source_sheet = source_wb.active
-                        
-                        target_sheet = combined_wb.create_sheet(title=sheet_name)
-                        
-                        for row in source_sheet.rows:
-                            for cell in row:
-                                target_sheet[cell.coordinate] = cell.value
-                        
-                        for col in source_sheet.columns:
-                            letter = openpyxl.utils.get_column_letter(col[0].column)
-                            target_sheet.column_dimensions[letter].width = source_sheet.column_dimensions[letter].width
-                    
-                    combined_buffer = io.BytesIO()
-                    combined_wb.save(combined_buffer)
-                    combined_buffer.seek(0)
-                    
-                    st.success("Alle Excel-Dateien wurden erfolgreich kombiniert!")
-                    
-                    st.download_button(
-                        label="Download kombinierte Excel-Datei",
-                        data=combined_buffer,
-                        file_name="combined_analysis_results.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    )
-                    
-                    import zipfile
-                    zip_buffer = io.BytesIO()
-                    with zipfile.ZipFile(zip_buffer, 'w') as zip_file:
-                        for excel_file in excel_files:
-                            zip_file.write(excel_file, os.path.basename(excel_file))
-                    
-                    zip_buffer.seek(0)
-                    st.download_button(
-                        label="Download einzelne Excel-Dateien (ZIP)",
-                        data=zip_buffer,
-                        file_name="individual_analysis_results.zip",
-                        mime="application/zip",
-                    )
-                    
-                    for excel_file in excel_files:
+                    sheet_name = found_gene if found_gene else "GEN_UNKNOWN"
+                    sheet_name = sheet_name[:27]
+
+                    if sheet_name not in gen_sheets:
                         try:
-                            os.remove(excel_file)
+                            new_sheet = wb.create_sheet(sheet_name)
+                            new_sheet["A1"] = "Dateiname"
+                            new_sheet["B1"] = "Gene"
+                            new_sheet["C1"] = "rsID"
+                            new_sheet["D1"] = "Genotype Pairs"
+                            new_sheet["E1"] = "Freq Info"
+                            new_sheet["F1"] = "Summary"
+                            new_sheet["G1"] = "Key Findings"
+                            new_sheet["H1"] = "Methods"
+                            new_sheet["I1"] = "Relevance"
+                            new_sheet["J1"] = "Timestamp"
+                            gen_sheets[sheet_name] = new_sheet
                         except:
-                            pass
-                    try:
-                        os.rmdir(temp_dir)
-                    except:
-                        pass
-                else:
-                    st.error("Es wurden keine Excel-Dateien erstellt.")
-        
+                            gen_sheets[sheet_name] = wb[sheet_name]
+                    else:
+                        new_sheet = gen_sheets[sheet_name]
+
+                    next_row = new_sheet.max_row + 1
+
+                    new_sheet.cell(row=next_row, column=1).value = fpdf.name
+                    new_sheet.cell(row=next_row, column=2).value = found_gene
+                    new_sheet.cell(row=next_row, column=3).value = rs_num
+                    all_gps = ",".join([x[0] for x in unique_geno_pairs])
+                    new_sheet.cell(row=next_row, column=4).value = all_gps
+                    new_sheet.cell(row=next_row, column=5).value = freq_info
+                    new_sheet.cell(row=next_row, column=6).value = summary_result
+                    new_sheet.cell(row=next_row, column=7).value = key_findings_result
+                    new_sheet.cell(row=next_row, column=8).value = methods_result
+                    combined_relevance = f"{relevance_result}\n(Manuell:{user_relevance_score})"
+                    new_sheet.cell(row=next_row, column=9).value = combined_relevance
+                    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    new_sheet.cell(row=next_row, column=10).value = now_str
+
+            output_buffer = io.BytesIO()
+            wb.save(output_buffer)
+            output_buffer.seek(0)
+
+            st.success("Alle PDFs verarbeitet – Excel-Datei mit mehreren Sheets erstellt!")
+            st.download_button(
+                label="Download Excel (Multi-Gene)",
+                data=output_buffer,
+                file_name="analysis_results_multi.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
     pages = {
