@@ -677,15 +677,10 @@ def page_analyze_paper():
                     return
 
                 if theme_mode == "Manuell":
-                    # => user_defined_theme: wir ignorieren Outlier Logic,
-                    #   da GPT das Thema NICHT bestimmt und NICHT outlier-checkt
-                    # => wir nehmen einfach ALLE Paper als relevant
                     st.write(f"Hauptthema (manuell): {user_defined_theme}")
                     relevant_papers = list(paper_map.keys())
                     st.info("Keine Outlier ausgeschlossen, da 'Manuell' gewählt.")
                 else:
-                    # => GPT-basierter Outlier-Check
-                    #   JSON snippet etc.
                     snippet_list = []
                     for name, txt in paper_map.items():
                         snippet = txt[:700].replace("\n"," ")
@@ -725,7 +720,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     st.markdown("#### GPT-Ausgabe (JSON):")
                     st.code(scope_decision, language="json")
 
-                    # JSON parse
                     json_str = scope_decision.strip()
                     if json_str.startswith("```"):
                         json_str = re.sub(r"```[\w]*\n?", "", json_str)
@@ -755,12 +749,10 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         st.error("Keine relevanten Paper übrig.")
                         return
 
-                # 2) Kombiniere relevanten Papertext
                 combined_text = ""
                 for rp in relevant_papers:
                     combined_text += f"\n=== {rp} ===\n{paper_map[rp]}"
 
-                # 3) Führe gewählte Analyse durch
                 if action == "Tabellen & Grafiken":
                     final_result = "Tabellen & Grafiken nicht im kombinierten Compare-Mode implementiert."
                 else:
@@ -791,7 +783,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 st.write(final_result)
 
         else:
-            # Einzel-Modus:
             st.write("### Einzel- oder Multi-Modus (kein Outlier-Check)")
 
             pdf_options = ["(Alle)"] + [f"{i+1}) {f.name}" for i, f in enumerate(uploaded_files)]
