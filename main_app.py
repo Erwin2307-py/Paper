@@ -435,11 +435,176 @@ def page_online_api_filter():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-# ------------------------------------------------------------------
-# PaperAnalyzer-Klasse siehe oben
-# AlleleFrequencyFinder-Klasse siehe oben
-# Hilfsfunktionen split_summary/parse_cohort_info siehe oben
-# ------------------------------------------------------------------
+class PaperAnalyzer:
+    def __init__(self, model="gpt-3.5-turbo"):
+        self.model = model
+    
+    def extract_text_from_pdf(self, pdf_file):
+        """Extrahiert reinen Text via PyPDF2 (ggf. OCR nötig, falls PDF nicht durchsuchbar)."""
+        reader = PyPDF2.PdfReader(pdf_file)
+        text = ""
+        for page in reader.pages:
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text + "\n"
+        return text
+    
+    def analyze_with_openai(self, text, prompt_template, api_key):
+        if len(text) > 15000:
+            text = text[:15000] + "..."
+        prompt = prompt_template.format(text=text)
+        openai.api_key = api_key
+        response = openai.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": (
+                    "Du bist ein Experte für die Analyse wissenschaftlicher Paper, "
+                    "besonders im Bereich Side-Channel Analysis."
+                )},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=1500
+        )
+        return response.choices[0].message.content
+    
+    def summarize(self, text, api_key):
+        prompt = (
+            "Erstelle eine strukturierte Zusammenfassung des folgenden "
+            "wissenschaftlichen Papers. Gliedere sie in mindestens vier klar getrennte Abschnitte "
+            "(z.B. 1. Hintergrund, 2. Methodik, 3. Ergebnisse, 4. Schlussfolgerungen). "
+            "Verwende maximal 500 Wörter:\n\n{text}"
+        )
+        return self.analyze_with_openai(text, prompt, api_key)
+    
+    def extract_key_findings(self, text, api_key):
+        prompt = (
+            "Extrahiere die 5 wichtigsten Erkenntnisse aus diesem wissenschaftlichen "
+            "Paper im Bereich Side-Channel Analysis. Liste sie mit Bulletpoints auf:\n\n{text}"
+        )
+        return self.analyze_with_openai(text, prompt, api_key)
+    
+    def identify_methods(self, text, api_key):
+        prompt = (
+            "Identifiziere und beschreibe die im Paper verwendeten Methoden "
+            "und Techniken zur Side-Channel-Analyse. Gib zu jeder Methode "
+            "eine kurze Erklärung:\n\n{text}"
+        )
+        return self.analyze_with_openai(text, prompt, api_key)
+    
+    def evaluate_relevance(self, text, topic, api_key):
+        prompt = (
+            f"Bewerte die Relevanz dieses Papers für das Thema '{topic}' auf "
+            f"einer Skala von 1-10. Begründe deine Bewertung:\n\n{{text}}"
+        )
+        return self.analyze_with_openai(text, prompt, api_key)
+
+class AlleleFrequencyFinder:
+    """Klasse zum Abrufen und Anzeigen von Allelfrequenzen aus verschiedenen Quellen."""
+    def __init__(self):
+        self.ensembl_server = "https://rest.ensembl.org"
+        self.max_retries = 3
+        self.retry_delay = 2  # Sekunden zwischen Wiederholungsversuchen
+
+    def get_allele_frequencies(self, rs_id: str, retry_count: int = 0) -> Optional[Dict[str, Any]]:
+        if not rs_id.startswith("rs"):
+            rs_id = f"rs{rs_id}"
+        endpoint = f"/variation/human/{rs_id}?pops=1"
+        url = f"{self.ensembl_server}{endpoint}"
+        try:
+            response = requests.get(url, headers={"Content-Type": "application/json"}, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.HTTPError:
+            if response.status_code == 500 and retry_count < self.max_retries:
+                time.sleep(self.retry_delay)
+                return self.get_allele_frequencies(rs_id, retry_count + 1)
+            elif response.status_code == 404:
+                return None
+            else:
+                return None
+        except requests.exceptions.RequestException:
+            if retry_count < self.max_retries:
+                time.sleep(self.retry_delay)
+                return self.get_allele_frequencies(rs_id, retry_count + 1)
+            return None
+    
+    def try_alternative_source(self, rs_id: str) -> Optional[Dict[str, Any]]:
+        return None
+    
+    def parse_and_display_data(self, data: Dict[str, Any]) -> None:
+        if not data:
+            print("Keine Daten verfügbar.")
+            return
+        print(json.dumps(data, indent=2))
+    
+    def build_freq_info_text(self, data: Dict[str, Any]) -> str:
+        if not data:
+            return "Keine Daten von Ensembl"
+        maf = data.get("MAF", None)
+        pops = data.get("populations", [])
+        out = []
+        out.append(f"MAF={maf}" if maf else "MAF=n/a")
+        if pops:
+            max_pop = 2
+            for i, pop in enumerate(pops):
+                if i >= max_pop:
+                    break
+                pop_name = pop.get('population', 'N/A')
+                allele = pop.get('allele', 'N/A')
+                freq = pop.get('frequency', 'N/A')
+                out.append(f"{pop_name}:{allele}={freq}")
+        else:
+            out.append("Keine Populationsdaten gefunden.")
+        return " | ".join(out)
+
+def split_summary(summary_text):
+    m = re.search(r'Ergebnisse\s*:\s*(.*?)\s*Schlussfolgerungen\s*:\s*(.*)', summary_text, re.DOTALL | re.IGNORECASE)
+    if m:
+        ergebnisse = m.group(1).strip()
+        schlussfolgerungen = m.group(2).strip()
+    else:
+        ergebnisse = summary_text
+        schlussfolgerungen = ""
+    return ergebnisse, schlussfolgerungen
+
+def parse_cohort_info(summary_text: str) -> dict:
+    info = {"study_size": "", "origin": ""}
+
+    pattern_nationality = re.compile(
+        r"(\d+)\s+(Filipino|Chinese|Japanese|Han\sChinese|[A-Za-z]+)\s+([Cc]hildren(?:\s+and\s+adolescents)?|adolescents?|participants?|subjects?)",
+        re.IGNORECASE
+    )
+    match_nat = pattern_nationality.search(summary_text)
+    if match_nat:
+        num_str = match_nat.group(1)
+        origin_str = match_nat.group(2)
+        group_str = match_nat.group(3)
+        info["study_size"] = f"{num_str} {group_str}"
+        info["origin"] = origin_str
+
+    pattern_both = re.compile(
+        r"(\d+)\s*Patient(?:en)?(?:[^\d]+)(\d+)\s*gesunde\s*Kontroll(?:personen)?",
+        re.IGNORECASE
+    )
+    m_both = pattern_both.search(summary_text)
+    if m_both and not info["study_size"]:
+        p_count = m_both.group(1)
+        c_count = m_both.group(2)
+        info["study_size"] = f"{p_count} Patienten / {c_count} Kontrollpersonen"
+    else:
+        pattern_single_p = re.compile(r"(\d+)\s*Patient(?:en)?", re.IGNORECASE)
+        m_single_p = pattern_single_p.search(summary_text)
+        if m_single_p and not info["study_size"]:
+            info["study_size"] = f"{m_single_p.group(1)} Patienten"
+
+    pattern_origin = re.compile(r"in\s*der\s+(\S+)\s+Bevölkerung", re.IGNORECASE)
+    m_orig = pattern_origin.search(summary_text)
+    if m_orig and not info["origin"]:
+        info["origin"] = m_orig.group(1).strip()
+
+    return info
+
 
 def page_analyze_paper():
     st.title("Analyze Paper - Integriert")
@@ -494,13 +659,19 @@ def page_analyze_paper():
     analyzer = PaperAnalyzer(model=model)
     api_key = st.session_state["api_key"]
 
+    # Hier speichern wir die "relevant_papers" (Outlier-Check) global, damit wir
+    # in der Excel-Funktion nur diese verarbeiten
     if "relevant_papers_compare" not in st.session_state:
         st.session_state["relevant_papers_compare"] = None
     if "theme_compare" not in st.session_state:
         st.session_state["theme_compare"] = ""
 
+    # -------------------------------------
+    # Hilfsfunktion: Outlier-Logic
+    # -------------------------------------
     def do_outlier_logic(paper_map: dict) -> (list, str):
         """Gibt (relevantPaperList, discoveredTheme) zurück."""
+        # If theme_mode == Manuell => ask GPT for relevance to user_defined_theme
         if theme_mode == "Manuell":
             main_theme = user_defined_theme.strip()
             if not main_theme:
@@ -579,6 +750,7 @@ Nur das JSON, ohne weitere Erklärungen.
 
             return (relevant_papers_local, main_theme)
         else:
+            # GPT-based theme detection
             snippet_list = []
             for name, txt_data in paper_map.items():
                 snippet = txt_data[:700].replace("\n"," ")
@@ -645,9 +817,10 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
 
             return (relevant_papers_local, main_theme)
 
-    # ---------------------------
-    # Haupt-Analyse
-    # ---------------------------
+
+    # -------------------------------------
+    # Haupt-Analyse-Bereich
+    # -------------------------------------
     if uploaded_files and api_key:
         if compare_mode:
             st.write("### Vergleichsmodus: Outlier-Paper ausschließen")
@@ -893,12 +1066,11 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
 
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
 
-    # ------------------------------------------------------------------
-    # NEU: Excel-Ausgabe in VORLAGE an den FIXEN Zellen (D5, D6, etc.)
-    # ------------------------------------------------------------------
     if uploaded_files and api_key:
-        if st.button("Alle Analysen durchführen & in Excel (Vorlage) speichern"):
-            with st.spinner("Analysiere alle hochgeladenen PDFs (Vorlage-Fix)..."):
+        # Falls Compare-Mode => wir nutzen st.session_state["relevant_papers_compare"]
+        # Sonst => wir nehmen alle
+        if st.button("Alle Analysen durchführen & in Excel speichern (Multi)"):
+            with st.spinner("Analysiere alle hochgeladenen PDFs (für Excel)..."):
                 import openpyxl
                 import datetime
 
@@ -908,105 +1080,14 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     st.error("Vorlage 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
                     st.stop()
 
-                # Wir gehen Paper für Paper durch und "verschieben" uns um 5 Zeilen
-                # oder Spalten, je Paper => laut Vorgaben
-                # Die User-Anforderung: 
-                #   - gene name => D5
-                #   - rs => D6
-                #   - genotypes => D10, E10 => freq, dann D11/E11, D12/E12
-                #   - date of publication => C20
-                #   - study size => D20
-                #   - key findings => E20
-                #   - results => G21
-                #   - conclusion => G22
-                #   - summary paper2 => E25, usw...
-                #
-                # Realisieren wir nun: 
-                #   * Paper 1 => already in lines 5.. => that means no shift
-                #   * Paper 2 => shift by 5 rows => so "D5" -> "D10"? 
-                #   Actually the user specifically said "Paper2 => E25"? 
-                #   It's somewhat contradictory. We do a step of +5 for the "Summary block".
-                #
-                # => We'll interpret: Each new paper will shift the "block" by +25 rows
-                #    so that "Paper2" can have "D(5+25)=D30" and so on, or we do the SHIFT
-                #    in the *rows*. 
-                # To keep it simpler, let's do a SHIFT for each new paper, e.g. if the "block"
-                # for Paper 1 is row offset=0, for Paper 2 is row offset=25, Paper 3 is +50, etc.
+                gen_sheets = {}
+                analyzer = PaperAnalyzer(model=model)
 
-                # Hilfs-Funktion: FillCells
-                def fill_paper_in_template(ws, offset, paper_data):
-                    """
-                    offset = multiple of 25 => row shift
-                    paper_data => dict with needed fields
-                    We'll fill:
-                      D5 => gene
-                      D6 => rs
-                      D10 => genotype1
-                      E10 => freq1
-                      D11 => genotype2
-                      E11 => freq2
-                      D12 => genotype3
-                      E12 => freq3
-                      ...
-                      C20 => date_of_publication
-                      D20 => study_size
-                      E20 => key_findings
-                      G21 => results
-                      G22 => conclusion
-                    but each row is offset by 'offset'.
-                    """
-                    # So row(5+offset) col D => gene, etc.
-                    # We'll parse out the fields from paper_data
-                    # Paper data keys:
-                    # 'gene', 'rs', 'genotypes' => list of (geno, freq),
-                    # 'date_of_publication', 'study_size', 'key_findings', 'results', 'conclusion'
-
-                    # gene => ws["D5 + offset"]
-                    # We'll do rowBase = 5 + offset, col D is 4 => ws.cell(rowBase, 4)
-                    rowBase = 5 + offset
-                    # D = 4, E=5, G=7, C=3
-                    # We'll define a helper for cell col letter => colIndex
-                    def col_to_index(letter):
-                        return ord(letter.upper()) - ord('A') + 1
-
-                    # gene
-                    ws.cell(row=rowBase, column=col_to_index("D")).value = paper_data.get("gene","")
-                    # rs
-                    ws.cell(row=rowBase+1, column=col_to_index("D")).value = paper_data.get("rs","")
-
-                    # genotypes => up to 3
-                    # D10/E10 => rowBase+5 => row(10 + offset)
-                    # D11/E11 => rowBase+6
-                    # D12/E12 => rowBase+7
-                    # each is (geno, freq)
-                    gList = paper_data.get("genotypes", [])
-                    for i, gf in enumerate(gList[:3], start=0):
-                        row_geno = rowBase + 5 + i
-                        geno, freq = gf
-                        ws.cell(row=row_geno, column=col_to_index("D")).value = geno
-                        ws.cell(row=row_geno, column=col_to_index("E")).value = freq
-
-                    # date_of_publication => C20 => rowBase+15, col=3
-                    ws.cell(row=rowBase+15, column=3).value = paper_data.get("date_of_publication","")
-
-                    # study_size => D20 => rowBase+15, col=4
-                    ws.cell(row=rowBase+15, column=4).value = paper_data.get("study_size","")
-
-                    # key_findings => E20 => rowBase+15, col=5
-                    ws.cell(row=rowBase+15, column=5).value = paper_data.get("key_findings","")
-
-                    # results => G21 => rowBase+16, col=7
-                    ws.cell(row=rowBase+16, column=7).value = paper_data.get("results","")
-
-                    # conclusion => G22 => rowBase+17, col=7
-                    ws.cell(row=rowBase+17, column=7).value = paper_data.get("conclusion","")
-
-                # check if compare_mode => relevant or not
+                # check outlier logic
                 if compare_mode:
+                    # Falls wir relevant_papers_compare nicht haben, machen wir auto
                     if not st.session_state["relevant_papers_compare"]:
-                        # user forgot to do "Vergleichs-Analyse starten"
-                        st.warning("Compare-Mode: Führe erst 'Vergleichs-Analyse starten' aus!")
-                        # wir machen es notfalls auto
+                        # user hat den "Vergleichs-Analyse starten" Button nicht gedrückt => wir machen auto
                         paper_map_auto = {}
                         for fpdf in uploaded_files:
                             txt = analyzer.extract_text_from_pdf(fpdf)
@@ -1025,111 +1106,127 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         return
                     selected_files_for_excel = [f for f in uploaded_files if f.name in relevant_list_for_excel]
                 else:
+                    # Kein Compare => nimm alle
                     selected_files_for_excel = uploaded_files
 
-                rowOffset = 0
-                ws = wb.active  # Wir nehmen das aktive Sheet
-                # Das Template hat Paper1-Felder an row=5.. => offset=0
-                # Paper2 => offset=25, Paper3 => offset=50, etc.
-
-                for i, fpdf in enumerate(selected_files_for_excel):
-                    paper_data = {}
-                    # 1) extract text
+                for fpdf in selected_files_for_excel:
                     text = analyzer.extract_text_from_pdf(fpdf)
                     if not text.strip():
-                        st.error(f"Kein Text aus {fpdf.name} extrahierbar. Überspringe ...")
+                        st.error(f"Kein Text aus {fpdf.name} extrahierbar (evtl. kein OCR). Überspringe...")
                         continue
 
-                    # 2) parse needed fields
-                    #    => gene, rs, up to 3 genotypes w/ freq, date_of_publication, study_size, key_findings, results, conclusion
-                    #    For date_of_publication we can do "n/a" or guess from the text?
-                    #    We'll do a naive approach for date_of_publication => "2023-01-01" or "Unknown"
-                    #    or we can parse from text ...
-                    # We'll do naive approach: we store "n/a" or the user's "year" from the "subject"
-
-                    # Suppose no real date => "n/a"
-                    # Suppose no real conclusion => we do "No separate conclusion"
-
-                    # We do minimal analysis or re-use the partial results from the "summarize" + "extract_key_findings"
+                    # Standardanalysen
                     summary_result = analyzer.summarize(text, api_key)
                     key_findings_result = analyzer.extract_key_findings(text, api_key)
-                    # we define "results" as maybe the "Ergebnisse" splitted from summary
-                    ergebnisse, schlussf = split_summary(summary_result)
+                    # Relevanz erfordert topic
+                    if not topic:
+                        # optional => user may have left it blank
+                        relevance_result = "(No topic => no Relevanz-Bewertung)"
+                    else:
+                        relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
+                    methods_result = analyzer.identify_methods(text, api_key)
 
-                    # parse cohort => e.g. parse_cohort_info => yields study_size
-                    cohort_info = parse_cohort_info(summary_result)
-                    study_size = cohort_info.get("study_size","(no data)")
-
-                    # date_of_publication => let's do "2023" as fallback
-                    date_of_pub = "n/a"
-
-                    # gene => maybe "in the X gene"
+                    # Gens und Allele
                     pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                     match_text = re.search(pattern_obvious, text)
-                    gene_name = match_text.group(1) if match_text else "n/a"
+                    gene_via_text = match_text.group(1) if match_text else None
 
-                    # find rs => "rs\d+"
+                    if not gene_via_text:
+                        # Falls nicht gefunden, in vorlage_gene.xlsx gucken
+                        try:
+                            wb_gene = openpyxl.load_workbook("vorlage_gene.xlsx")
+                        except FileNotFoundError:
+                            st.error("Die Datei 'vorlage_gene.xlsx' wurde nicht gefunden!")
+                            st.stop()
+                        ws_gene = wb_gene.active
+                        gene_names_from_excel = []
+                        for row in ws_gene.iter_rows(min_row=3, min_col=3, max_col=3, values_only=True):
+                            cell_value = row[0]
+                            if cell_value and isinstance(cell_value, str):
+                                gene_names_from_excel.append(cell_value.strip())
+                        for g in gene_names_from_excel:
+                            pat = re.compile(r"\b" + re.escape(g) + r"\b", re.IGNORECASE)
+                            if re.search(pat, text):
+                                gene_via_text = g
+                                break
+
+                    found_gene = gene_via_text
                     rs_pat = r"(rs\d+)"
                     found_rs_match = re.search(rs_pat, text)
-                    rs_num = found_rs_match.group(1) if found_rs_match else "n/a"
+                    rs_num = found_rs_match.group(1) if found_rs_match else None
 
-                    # genotype => up to 3
                     genotype_regex = r"\b([ACGT]{2,3})\b"
                     lines = text.split("\n")
                     found_pairs = []
                     for line in lines:
                         matches = re.findall(genotype_regex, line)
                         if matches:
-                            # We'll treat freq as "n/a" for each found genotype
-                            for m_ in matches:
-                                found_pairs.append((m_, "n/a"))
+                            for m in matches:
+                                found_pairs.append((m, line.strip()))
 
                     unique_geno_pairs = []
                     for gp in found_pairs:
                         if gp not in unique_geno_pairs:
                             unique_geno_pairs.append(gp)
 
-                    # We only keep up to 3
-                    # if user wants population freq => we try from AlleleFrequencyFinder:
                     aff = AlleleFrequencyFinder()
-                    freq_info = "n/a"
-                    if rs_num != "n/a":
+                    freq_info = "Keine rsID vorhanden"
+                    if rs_num:
                         data = aff.get_allele_frequencies(rs_num)
+                        if not data:
+                            data = aff.try_alternative_source(rs_num)
                         if data:
                             freq_info = aff.build_freq_info_text(data)
-                    # We'll store freq_info in each genotype. For simplicity, we store the same freq in each
-                    # or parse it?
-                    # We'll do the same freq in each genotype for demonstration
-                    final_gens = []
-                    for i_g, gp in enumerate(unique_geno_pairs[:3]):
-                        final_gens.append((gp[0], freq_info))
 
-                    # store in paper_data
-                    paper_data["gene"] = gene_name
-                    paper_data["rs"] = rs_num
-                    paper_data["genotypes"] = final_gens
-                    paper_data["date_of_publication"] = date_of_pub
-                    paper_data["study_size"] = study_size
-                    paper_data["key_findings"] = key_findings_result
-                    paper_data["results"] = ergebnisse
-                    paper_data["conclusion"] = schlussf
+                    sheet_name = found_gene if found_gene else "GEN_UNKNOWN"
+                    sheet_name = sheet_name[:27]
 
-                    fill_paper_in_template(ws, rowOffset, paper_data)
-                    rowOffset += 25  # next paper => shift 25 rows downward
+                    if sheet_name not in gen_sheets:
+                        try:
+                            new_sheet = wb.create_sheet(sheet_name)
+                            new_sheet["A1"] = "Dateiname"
+                            new_sheet["B1"] = "Gene"
+                            new_sheet["C1"] = "rsID"
+                            new_sheet["D1"] = "Genotype Pairs"
+                            new_sheet["E1"] = "Freq Info"
+                            new_sheet["F1"] = "Summary"
+                            new_sheet["G1"] = "Key Findings"
+                            new_sheet["H1"] = "Methods"
+                            new_sheet["I1"] = "Relevance"
+                            new_sheet["J1"] = "Timestamp"
+                            gen_sheets[sheet_name] = new_sheet
+                        except:
+                            gen_sheets[sheet_name] = wb[sheet_name]
+                    else:
+                        new_sheet = gen_sheets[sheet_name]
 
-                # done
-                output_buffer = io.BytesIO()
-                wb.save(output_buffer)
-                output_buffer.seek(0)
+                    next_row = new_sheet.max_row + 1
 
-            st.success("Vorlage-Excel wurde gefüllt!")
+                    new_sheet.cell(row=next_row, column=1).value = fpdf.name
+                    new_sheet.cell(row=next_row, column=2).value = found_gene
+                    new_sheet.cell(row=next_row, column=3).value = rs_num
+                    all_gps = ",".join([x[0] for x in unique_geno_pairs])
+                    new_sheet.cell(row=next_row, column=4).value = all_gps
+                    new_sheet.cell(row=next_row, column=5).value = freq_info
+                    new_sheet.cell(row=next_row, column=6).value = summary_result
+                    new_sheet.cell(row=next_row, column=7).value = key_findings_result
+                    new_sheet.cell(row=next_row, column=8).value = methods_result
+                    combined_relevance = f"{relevance_result}\n(Manuell:{user_relevance_score})"
+                    new_sheet.cell(row=next_row, column=9).value = combined_relevance
+                    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    new_sheet.cell(row=next_row, column=10).value = now_str
+
+            output_buffer = io.BytesIO()
+            wb.save(output_buffer)
+            output_buffer.seek(0)
+
+            st.success("Alle PDFs verarbeitet – Excel-Datei mit mehreren Sheets erstellt!")
             st.download_button(
-                label="Download Excel (Vorlage-Fix)",
+                label="Download Excel (Multi-Gene)",
                 data=output_buffer,
-                file_name="analysis_results_with_template.xlsx",
+                file_name="analysis_results_multi.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
-
 
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
