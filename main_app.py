@@ -731,11 +731,17 @@ def page_analyze_paper():
                                 if images:
                                     st.markdown("**Bilder/Grafiken auf dieser Seite**")
                                     for img_index, img_dict in enumerate(images, start=1):
-                                        x_object = page._extract_xobject(img_dict)
-                                        # x_object["image"] enthält die eigentlichen Bytes
-                                        image = Image.open(io.BytesIO(x_object["image"]))
-                                        st.write(f"**Bild {img_index}**:")
-                                        st.image(image, use_column_width=True)
+                                        # KORREKTES Extrahieren via xref:
+                                        xref = img_dict.get("xref")
+                                        if xref is not None:
+                                            extracted_img = page.extract_image(xref)
+                                            if extracted_img:
+                                                image_data = extracted_img["image"]
+                                                image = Image.open(io.BytesIO(image_data))
+                                                st.write(f"**Bild {img_index}**:")
+                                                st.image(image, use_column_width=True)
+                                            else:
+                                                st.write(f"Bild {img_index} konnte nicht extrahiert werden.")
                                 else:
                                     st.write("Keine Bilder auf dieser Seite gefunden.")
                     
