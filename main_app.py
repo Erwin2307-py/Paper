@@ -993,7 +993,6 @@ def page_analyze_paper():
     
                 # Übersetzen (falls nötig)
                 if combined_str.strip() and (not re.search(r"[a-zA-Z]", combined_str) or "Patienten" in combined_str):
-                    # Nur wenn da noch Deutsch drin sein könnte
                     combined_str = translate_text_openai(combined_str, "German", "English", api_key)
                 
                 ws["D20"] = combined_str  # D20 => study size & origin in English
