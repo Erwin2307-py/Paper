@@ -679,8 +679,7 @@ def page_analyze_paper():
 
                 # ------------------------------------------------------------------
                 # Wenn manuell: wir nutzen das vom User eingegebene Thema,
-                # aber wir lassen GPT trotzdem checken, ob Paper relevant sind
-                # oder Outlier => "Has the snippet relation to user_defined_theme?"
+                # ABER wir lassen GPT Paper checken -> relevant or not
                 # ------------------------------------------------------------------
                 if theme_mode == "Manuell":
                     main_theme = user_defined_theme.strip()
@@ -688,7 +687,6 @@ def page_analyze_paper():
                         st.error("Bitte ein manuelles Hauptthema eingeben!")
                         return
 
-                    # GPT-Logik: Wir geben GPT den user-defined theme und snippet
                     snippet_list = []
                     for name, txt_data in paper_map.items():
                         snippet = txt_data[:700].replace("\n"," ")
@@ -742,7 +740,6 @@ PLEASE provide ONLY the JSON, no other text.
                         json_str = re.sub(r"\n?```", "", json_str)
                     try:
                         data_parsed = json.loads(json_str)
-                        # read out "theme" (we expect the user-defined theme repeated)
                         # read out "papers"
                         papers_info = data_parsed.get("papers", [])
                     except Exception as parse_e:
@@ -769,8 +766,8 @@ PLEASE provide ONLY the JSON, no other text.
                 else:
                     # => GPT-based theme detection
                     snippet_list = []
-                    for name, txt in paper_map.items():
-                        snippet = txt[:700].replace("\n"," ")
+                    for name, txt_data in paper_map.items():
+                        snippet = txt_data[:700].replace("\n"," ")
                         snippet_list.append(f'{{"filename": "{name}", "snippet": "{snippet}"}}')
                     big_snippet = ",\n".join(snippet_list)
 
@@ -1082,11 +1079,13 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
                     methods_result = analyzer.identify_methods(text, api_key)
 
+                    # Suche nach "in the <GEN> gene"
                     pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                     match_text = re.search(pattern_obvious, text)
                     gene_via_text = match_text.group(1) if match_text else None
 
                     if not gene_via_text:
+                        # Falls nicht gefunden, schauen wir in vorlage_gene.xlsx
                         try:
                             wb_gene = openpyxl.load_workbook("vorlage_gene.xlsx")
                         except FileNotFoundError:
