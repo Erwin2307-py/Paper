@@ -715,14 +715,50 @@ def page_analyze_paper():
                                 tables = page.extract_tables()
                                 if tables:
                                     st.markdown("**Tabellen auf dieser Seite**")
-                                    for table_idx, table in enumerate(tables, start=1):
-                                        df = pd.DataFrame(table[1:], columns=table[0])
+                                    for table_idx, table_data in enumerate(tables, start=1):
+                                        if not table_data:
+                                            st.write("Leere Tabelle erkannt.")
+                                            continue
+                                        # Wir nehmen an, dass table_data[0] der Header ist;
+                                        # aber wir korrigieren Duplikate oder leere Spaltennamen:
+                                        first_row = table_data[0]
+                                        data_rows = table_data[1:]
+
+                                        # Falls gar keine Datenzeilen vorhanden sind:
+                                        if not data_rows:
+                                            # Dann behandeln wir alles als Daten ohne richtigen Header
+                                            # oder brechen ab, je nach Bedarf
+                                            st.write("Diese Tabelle enthält nur eine Zeile (vermutlich Header).")
+                                            data_rows = table_data  # fallback
+                                            first_row = [f"Col_{i}" for i in range(len(data_rows[0]))]
+
+                                        # Duplikate entfernen / umbenennen
+                                        new_header = []
+                                        used_cols = {}
+                                        for col in first_row:
+                                            col_str = col if col else "N/A"
+                                            if col_str not in used_cols:
+                                                used_cols[col_str] = 1
+                                                new_header.append(col_str)
+                                            else:
+                                                used_cols[col_str] += 1
+                                                new_header.append(f"{col_str}.{used_cols[col_str]}")
+
+                                        # Prüfen, ob Spaltenanzahl passt
+                                        if any(len(row) != len(new_header) for row in data_rows):
+                                            st.write("Warnung: Inkonsistente Spaltenanzahl. Erzeuge generische Namen.")
+                                            df = pd.DataFrame(table_data)
+                                        else:
+                                            df = pd.DataFrame(data_rows, columns=new_header)
+
                                         st.write(f"**Tabelle {table_idx}**:")
                                         st.dataframe(df)
-                                        # Für GPT: Wir verwandeln die Tabelle in reinen Text
+
+                                        # Für GPT: Wir verwandeln die Tabelle in reinen Text (CSV-Format)
                                         table_str = df.to_csv(index=False)
-                                        # Wir speichern sie in "all_tables_text" ab
-                                        all_tables_text.append(f"Seite {page_number} - Tabelle {table_idx}\n{table_str}\n")
+                                        all_tables_text.append(
+                                            f"Seite {page_number} - Tabelle {table_idx}\n{table_str}\n"
+                                        )
                                 else:
                                     st.write("Keine Tabellen auf dieser Seite gefunden.")
                                 
