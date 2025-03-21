@@ -2,7 +2,6 @@ import streamlit as st
 import requests
 import xml.etree.ElementTree as ET
 import pandas as pd
-from io import BytesIO
 import re
 import datetime
 import sys
@@ -727,7 +726,6 @@ def page_analyze_paper():
                                         # Falls gar keine Datenzeilen vorhanden sind:
                                         if not data_rows:
                                             # Dann behandeln wir alles als Daten ohne richtigen Header
-                                            # oder brechen ab, je nach Bedarf
                                             st.write("Diese Tabelle enthält nur eine Zeile (vermutlich Header).")
                                             data_rows = table_data  # fallback
                                             first_row = [f"Col_{i}" for i in range(len(data_rows[0]))]
@@ -785,6 +783,30 @@ def page_analyze_paper():
                         st.error(f"Fehler beim Auslesen von Tabellen/Bildern: {str(e)}")
                         result = "(Keine Auswertung möglich)"
                     else:
+                        # ----------------------------
+                        # NEU: Suche nach "Table" im gesamten PDF-Text
+                        # ----------------------------
+                        st.markdown("### Zusätzliche Suche nach 'Table' im gesamten PDF-Inhalt:")
+                        try:
+                            # Hier extrahieren wir den Gesamttext des PDFs
+                            text_all_pages = ""
+                            with pdfplumber.open(uploaded_file) as pdf2:
+                                for pg in pdf2.pages:
+                                    t_ = pg.extract_text() or ""
+                                    text_all_pages += t_ + "\n"
+
+                            lines = text_all_pages.splitlines()
+                            # Alle Zeilen herausfiltern, in denen "Table" vorkommt
+                            matches = [ln for ln in lines if "Table" in ln]
+                            if matches:
+                                st.write("Zeilen mit 'Table' im Text:")
+                                for ln in matches:
+                                    st.write(f"- {ln}")
+                            else:
+                                st.write("Keine Erwähnung von 'Table' im Text gefunden.")
+                        except Exception as e2:
+                            st.warning(f"Fehler bei der Volltext-Suche nach 'Table': {e2}")
+
                         # Wenn wir mindestens eine Tabelle haben, lassen wir GPT analysieren
                         if len(all_tables_text) > 0:
                             # Wir limitieren ggf. die Länge des Textes
@@ -1158,8 +1180,5 @@ def main():
             unsafe_allow_html=True
         )
 
-# ------------------------------------------------------------------
-# Skriptstart
-# ------------------------------------------------------------------
 if __name__ == '__main__':
     main()
