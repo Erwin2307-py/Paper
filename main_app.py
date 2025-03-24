@@ -80,26 +80,30 @@ def clean_html_except_br(text):
     return cleaned_text
 
 def translate_text_openai(text, source_language, target_language, api_key):
-    """Übersetzt Text über OpenAI-ChatCompletion (z.B. GPT-4)."""
-    import openai
+    """
+    Übersetzt Text über GPT, aber mit older Completions-API, 
+    sodass kein APIRemovedInV1-Fehler auftritt.
+    """
     openai.api_key = api_key
-    prompt_system = (
-        f"You are a translation engine from {source_language} to {target_language} for a biotech company called Novogenia "
-        f"that focuses on lifestyle and health genetics and health analyses. The outputs you provide will be used directly as "
-        f"the translated text blocks. Please translate as accurately as possible in the context of health and lifestyle reporting. "
-        f"If there is no appropriate translation, the output should be 'TBD'. Keep the TAGS and do not add additional punctuation."
+    # Wir bauen den Prompt (System & User) selbst zusammen
+    system_role = (
+        f"You are a translation engine from {source_language} to {target_language} for a biotech company "
+        f"called Novogenia that focuses on lifestyle and health genetics and health analyses. The outputs "
+        f"you provide will be used directly as the translated text blocks. Please translate as accurately "
+        f"as possible in the context of health and lifestyle reporting. If there is no appropriate translation, "
+        f"the output should be 'TBD'. Keep the TAGS and do not add additional punctuation."
     )
-    prompt_user = f"Translate the following text from {source_language} to {target_language}:\n'{text}'"
+    user_prompt = f"Translate the following text from {source_language} to {target_language}:\n'{text}'"
+    combined_prompt = f"System: {system_role}\nUser: {user_prompt}\nAnswer:"
+
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4",  # or "gpt-3.5-turbo", etc.
-            messages=[
-                {"role": "system", "content": prompt_system},
-                {"role": "user", "content": prompt_user}
-            ],
-            temperature=0
+        response = openai.Completion.create(
+            model="text-davinci-003",
+            prompt=combined_prompt,
+            max_tokens=1000,
+            temperature=0.0
         )
-        translation = response.choices[0].message.content.strip()
+        translation = response.choices[0].text.strip()
         if translation and translation[0] in ["'", '"', "‘", "„"]:
             translation = translation[1:]
             if translation and translation[-1] in ["'", '"']:
@@ -109,6 +113,7 @@ def translate_text_openai(text, source_language, target_language, api_key):
     except Exception as e:
         st.warning("Übersetzungsfehler: " + str(e))
         return text
+
 
 class CoreAPI:
     def __init__(self, api_key):
@@ -394,7 +399,6 @@ class SemanticScholarSearch:
 # 7) Excel Online Search - Placeholder
 # ------------------------------------------------------------------
 # (Hier könnte Ihr Modul code stehen, falls benötigt)
-# ------------------------------------------------------------------
 
 
 # ------------------------------------------------------------------
@@ -459,7 +463,12 @@ def page_online_api_filter():
 # PaperAnalyzer + AlleleFrequencyFinder classes
 # ------------------------------------------------------------------
 class PaperAnalyzer:
-    def __init__(self, model="gpt-3.5-turbo"):
+    """
+    Angepasst: Wir verwenden nur openai.Completion.create(...)
+    anstelle von ChatCompletion.create(...) -- so vermeiden wir 
+    APIRemovedInV1-Fehler bei älteren oder inkompatiblen openai-Bibliotheken.
+    """
+    def __init__(self, model="text-davinci-003"):
         self.model = model
     
     def extract_text_from_pdf(self, pdf_file):
@@ -473,25 +482,24 @@ class PaperAnalyzer:
         return text
     
     def analyze_with_openai(self, text, prompt_template, api_key):
+        # Prompt zusammenbauen
         if len(text) > 15000:
             text = text[:15000] + "..."
-        prompt = prompt_template.format(text=text)
+        user_prompt = prompt_template.format(text=text)
+        system_role = (
+            "Du bist ein Experte für die Analyse wissenschaftlicher Paper, "
+            "besonders im Bereich Side-Channel Analysis."
+        )
+        combined_prompt = f"System: {system_role}\nUser: {user_prompt}\nAnswer:"
+
         openai.api_key = api_key
-        
-        # You can pick "gpt-3.5-turbo" or "gpt-4" or whichever you prefer:
-        response = openai.ChatCompletion.create(
+        response = openai.Completion.create(
             model=self.model,
-            messages=[
-                {"role": "system", "content": (
-                    "Du bist ein Experte für die Analyse wissenschaftlicher Paper, "
-                    "besonders im Bereich Side-Channel Analysis."
-                )},
-                {"role": "user", "content": prompt}
-            ],
+            prompt=combined_prompt,
             temperature=0.3,
             max_tokens=1500
         )
-        return response.choices[0].message.content
+        return response.choices[0].text.strip()
     
     def summarize(self, text, api_key):
         prompt = (
@@ -504,8 +512,9 @@ class PaperAnalyzer:
     
     def extract_key_findings(self, text, api_key):
         prompt = (
-            "Extrahiere die 5 wichtigsten Erkenntnisse aus diesem wissenschaftlichen "
-            "Paper im Bereich Side-Channel Analysis. Liste sie mit Bulletpoints auf:\n\n{text}"
+            "Extrahiere die 5 wichtigsten Erkenntnisse aus diesem "
+            "wissenschaftlichen Paper im Bereich Side-Channel Analysis. "
+            "Liste sie mit Bulletpoints auf:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
     
@@ -555,7 +564,7 @@ class AlleleFrequencyFinder:
             return None
     
     def try_alternative_source(self, rs_id: str) -> Optional[Dict[str, Any]]:
-        # If you have a second source, implement it here. Placeholder returns None.
+        # Falls Sie eine zweite Quelle haben: implementieren, hier nur Platzhalter
         return None
     
     def parse_and_display_data(self, data: Dict[str, Any]) -> None:
@@ -634,17 +643,9 @@ def parse_cohort_info(summary_text: str) -> dict:
 
     return info
 
-
-# ------------------------------------------------------------------
-# Placeholder for your outlier-logic function (Compare Mode)
-# ------------------------------------------------------------------
+# Placeholder für Outlier-Logik im Compare Mode
 def do_outlier_logic(paper_map_auto):
-    """
-    Placeholder function. 
-    In your code, it presumably checks which papers are 'outliers' and excludes them, 
-    returning a list of relevant papers + the discovered overall theme.
-    """
-    # For example, we pretend all are relevant:
+    # z.B. wir tun so, als ob alle relevant sind
     relevant_papers_auto = list(paper_map_auto.keys())
     discovered_theme_auto = "some theme"
     return relevant_papers_auto, discovered_theme_auto
@@ -663,9 +664,11 @@ def page_analyze_paper():
     new_key_value = st.sidebar.text_input("OpenAI API Key", type="password", value=st.session_state["api_key"])
     st.session_state["api_key"] = new_key_value
     
+    # Da wir die older Completions API benutzen, nehmen wir ein passendes Modell wie text-davinci-003.
+    # Alternativ können Sie "text-curie-001", "text-babbage-001" etc. wählen, wenn Sie wollen:
     model = st.sidebar.selectbox(
         "OpenAI-Modell",
-        ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4o"],
+        ["text-davinci-003", "text-curie-001", "text-babbage-001", "text-ada-001"],
         index=0
     )
     
@@ -731,7 +734,7 @@ def page_analyze_paper():
                     relevant_papers = list(paper_map.keys())
                     st.info("Keine Outlier ausgeschlossen, da 'Manuell' gewählt.")
                 else:
-                    # We apply GPT-based outlier check
+                    # GPT-basierter Outlier-Check => wir bauen Prompt+Response, aber nun mit openai.Completion
                     snippet_list = []
                     for name, txt in paper_map.items():
                         snippet = txt[:700].replace("\n"," ")
@@ -752,18 +755,18 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
 
 [{big_snippet}]
 """
+                    # "System" & "User" Prompt zusammenbauen
+                    system_role = "Du bist ein Assistent, der Paper thematisch filtert."
+                    combined_prompt = f"System: {system_role}\nUser: {big_input}\nAnswer:"
                     try:
                         openai.api_key = api_key
-                        scope_resp = openai.ChatCompletion.create(
+                        scope_resp = openai.Completion.create(
                             model=model,
-                            messages=[
-                                {"role": "system", "content": "Du bist ein Assistent, der Paper thematisch filtert."},
-                                {"role": "user", "content": big_input}
-                            ],
+                            prompt=combined_prompt,
                             temperature=0.0,
                             max_tokens=1800
                         )
-                        scope_decision = scope_resp.choices[0].message.content
+                        scope_decision = scope_resp.choices[0].text.strip()
                     except Exception as e1:
                         st.error(f"GPT-Fehler bei Compare-Mode: {e1}")
                         return
@@ -948,24 +951,24 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                                     combined_tables_text = "\n".join(all_tables_text)
                                     if len(combined_tables_text) > 14000:
                                         combined_tables_text = combined_tables_text[:14000] + "..."
+                                    # GPT-Auswertung (hier ältere Completions API)
+                                    system_prompt = "Du bist ein Experte für PDF-Tabellenanalyse."
                                     gpt_prompt = (
                                         "Bitte analysiere die folgenden Tabellen aus einem wissenschaftlichen PDF. "
                                         "Fasse die wichtigsten Erkenntnisse zusammen und gib (wenn möglich) eine "
                                         "kurze Interpretation in Bezug auf Lifestyle und Health Genetics:\n\n"
                                         f"{combined_tables_text}"
                                     )
+                                    combined_prompt = f"System: {system_prompt}\nUser: {gpt_prompt}\nAnswer:"
                                     try:
                                         openai.api_key = api_key
-                                        gpt_resp = openai.ChatCompletion.create(
+                                        gpt_resp = openai.Completion.create(
                                             model=model,
-                                            messages=[
-                                                {"role": "system", "content": "Du bist ein Experte für PDF-Tabellenanalyse."},
-                                                {"role": "user", "content": gpt_prompt}
-                                            ],
+                                            prompt=combined_prompt,
                                             temperature=0.3,
                                             max_tokens=1000
                                         )
-                                        result = gpt_resp.choices[0].message.content
+                                        result = gpt_resp.choices[0].text.strip()
                                     except Exception as e2:
                                         st.error(f"Fehler bei GPT-Tabellenanalyse: {str(e2)}")
                                         result = "(Fehler bei GPT-Auswertung)"
@@ -1011,7 +1014,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 
                 # Falls Compare Mode aktiv ist und wir den Outlier-Check machen wollen
                 if compare_mode:
-                    # If user hasn't run the "Vergleichs-Analyse" button, the session might be empty:
                     if not st.session_state["relevant_papers_compare"]:
                         paper_map_auto = {}
                         for fpdf in uploaded_files:
@@ -1057,12 +1059,12 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
                     methods_result = analyzer.identify_methods(text, api_key)
                     
-                    # Try to detect a gene name in text:
+                    # Gene detection:
                     pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                     match_text = re.search(pattern_obvious, text)
                     gene_via_text = match_text.group(1) if match_text else None
                     
-                    # If not found, also read from "vorlage_gene.xlsx" (if you have that):
+                    # Falls nicht gefunden, optional in "vorlage_gene.xlsx" suchen
                     if not gene_via_text:
                         try:
                             wb_gene = openpyxl.load_workbook("vorlage_gene.xlsx")
@@ -1113,7 +1115,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     sheet["D5"] = found_gene if found_gene else "(kein Gene)"
                     sheet["D6"] = rs_num if rs_num else "(kein RS)"
                     
-                    for j, gp in enumerate(unique_geno_pairs[:3]):  # j, to avoid conflict with i
+                    for j, gp in enumerate(unique_geno_pairs[:3]):
                         row = 10 + j
                         sheet[f"D{row}"] = gp[0]
                         sheet[f"E{row}"] = freq_info
@@ -1142,7 +1144,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     
                     for excel_file in excel_files:
                         sheet_name = os.path.basename(excel_file).replace('.xlsx', '')
-                        # Limit to 31 characters for Excel sheet name
                         if len(sheet_name) > 31:
                             sheet_name = sheet_name[:31]
                         
@@ -1155,7 +1156,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                             for cell in row:
                                 target_sheet[cell.coordinate] = cell.value
                         
-                        # Also copy column widths:
+                        # Spaltenbreiten kopieren
                         for col in source_sheet.columns:
                             letter = openpyxl.utils.get_column_letter(col[0].column)
                             target_sheet.column_dimensions[letter].width = source_sheet.column_dimensions[letter].width
@@ -1220,33 +1221,34 @@ def sidebar_module_navigation():
     return pages.get(st.session_state["current_page"], page_home)
 
 def answer_chat(question: str) -> str:
-    """Einfaches Beispiel: Nutzt Paper-Text (falls vorhanden) aus st.session_state + GPT."""
+    """
+    Einfaches Beispiel: Nutzt Paper-Text (falls vorhanden) aus st.session_state + 
+    older Completions-API anstelle von ChatCompletion. 
+    """
     api_key = st.session_state.get("api_key", "")
     paper_text = st.session_state.get("paper_text", "")
     if not api_key:
         return f"(Kein API-Key) Echo: {question}"
     
     if not paper_text.strip():
-        sys_msg = "Du bist ein hilfreicher Assistent für allgemeine Fragen."
+        system_msg = "Du bist ein hilfreicher Assistent für allgemeine Fragen."
     else:
-        sys_msg = (
+        system_msg = (
             "Du bist ein hilfreicher Assistent, und hier ist ein Paper als Kontext:\n\n"
             + paper_text[:12000] + "\n\n"
             "Bitte nutze es, um Fragen möglichst fachkundig zu beantworten."
         )
     
+    combined_prompt = f"System: {system_msg}\nUser: {question}\nAnswer:"
     openai.api_key = api_key
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": sys_msg},
-                {"role": "user", "content": question}
-            ],
+        response = openai.Completion.create(
+            model="text-davinci-003",
+            prompt=combined_prompt,
             temperature=0.3,
             max_tokens=400
         )
-        return response.choices[0].message.content
+        return response.choices[0].text.strip()
     except Exception as e:
         return f"OpenAI-Fehler: {e}"
 
