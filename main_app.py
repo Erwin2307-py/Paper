@@ -88,6 +88,7 @@ def translate_text_openai(text, source_language, target_language, api_key):
             temperature=0
         )
         translation = response.choices[0].message.content.strip()
+        # strip quotes if present
         if translation and translation[0] in ["'", '"', "‘", "„"]:
             translation = translation[1:]
             if translation and translation[-1] in ["'", '"']:
@@ -95,7 +96,7 @@ def translate_text_openai(text, source_language, target_language, api_key):
         translation = clean_html_except_br(translation)
         return translation
     except Exception as e:
-        st.warning("Translation Error: " + str(e))
+        st.warning(f"Translation Error: {e}")
         return text
 
 class CoreAPI:
@@ -123,7 +124,6 @@ class CoreAPI:
         return r.json()
 
 def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", timeout=15):
-    """Check connection to CORE aggregator."""
     try:
         core = CoreAPI(api_key)
         result = core.search_publications("test", limit=1)
@@ -433,15 +433,11 @@ def page_online_api_filter():
         st.session_state["current_page"] = "Home"
 
 
-# ------------------------------------------------------------------
-# PaperAnalyzer + Additional Functions
-# ------------------------------------------------------------------
 class PaperAnalyzer:
     def __init__(self, model="gpt-3.5-turbo"):
         self.model = model
     
     def extract_text_from_pdf(self, pdf_file):
-        """Extract plain text via PyPDF2 (if the PDF is searchable)."""
         reader = PyPDF2.PdfReader(pdf_file)
         text = ""
         for page in reader.pages:
@@ -499,8 +495,8 @@ class PaperAnalyzer:
         )
         return self.analyze_with_openai(text, prompt, api_key)
 
+
 class AlleleFrequencyFinder:
-    """Retrieves allele frequencies from certain sources (e.g. Ensembl)."""
     def __init__(self):
         self.ensembl_server = "https://rest.ensembl.org"
         self.max_retries = 3
@@ -553,9 +549,6 @@ class AlleleFrequencyFinder:
         return " | ".join(out)
 
 def split_summary(summary_text):
-    """
-    Tries to split out 'Ergebnisse' and 'Schlussfolgerungen' from a German summary.
-    """
     m = re.search(r'Ergebnisse\s*:\s*(.*?)\s*Schlussfolgerungen\s*:\s*(.*)', summary_text, re.DOTALL | re.IGNORECASE)
     if m:
         ergebnisse = m.group(1).strip()
@@ -621,16 +614,17 @@ def parse_publication_date(text: str) -> str:
     else:
         return "n/a"
 
+
 def page_analyze_paper():
     st.title("Analyze Paper - Integrated")
 
     if "api_key" not in st.session_state:
         st.session_state["api_key"] = OPENAI_API_KEY or ""
-    
+
     st.sidebar.header("Settings - PaperAnalyzer")
     new_key_value = st.sidebar.text_input("OpenAI API Key", type="password", value=st.session_state["api_key"])
     st.session_state["api_key"] = new_key_value
-    
+
     model = st.sidebar.selectbox(
         "OpenAI Model",
         ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4o"],
@@ -642,35 +636,33 @@ def page_analyze_paper():
     action = st.sidebar.radio(
         "Analysis Type",
         [
-            "Zusammenfassung", 
-            "Wichtigste Erkenntnisse", 
-            "Methoden & Techniken", 
+            "Zusammenfassung",
+            "Wichtigste Erkenntnisse",
+            "Methoden & Techniken",
             "Relevanz-Bewertung",
             "Tabellen & Grafiken"
         ],
         index=0
     )
-    
+
     user_defined_theme = ""
     if theme_mode == "Manuell":
         user_defined_theme = st.sidebar.text_input("Manual Main Theme (for compare mode)")
 
     topic = st.sidebar.text_input("Topic (for relevance)?")
-    output_lang = "Englisch"  # final output in English
+    output_lang = "Englisch"
 
     uploaded_files = st.file_uploader("Upload PDF files", type="pdf", accept_multiple_files=True)
     analyzer = PaperAnalyzer(model=model)
     api_key = st.session_state["api_key"]
 
-    # Single- or multi-mode (no Excel) with a button
+    # Single/Multiple analysis in memory
     if uploaded_files and api_key:
-        # Offer a single analysis approach without Excel
         st.write("## Single/Multiple Analysis (No Excel)")
-
         pdf_options = ["(All)"] + [f"{i+1}) {f.name}" for i, f in enumerate(uploaded_files)]
-        selected_pdf = st.selectbox("Choose a PDF for single analysis or '(All)'", pdf_options)
+        selected_pdf = st.selectbox("Choose a PDF for single analysis or '(All)' for multi", pdf_options)
 
-        if st.button("Start Analysis (Single-/Multi-Mode without Excel)"):
+        if st.button("Start Analysis (No Excel)"):
             if selected_pdf == "(All)":
                 files_to_process = uploaded_files
             else:
@@ -684,7 +676,6 @@ def page_analyze_paper():
                     st.error(f"No text from {fpdf.name}. Skipped.")
                     continue
 
-                # We do the chosen "action" analysis
                 result = ""
                 if action == "Zusammenfassung":
                     r_ = analyzer.summarize(text_data, api_key)
@@ -702,7 +693,6 @@ def page_analyze_paper():
                     r_ = analyzer.evaluate_relevance(text_data, topic, api_key)
                     result = translate_text_openai(r_, "German", "English", api_key)
                 elif action == "Tabellen & Grafiken":
-                    # We'll do the simpler approach => attempt to parse tables, etc.
                     all_tables_text = []
                     try:
                         with pdfplumber.open(fpdf) as pdf_:
@@ -735,15 +725,12 @@ def page_analyze_paper():
                                         else:
                                             df = pd.DataFrame(data_rows, columns=new_header)
 
-                                        # We'll just gather them in text
                                         table_str = df.to_csv(index=False)
                                         all_tables_text.append(
                                             f"Page {page_number}, Table {table_idx}:\n{table_str}\n"
                                         )
-
                         if len(all_tables_text) > 0:
                             combined_tables = "\n".join(all_tables_text)
-                            # Summarize them with GPT
                             gpt_prompt = (
                                 "Please analyze the following tables from a scientific PDF. "
                                 "Summarize the key insights and provide a brief interpretation:\n\n"
@@ -772,7 +759,7 @@ def page_analyze_paper():
 
                 final_result_text.append(f"**Result for {fpdf.name}:**\n\n{result}")
 
-            st.subheader("Analysis Results (Single/Multiple - No Excel):")
+            st.subheader("Analysis Results (No Excel)")
             combined_output = "\n\n---\n\n".join(final_result_text)
             st.markdown(combined_output)
 
@@ -782,29 +769,27 @@ def page_analyze_paper():
         elif not uploaded_files:
             st.info("Please upload one or more PDF files!")
 
-    # Now the multi-PDF approach for Excel
     st.write("---")
     st.write("## All Analyses & Excel Output (Multi-PDF)")
 
     user_relevance_score = st.text_input("Manual Relevance Score (1-10)?")
 
     if "analysis_results" not in st.session_state:
-        st.session_state["analysis_results"] = []  # store (filename, io.BytesIO) pairs
+        st.session_state["analysis_results"] = []
 
     if uploaded_files and api_key:
         if st.button("Analyze All & Save to Excel (Multi)"):
-            st.session_state["analysis_results"] = []  # reset
+            st.session_state["analysis_results"] = []
             with st.spinner("Analyzing PDFs..."):
                 import openpyxl
                 import datetime
 
-                # If compare mode => only relevant papers, else all
                 if compare_mode:
-                    # For brevity, skipping real outlier logic
                     selected_files_for_excel = uploaded_files
                 else:
                     selected_files_for_excel = uploaded_files
 
+                analyzer = PaperAnalyzer(model=model)
                 main_theme_final = user_defined_theme.strip() if theme_mode=="Manuell" else "n/a"
 
                 for fpdf in selected_files_for_excel:
@@ -813,20 +798,15 @@ def page_analyze_paper():
                         st.error(f"No text from {fpdf.name} (skipped).")
                         continue
 
-                    # Summaries in German => translate to English
                     summary_de = analyzer.summarize(text_data, api_key)
                     summary_en = translate_text_openai(summary_de, "German", "English", api_key)
-
-                    # Key findings => also in German => translate
                     keyf_de = analyzer.extract_key_findings(text_data, api_key)
                     keyf_en = translate_text_openai(keyf_de, "German", "English", api_key)
 
-                    # Split summary => get results & conclusion
                     ergebnisse_de, schlussfolgerung_de = split_summary(summary_de)
                     ergebnisse_en = translate_text_openai(ergebnisse_de, "German", "English", api_key)
                     schluss_en = translate_text_openai(schlussfolgerung_de, "German", "English", api_key)
 
-                    # parse study size
                     c_info = parse_cohort_info(summary_de)
                     combined_study = (c_info["study_size"] + " " + c_info["origin"]).strip()
                     if not combined_study:
@@ -835,7 +815,6 @@ def page_analyze_paper():
 
                     pub_date_str = parse_publication_date(text_data)
 
-                    # Gene & rs
                     pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                     match_text = re.search(pattern_obvious, text_data)
                     found_gene = match_text.group(1) if match_text else None
@@ -866,7 +845,6 @@ def page_analyze_paper():
                         if data_:
                             freq_info = aff.build_freq_info_text(data_)
 
-                    # Load excel template
                     try:
                         wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
                     except FileNotFoundError:
@@ -874,17 +852,14 @@ def page_analyze_paper():
                         return
 
                     ws = wb.active
-
-                    # J2 => date
                     now_str = datetime.datetime.now().strftime("%Y-%m-%d")
                     ws["J2"] = now_str
-
                     ws["D2"] = main_theme_final
                     ws["D5"] = found_gene if found_gene else "n/a"
                     ws["D6"] = found_rs if found_rs else "n/a"
 
                     genotype_cells = ["D10","D11","D12"]
-                    freq_cells = ["E10","E11","E12"]
+                    freq_cells     = ["E10","E11","E12"]
                     for i in range(3):
                         if i < len(genotypes):
                             ws[genotype_cells[i]] = genotypes[i]
@@ -905,9 +880,9 @@ def page_analyze_paper():
 
                     st.session_state["analysis_results"].append((fpdf.name, output_buffer))
 
-    # Show download buttons for all generated XLSX files
+    # Show the individual Excel download buttons
     if "analysis_results" in st.session_state and st.session_state["analysis_results"]:
-        st.write("## Download Analyzed Excel Files")
+        st.write("## Download Analyzed Excel Files (Individual)")
         for (filename, io_obj) in st.session_state["analysis_results"]:
             st.download_button(
                 label=f"Download Excel for {filename}",
@@ -915,6 +890,49 @@ def page_analyze_paper():
                 file_name=f"analysis_{filename.replace('.pdf', '')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key=f"download_{filename}"
+            )
+
+        # Additional option to combine all these individual XLSX files into one combined workbook
+        st.write("---")
+        st.write("## Combine Individual Excel Files into One Workbook")
+
+        if st.button("Combine All Individual XLSX into One Workbook"):
+            import openpyxl
+            from openpyxl import load_workbook, Workbook
+
+            combined_wb = Workbook()
+            default_sheet = combined_wb.active
+            combined_wb.remove(default_sheet)
+
+            for (filename, io_obj) in st.session_state["analysis_results"]:
+                # load the in-memory XLSX
+                xls_bytes = io_obj.getvalue()
+                temp_wb = load_workbook(io.BytesIO(xls_bytes))
+
+                # we assume each file has 1 active sheet?
+                sheet = temp_wb.active
+
+                # pick a sheet name => maybe the gene in D5 or fallback to the filename
+                gene_name = sheet["D5"].value or "GENE_UNKNOWN"
+                # sanitize for Excel sheet name
+                sheet_name = gene_name[:31]
+
+                new_ws = combined_wb.create_sheet(sheet_name)
+                # copy content from source sheet
+                for row_idx, row_data in enumerate(sheet.iter_rows(values_only=True), start=1):
+                    for col_idx, cell_val in enumerate(row_data, start=1):
+                        new_ws.cell(row=row_idx, column=col_idx, value=cell_val)
+
+            # produce final output
+            final_buffer = io.BytesIO()
+            combined_wb.save(final_buffer)
+            final_buffer.seek(0)
+
+            st.download_button(
+                label="Download Combined Workbook",
+                data=final_buffer,
+                file_name="combined_workbook.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
 def sidebar_module_navigation():
@@ -940,7 +958,7 @@ def answer_chat(question: str) -> str:
     paper_text = st.session_state.get("paper_text", "")
     if not api_key:
         return f"(No API-Key) Echo: {question}"
-    
+
     if not paper_text.strip():
         sys_msg = "You are a helpful assistant for general questions."
     else:
@@ -949,7 +967,7 @@ def answer_chat(question: str) -> str:
             + paper_text[:12000] + "\n\n"
             "Use it to provide an expert answer."
         )
-    
+
     openai.api_key = api_key
     try:
         response = openai.chat.completions.create(
@@ -982,7 +1000,7 @@ def main():
             border-radius: 4px;
             background-color: #f9f9f9;
         }
-        
+
         .message {
             padding: 0.5rem 1rem;
             border-radius: 15px;
