@@ -469,7 +469,7 @@ class PaperAnalyzer:
     def summarize(self, text, api_key):
         """
         We'll create a summary in German first (prompt is in German),
-        but will translate to English later. 
+        but will keep logic for possible translation.
         """
         prompt = (
             "Erstelle eine strukturierte Zusammenfassung des folgenden "
@@ -481,7 +481,7 @@ class PaperAnalyzer:
     
     def extract_key_findings(self, text, api_key):
         """
-        We'll also do this in German, then translate to English later.
+        We'll also do this in German, then can translate if needed.
         """
         prompt = (
             "Extrahiere die 5 wichtigsten Erkenntnisse aus diesem wissenschaftlichen Paper "
@@ -566,7 +566,6 @@ class AlleleFrequencyFinder:
 def split_summary(summary_text):
     """
     Tries to split out 'Ergebnisse' and 'Schlussfolgerungen' from a German summary.
-    We'll translate them afterwards.
     """
     m = re.search(r'Ergebnisse\s*:\s*(.*?)\s*Schlussfolgerungen\s*:\s*(.*)', summary_text, re.DOTALL | re.IGNORECASE)
     if m:
@@ -605,7 +604,7 @@ def parse_cohort_info(summary_text: str) -> dict:
     if m_both and not info["study_size"]:
         p_count = m_both.group(1)
         c_count = m_both.group(2)
-        info["study_size"] = f"{p_count} patients / {c_count} controls"  # We'll translate to English
+        info["study_size"] = f"{p_count} patients / {c_count} controls"
     else:
         # e.g. "30 Patienten"
         pattern_single_p = re.compile(r"(\d+)\s*Patient(?:en)?", re.IGNORECASE)
@@ -613,13 +612,35 @@ def parse_cohort_info(summary_text: str) -> dict:
         if m_single_p and not info["study_size"]:
             info["study_size"] = f"{m_single_p.group(1)} patients"
 
-    # e.g. "in der XYZ Bevölkerung"
     pattern_origin = re.compile(r"in\s*der\s+(\S+)\s+Bevölkerung", re.IGNORECASE)
     m_orig = pattern_origin.search(summary_text)
     if m_orig and not info["origin"]:
         info["origin"] = m_orig.group(1).strip()
 
     return info
+
+# NEU: Funktion, um aus dem extrahierten Text das Veröffentlichungsdatum zu parsen
+# Gesucht: "Published: 20 November 2024" => wir wollen "20.11.2024"
+def parse_publication_date(text: str) -> str:
+    pattern = re.compile(r"Published:\s*(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})", re.IGNORECASE)
+    match = pattern.search(text)
+    if match:
+        day = match.group(1)
+        month_str = match.group(2)
+        year = match.group(3)
+
+        # Monat konvertieren
+        months_map = {
+            "January": "01", "February": "02", "March": "03", "April": "04",
+            "May": "05", "June": "06", "July": "07", "August": "08",
+            "September": "09", "October": "10", "November": "11", "December": "12"
+        }
+        month_num = months_map.get(month_str.capitalize(), "01")
+        # Tag & Jahr in dd.mm.yyyy
+        day = day.zfill(2)
+        return f"{day}.{month_num}.{year}"
+    else:
+        return "n/a"
 
 def page_analyze_paper():
     st.title("Analyze Paper - Integrated")
@@ -662,7 +683,7 @@ def page_analyze_paper():
 
     topic = st.sidebar.text_input("Topic (for relevance)?")
 
-    # Output language is set to English, but we keep the logic to do final translations if needed
+    # We'll keep the standard approach (German => can translate if needed)
     output_lang = "Englisch"
 
     uploaded_files = st.file_uploader("Upload PDF files", type="pdf", accept_multiple_files=True)
@@ -857,21 +878,20 @@ Only return that JSON.
                     final_result = "Tables & Figures not implemented in combined compare-mode."
                 else:
                     if action == "Zusammenfassung":
-                        result_ = analyzer.summarize(combined_text, api_key)
-                        # Translate to English
-                        final_result = translate_text_openai(result_, "German", "English", api_key)
+                        r_ = analyzer.summarize(combined_text, api_key)
+                        final_result = translate_text_openai(r_, "German", "English", api_key)
                     elif action == "Wichtigste Erkenntnisse":
-                        result_ = analyzer.extract_key_findings(combined_text, api_key)
-                        final_result = translate_text_openai(result_, "German", "English", api_key)
+                        r_ = analyzer.extract_key_findings(combined_text, api_key)
+                        final_result = translate_text_openai(r_, "German", "English", api_key)
                     elif action == "Methoden & Techniken":
-                        result_ = analyzer.identify_methods(combined_text, api_key)
-                        final_result = translate_text_openai(result_, "German", "English", api_key)
+                        r_ = analyzer.identify_methods(combined_text, api_key)
+                        final_result = translate_text_openai(r_, "German", "English", api_key)
                     elif action == "Relevanz-Bewertung":
                         if not topic:
                             st.error("Please provide a topic!")
                             return
-                        result_ = analyzer.evaluate_relevance(combined_text, topic, api_key)
-                        final_result = translate_text_openai(result_, "German", "English", api_key)
+                        r_ = analyzer.evaluate_relevance(combined_text, topic, api_key)
+                        final_result = translate_text_openai(r_, "German", "English", api_key)
                     else:
                         final_result = "(No analysis type chosen.)"
 
@@ -1033,7 +1053,6 @@ Only return that JSON.
                                             max_tokens=1000
                                         )
                                         r_ = gpt_resp.choices[0].message.content
-                                        # We'll keep that in English
                                         result = r_
                                     except Exception as e2:
                                         st.error(f"GPT table analysis error: {str(e2)}")
@@ -1061,17 +1080,6 @@ Only return that JSON.
 
     user_relevance_score = st.text_input("Manual Relevance Score (1-10)?")
 
-    # --------------------------------------------------------------
-    #   For each uploaded PDF => create a separate Excel
-    #   Fill the entire Excel in English
-    #   with the user-specified cell placements:
-    #   - I2 => date (today)
-    #   - C20 => date of publication
-    #   - D20 => study size & ethnicity
-    #   - E20 => the summary-key-findings (both in English)
-    #   - G21 => results from the summary
-    #   - G22 => conclusion from the summary
-    # --------------------------------------------------------------
     if uploaded_files and api_key:
         if st.button("Analyze All & Save to Excel (Multi)"):
             with st.spinner("Analyzing all PDFs..."):
@@ -1079,7 +1087,6 @@ Only return that JSON.
                 import datetime
 
                 if compare_mode:
-                    # If user hasn't pressed "Start Compare-Analysis", do it automatically
                     if not st.session_state["relevant_papers_compare"]:
                         analyzer_auto = PaperAnalyzer(model=model)
                         paper_map_auto = {}
@@ -1102,7 +1109,6 @@ Only return that JSON.
                 else:
                     selected_files_for_excel = uploaded_files
 
-                # main_theme_final => if manual, user_defined_theme, else from st.session_state["theme_compare"]
                 if theme_mode == "Manuell":
                     main_theme_final = user_defined_theme.strip() if user_defined_theme.strip() else "n/a"
                 else:
@@ -1115,43 +1121,13 @@ Only return that JSON.
                         st.error(f"No text from {fpdf.name} (skipped).")
                         continue
 
-                    # Summaries in German => then translate to English
                     summary_de = analyzer_local.summarize(text, api_key)
-                    summary_en = translate_text_openai(summary_de, "German", "English", api_key)
-
                     keyfind_de = analyzer_local.extract_key_findings(text, api_key)
-                    keyfind_en = translate_text_openai(keyfind_de, "German", "English", api_key)
 
-                    # We also get the splitted results from summary => separate them, then also translate
-                    erg_de, schluss_de = split_summary(summary_de)
-                    erg_en = translate_text_openai(erg_de, "German", "English", api_key)
-                    schluss_en = translate_text_openai(schluss_de, "German", "English", api_key)
+                    # parse the publication date from the text => e.g. "Published: 20 November 2024"
+                    pub_date_parsed = parse_publication_date(text)
 
-                    # get study size / ethnicity from parse_cohort_info
-                    cohort_info = parse_cohort_info(summary_de)
-                    # We'll keep them in English => if there's something in German, let's attempt to translate
-                    stsize_de = cohort_info["study_size"]
-                    stsize_en = translate_text_openai(stsize_de, "German", "English", api_key) if stsize_de else ""
-                    origin_de = cohort_info["origin"]
-                    origin_en = translate_text_openai(origin_de, "German", "English", api_key) if origin_de else ""
-
-                    # Combine them
-                    study_eth_text = (stsize_en + " " + origin_en).strip()
-                    if not study_eth_text:
-                        study_eth_text = "(n/a)"
-
-                    # Relevance
-                    if not topic:
-                        rel_de = "(No topic => no relevance check)"
-                    else:
-                        rel_de = analyzer_local.evaluate_relevance(text, topic, api_key)
-                    rel_en = translate_text_openai(rel_de, "German", "English", api_key)
-
-                    # Identify methods
-                    methods_de = analyzer_local.identify_methods(text, api_key)
-                    methods_en = translate_text_openai(methods_de, "German", "English", api_key)
-
-                    # Gene & rs
+                    # gene & rs
                     pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                     match_text = re.search(pattern_obvious, text)
                     gene_via_text = match_text.group(1) if match_text else None
@@ -1179,43 +1155,7 @@ Only return that JSON.
                     found_rs_match = re.search(rs_pat, text)
                     rs_num = found_rs_match.group(1) if found_rs_match else None
 
-                    genotype_regex = r"\b([ACGT]{2,3})\b"
-                    lines = text.split("\n")
-                    found_pairs = []
-                    for line in lines:
-                        matches = re.findall(genotype_regex, line)
-                        if matches:
-                            for m in matches:
-                                found_pairs.append((m, line.strip()))
-
-                    unique_geno_pairs = []
-                    for gp in found_pairs:
-                        if gp not in unique_geno_pairs:
-                            unique_geno_pairs.append(gp)
-
-                    aff = AlleleFrequencyFinder()
-                    freq_info = "No rsID found"
-                    if rs_num:
-                        data = aff.get_allele_frequencies(rs_num)
-                        if not data:
-                            data = aff.try_alternative_source(rs_num)
-                        if data:
-                            freq_info = aff.build_freq_info_text(data)
-
-                    # The user wants the date in I2
-                    today_date_str = datetime.datetime.now().strftime("%Y-%m-%d")
-
-                    # The user wants the 'date of publication' in C20
-                    # We don't have the real publication date => let's put the same or placeholder
-                    pub_date_str = datetime.datetime.now().strftime("%Y-%m-%d")
-
-                    # The user wants E20 => summary - key findings (both in English)
-                    combined_summary_key = summary_en + "\n\nKey Findings:\n" + keyfind_en
-
-                    # G21 => results (Ergebnisse in English)
-                    # G22 => conclusion (Schlussfolgerung in English)
-
-                    # Now we fill the Excel template in English
+                    # Now fill the Excel
                     try:
                         wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
                     except FileNotFoundError:
@@ -1224,28 +1164,18 @@ Only return that JSON.
 
                     ws = wb.active
 
-                    # I2 => date
-                    ws["I2"] = today_date_str
+                    # D2 => main theme
+                    ws["D2"] = main_theme_final
 
-                    # C20 => date of publication
-                    ws["C20"] = pub_date_str
+                    # D5 => gene name
+                    ws["D5"] = found_gene if found_gene else "n/a"
 
-                    # D20 => study size & ethnicity
-                    ws["D20"] = study_eth_text
+                    # D6 => rs number
+                    ws["D6"] = rs_num if rs_num else "n/a"
 
-                    # E20 => the summary - key findings
-                    ws["E20"] = combined_summary_key
+                    # C20 => date of publication (parsed)
+                    ws["C20"] = pub_date_parsed
 
-                    # G21 => results from the summary
-                    ws["G21"] = erg_en
-
-                    # G22 => conclusion from the summary
-                    ws["G22"] = schluss_en
-
-                    # We simply reuse the existing code for genotype, freq, etc. from earlier if needed
-                    # but it's not specifically required by the user to place them anywhere special now
-
-                    # Save to buffer
                     output_buffer = io.BytesIO()
                     wb.save(output_buffer)
                     output_buffer.seek(0)
