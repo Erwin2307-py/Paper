@@ -64,8 +64,8 @@ if not st.session_state["logged_in"]:
 # ------------------------------------------------------------------
 
 def clean_html_except_br(text):
-    cleaned_text = re.sub(r'</?(?!br\b)[^>]*>', '', text)
-    return cleaned_text
+    """Remove all HTML tags except <br>."""
+    return re.sub(r'</?(?!br\b)[^>]*>', '', text)
 
 def translate_text_openai(text, source_language, target_language, api_key):
     """Uses OpenAI ChatCompletion to translate text."""
@@ -88,7 +88,7 @@ def translate_text_openai(text, source_language, target_language, api_key):
             temperature=0
         )
         translation = response.choices[0].message.content.strip()
-        # strip quotes if present
+        # Strip quotes if present
         if translation and translation[0] in ["'", '"', "‘", "„"]:
             translation = translation[1:]
             if translation and translation[-1] in ["'", '"']:
@@ -124,6 +124,7 @@ class CoreAPI:
         return r.json()
 
 def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", timeout=15):
+    """Check if CORE aggregator is reachable."""
     try:
         core = CoreAPI(api_key)
         result = core.search_publications("test", limit=1)
@@ -159,6 +160,7 @@ def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
 # 2) PubMed - Simple Check & Search
 # ------------------------------------------------------------------
 def check_pubmed_connection(timeout=10):
+    """Check if PubMed is reachable."""
     test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": "test", "retmode": "json"}
     try:
@@ -170,7 +172,7 @@ def check_pubmed_connection(timeout=10):
         return False
 
 def search_pubmed_simple(query):
-    """Simple search in PubMed (no abstracts)."""
+    """Simple search in PubMed (no abstract data)."""
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 100}
     out = []
@@ -206,7 +208,7 @@ def search_pubmed_simple(query):
         return []
 
 def fetch_pubmed_abstract(pmid):
-    """Fetch abstract from PubMed."""
+    """Fetch an abstract from PubMed via efetch."""
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
     params = {"db": "pubmed", "id": pmid, "retmode": "xml"}
     try:
@@ -228,6 +230,7 @@ def fetch_pubmed_abstract(pmid):
 # 3) Europe PMC Check + Search
 # ------------------------------------------------------------------
 def check_europe_pmc_connection(timeout=10):
+    """Check if Europe PMC is reachable."""
     test_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {"query": "test", "format": "json", "pageSize": 100}
     try:
@@ -296,13 +299,14 @@ def search_openalex_simple(query):
     return fetch_openalex_data("works", params=search_params)
 
 # ------------------------------------------------------------------
-# 5) Google Scholar (Test)
+# 5) Google Scholar
 # ------------------------------------------------------------------
 class GoogleScholarSearch:
     def __init__(self):
         self.all_results = []
 
     def search_google_scholar(self, base_query):
+        """Very simplistic example using scholarly."""
         try:
             search_results = scholarly.search_pubs(base_query)
             for _ in range(5):
@@ -330,6 +334,7 @@ class GoogleScholarSearch:
 # 6) Semantic Scholar
 # ------------------------------------------------------------------
 def check_semantic_scholar_connection(timeout=10):
+    """Check if Semantic Scholar is reachable."""
     try:
         url = "https://api.semanticscholar.org/graph/v1/paper/search"
         params = {"query": "test", "limit": 1, "fields": "title"}
@@ -345,6 +350,7 @@ class SemanticScholarSearch:
         self.all_results = []
 
     def search_semantic_scholar(self, base_query):
+        """Very simplistic example with limited fields."""
         try:
             url = "https://api.semanticscholar.org/graph/v1/paper/search"
             headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
@@ -377,7 +383,6 @@ class SemanticScholarSearch:
 # ------------------------------------------------------------------
 # Additional modules / placeholders
 # ------------------------------------------------------------------
-
 def module_paperqa2():
     st.subheader("PaperQA2 Module")
     st.write("This is the PaperQA2 module (demo).")
@@ -434,10 +439,12 @@ def page_online_api_filter():
 
 
 class PaperAnalyzer:
+    """A class that extracts text from PDFs and sends it to OpenAI for analysis."""
     def __init__(self, model="gpt-3.5-turbo"):
         self.model = model
-    
+
     def extract_text_from_pdf(self, pdf_file):
+        """Extract plain text via PyPDF2 (if the PDF is searchable)."""
         reader = PyPDF2.PdfReader(pdf_file)
         text = ""
         for page in reader.pages:
@@ -445,8 +452,9 @@ class PaperAnalyzer:
             if page_text:
                 text += page_text + "\n"
         return text
-    
+
     def analyze_with_openai(self, text, prompt_template, api_key):
+        """Generic helper to call OpenAI with a given prompt template."""
         if len(text) > 15000:
             text = text[:15000] + "..."
         prompt = prompt_template.format(text=text)
@@ -463,8 +471,9 @@ class PaperAnalyzer:
             max_tokens=1500
         )
         return response.choices[0].message.content
-    
+
     def summarize(self, text, api_key):
+        """Generate a structured summary in German, up to 500 words, then optionally translate."""
         prompt = (
             "Erstelle eine strukturierte Zusammenfassung des folgenden "
             "wissenschaftlichen Papers. Gliedere sie in mindestens vier klar getrennte Abschnitte "
@@ -472,23 +481,26 @@ class PaperAnalyzer:
             "Verwende maximal 500 Wörter:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
-    
+
     def extract_key_findings(self, text, api_key):
+        """Extract the 5 most important findings (German), then possibly translate."""
         prompt = (
             "Extrahiere die 5 wichtigsten Erkenntnisse aus diesem wissenschaftlichen Paper "
             "im Bereich Side-Channel Analysis. Liste sie mit Bulletpoints auf:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
-    
+
     def identify_methods(self, text, api_key):
+        """Identify the methods and techniques (German)."""
         prompt = (
             "Identifiziere und beschreibe die im Paper verwendeten Methoden "
             "und Techniken zur Side-Channel-Analyse. Gib zu jeder Methode "
             "eine kurze Erklärung:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
-    
+
     def evaluate_relevance(self, text, topic, api_key):
+        """Evaluate relevance on a scale of 1-10, in German, then possibly translate."""
         prompt = (
             f"Bewerte die Relevanz dieses Papers für das Thema '{topic}' auf "
             f"einer Skala von 1-10. Begründe deine Bewertung:\n\n{{text}}"
@@ -497,12 +509,14 @@ class PaperAnalyzer:
 
 
 class AlleleFrequencyFinder:
+    """A class to retrieve and display allele frequencies from Ensembl or other sources."""
     def __init__(self):
         self.ensembl_server = "https://rest.ensembl.org"
         self.max_retries = 3
         self.retry_delay = 2
 
     def get_allele_frequencies(self, rs_id: str, retry_count: int = 0) -> Optional[Dict[str, Any]]:
+        """Retrieve allele frequencies from Ensembl."""
         if not rs_id.startswith("rs"):
             rs_id = f"rs{rs_id}"
         endpoint = f"/variation/human/{rs_id}?pops=1"
@@ -524,11 +538,13 @@ class AlleleFrequencyFinder:
                 time.sleep(self.retry_delay)
                 return self.get_allele_frequencies(rs_id, retry_count + 1)
             return None
-    
+
     def try_alternative_source(self, rs_id: str) -> Optional[Dict[str, Any]]:
+        """Placeholder for alternative sources if Ensembl fails."""
         return None
-    
+
     def build_freq_info_text(self, data: Dict[str, Any]) -> str:
+        """Generate a short text about allele frequencies."""
         if not data:
             return "No Ensembl Data"
         maf = data.get("MAF", None)
@@ -548,7 +564,12 @@ class AlleleFrequencyFinder:
             out.append("No population data found.")
         return " | ".join(out)
 
+
 def split_summary(summary_text):
+    """
+    Attempt to split 'Ergebnisse' and 'Schlussfolgerungen' from a German summary.
+    If not found, fallback is the entire text as 'Ergebnisse', and empty 'Schlussfolgerungen'.
+    """
     m = re.search(r'Ergebnisse\s*:\s*(.*?)\s*Schlussfolgerungen\s*:\s*(.*)', summary_text, re.DOTALL | re.IGNORECASE)
     if m:
         ergebnisse = m.group(1).strip()
@@ -559,8 +580,13 @@ def split_summary(summary_text):
     return ergebnisse, schlussfolgerungen
 
 def parse_cohort_info(summary_text: str) -> dict:
+    """
+    Attempt to parse e.g. # of patients, # of controls, or nationality, from a German summary text.
+    Returns a dict with "study_size" and "origin".
+    """
     info = {"study_size": "", "origin": ""}
 
+    # Example: "50 Japanese children"
     pattern_nationality = re.compile(
         r"(\d+)\s+(Filipino|Chinese|Japanese|Han\sChinese|[A-Za-z]+)\s+([Cc]hildren(?:\s+and\s+adolescents)?|adolescents?|participants?|subjects?)",
         re.IGNORECASE
@@ -573,6 +599,7 @@ def parse_cohort_info(summary_text: str) -> dict:
         info["study_size"] = f"{num_str} {group_str}"
         info["origin"] = origin_str
 
+    # Example: "50 Patienten und 40 gesunde Kontrollpersonen"
     pattern_both = re.compile(
         r"(\d+)\s*Patient(?:en)?(?:[^\d]+)(\d+)\s*gesunde\s*Kontroll(?:personen)?",
         re.IGNORECASE
@@ -583,11 +610,13 @@ def parse_cohort_info(summary_text: str) -> dict:
         c_count = m_both.group(2)
         info["study_size"] = f"{p_count} patients / {c_count} controls"
     else:
+        # example: "30 Patienten"
         pattern_single_p = re.compile(r"(\d+)\s*Patient(?:en)?", re.IGNORECASE)
         m_single_p = pattern_single_p.search(summary_text)
         if m_single_p and not info["study_size"]:
             info["study_size"] = f"{m_single_p.group(1)} patients"
 
+    # example: "in der japanischen Bevölkerung"
     pattern_origin = re.compile(r"in\s*der\s+(\S+)\s+Bevölkerung", re.IGNORECASE)
     m_orig = pattern_origin.search(summary_text)
     if m_orig and not info["origin"]:
@@ -596,6 +625,10 @@ def parse_cohort_info(summary_text: str) -> dict:
     return info
 
 def parse_publication_date(text: str) -> str:
+    """
+    Looks for 'Published: 20 November 2024' -> returns '20.11.2024'.
+    Otherwise returns 'n/a'.
+    """
     pattern = re.compile(r"Published:\s*(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})", re.IGNORECASE)
     match = pattern.search(text)
     if match:
@@ -614,13 +647,17 @@ def parse_publication_date(text: str) -> str:
     else:
         return "n/a"
 
-
 def page_analyze_paper():
+    """
+    Main page for analyzing papers (uploading PDFs, analyzing them individually,
+    or collectively, optionally saving to Excel, and combining Excel files).
+    """
     st.title("Analyze Paper - Integrated")
 
     if "api_key" not in st.session_state:
         st.session_state["api_key"] = OPENAI_API_KEY or ""
 
+    # Sidebar
     st.sidebar.header("Settings - PaperAnalyzer")
     new_key_value = st.sidebar.text_input("OpenAI API Key", type="password", value=st.session_state["api_key"])
     st.session_state["api_key"] = new_key_value
@@ -644,19 +681,18 @@ def page_analyze_paper():
         ],
         index=0
     )
-
     user_defined_theme = ""
     if theme_mode == "Manuell":
         user_defined_theme = st.sidebar.text_input("Manual Main Theme (for compare mode)")
 
     topic = st.sidebar.text_input("Topic (for relevance)?")
-    output_lang = "Englisch"
 
+    # PDF upload
     uploaded_files = st.file_uploader("Upload PDF files", type="pdf", accept_multiple_files=True)
     analyzer = PaperAnalyzer(model=model)
     api_key = st.session_state["api_key"]
 
-    # Single/Multiple analysis in memory
+    # ---------------- Single/Multiple analysis (no Excel) ----------------
     if uploaded_files and api_key:
         st.write("## Single/Multiple Analysis (No Excel)")
         pdf_options = ["(All)"] + [f"{i+1}) {f.name}" for i, f in enumerate(uploaded_files)]
@@ -673,25 +709,29 @@ def page_analyze_paper():
             for fpdf in files_to_process:
                 text_data = analyzer.extract_text_from_pdf(fpdf)
                 if not text_data.strip():
-                    st.error(f"No text from {fpdf.name}. Skipped.")
+                    st.error(f"No text extracted from {fpdf.name}. Skipped.")
                     continue
 
                 result = ""
                 if action == "Zusammenfassung":
                     r_ = analyzer.summarize(text_data, api_key)
                     result = translate_text_openai(r_, "German", "English", api_key)
+
                 elif action == "Wichtigste Erkenntnisse":
                     r_ = analyzer.extract_key_findings(text_data, api_key)
                     result = translate_text_openai(r_, "German", "English", api_key)
+
                 elif action == "Methoden & Techniken":
                     r_ = analyzer.identify_methods(text_data, api_key)
                     result = translate_text_openai(r_, "German", "English", api_key)
+
                 elif action == "Relevanz-Bewertung":
                     if not topic:
                         st.error("Please provide a topic for relevance!")
                         continue
                     r_ = analyzer.evaluate_relevance(text_data, topic, api_key)
                     result = translate_text_openai(r_, "German", "English", api_key)
+
                 elif action == "Tabellen & Grafiken":
                     all_tables_text = []
                     try:
@@ -769,9 +809,9 @@ def page_analyze_paper():
         elif not uploaded_files:
             st.info("Please upload one or more PDF files!")
 
+    # ---------------- Multi-PDF => Excel approach ----------------
     st.write("---")
     st.write("## All Analyses & Excel Output (Multi-PDF)")
-
     user_relevance_score = st.text_input("Manual Relevance Score (1-10)?")
 
     if "analysis_results" not in st.session_state:
@@ -798,8 +838,10 @@ def page_analyze_paper():
                         st.error(f"No text from {fpdf.name} (skipped).")
                         continue
 
+                    # Summaries in German => we can translate to English
                     summary_de = analyzer.summarize(text_data, api_key)
                     summary_en = translate_text_openai(summary_de, "German", "English", api_key)
+
                     keyf_de = analyzer.extract_key_findings(text_data, api_key)
                     keyf_en = translate_text_openai(keyf_de, "German", "English", api_key)
 
@@ -815,6 +857,7 @@ def page_analyze_paper():
 
                     pub_date_str = parse_publication_date(text_data)
 
+                    # parse gene + rs
                     pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                     match_text = re.search(pattern_obvious, text_data)
                     found_gene = match_text.group(1) if match_text else None
@@ -823,6 +866,7 @@ def page_analyze_paper():
                     match_rs = re.search(rs_pat, text_data)
                     found_rs = match_rs.group(1) if match_rs else None
 
+                    # parse genotypes
                     genotype_regex = r"\b([ACGT]{2,3})\b"
                     lines = text_data.split("\n")
                     found_pairs = []
@@ -831,13 +875,13 @@ def page_analyze_paper():
                         if matches:
                             for m in matches:
                                 found_pairs.append(m)
-
                     unique_genos = []
                     for g_ in found_pairs:
                         if g_ not in unique_genos:
                             unique_genos.append(g_)
                     genotypes = unique_genos[:3]
 
+                    # freq
                     aff = AlleleFrequencyFinder()
                     freq_info = "No rsID found"
                     if found_rs:
@@ -845,6 +889,8 @@ def page_analyze_paper():
                         if data_:
                             freq_info = aff.build_freq_info_text(data_)
 
+                    # Load template
+                    import openpyxl
                     try:
                         wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
                     except FileNotFoundError:
@@ -894,8 +940,10 @@ def page_analyze_paper():
 
         # Additional option to combine all these individual XLSX files into one combined workbook
         st.write("---")
-        st.write("## Combine Individual Excel Files into One Workbook")
+        st.write("## Combine Individual Excel Files into One Workbook (Using Template Format)")
 
+        # We ensure each sheet uses the same template structure by actually copying
+        # the single sheet from the memory workbook (which is based on the template).
         if st.button("Combine All Individual XLSX into One Workbook"):
             import openpyxl
             from openpyxl import load_workbook, Workbook
@@ -904,7 +952,7 @@ def page_analyze_paper():
             default_sheet = combined_wb.active
             combined_wb.remove(default_sheet)
 
-            # Helper to sanitize sheet name to avoid ValueError for long or invalid names
+            # Helper to sanitize sheet name
             def make_safe_sheetname(name: str, maxlen: int = 31) -> str:
                 invalid_chars = [":", "*", "/", "\\", "?", "[", "]"]
                 for ch in invalid_chars:
@@ -915,14 +963,17 @@ def page_analyze_paper():
                 return safe_name
 
             for (filename, io_obj) in st.session_state["analysis_results"]:
+                # This XLSX is already "vorlage_paperqa2.xlsx" with data filled in
                 xls_bytes = io_obj.getvalue()
                 temp_wb = load_workbook(io.BytesIO(xls_bytes))
-                sheet = temp_wb.active
+                sheet = temp_wb.active  # we assume only one sheet
 
+                # pick a sheet name => for instance the gene in D5 or fallback to "GENE_UNKNOWN"
                 gene_name = sheet["D5"].value or "GENE_UNKNOWN"
                 sheet_name = make_safe_sheetname(gene_name)
 
                 new_ws = combined_wb.create_sheet(sheet_name)
+                # Copy row by row
                 for row_idx, row_data in enumerate(sheet.iter_rows(values_only=True), start=1):
                     for col_idx, cell_val in enumerate(row_data, start=1):
                         new_ws.cell(row=row_idx, column=col_idx, value=cell_val)
@@ -939,6 +990,7 @@ def page_analyze_paper():
             )
 
 def sidebar_module_navigation():
+    """Simple sidebar navigation."""
     st.sidebar.title("Module Navigation")
     pages = {
         "Home": page_home,
@@ -956,7 +1008,7 @@ def sidebar_module_navigation():
     return pages.get(st.session_state["current_page"], page_home)
 
 def answer_chat(question: str) -> str:
-    """Simple example using st.session_state's paper_text with GPT."""
+    """Simple chat example with possible paper_text context."""
     api_key = st.session_state.get("api_key", "")
     paper_text = st.session_state.get("paper_text", "")
     if not api_key:
@@ -995,15 +1047,14 @@ def main():
             padding: 0;
         }
         .scrollable-chat {
-            max-height: 400px; 
-            overflow-y: scroll; 
+            max-height: 400px;
+            overflow-y: scroll;
             border: 1px solid #CCC;
             padding: 8px;
             margin-top: 10px;
             border-radius: 4px;
             background-color: #f9f9f9;
         }
-
         .message {
             padding: 0.5rem 1rem;
             border-radius: 15px;
@@ -1059,6 +1110,7 @@ def main():
                 )
         st.markdown('</div>', unsafe_allow_html=True)
 
+        # Auto-scroll script
         st.markdown(
             """
             <script>
