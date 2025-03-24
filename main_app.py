@@ -1066,28 +1066,20 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
 
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
 
+    # ----------------------------------------------------------------
+    # -- HIER die geänderte Logik: Für JEDE PDF EINE Excel erstellen --
+    # ----------------------------------------------------------------
     if uploaded_files and api_key:
-        # Falls Compare-Mode => wir nutzen st.session_state["relevant_papers_compare"]
-        # Sonst => wir nehmen alle
         if st.button("Alle Analysen durchführen & in Excel speichern (Multi)"):
             with st.spinner("Analysiere alle hochgeladenen PDFs (für Excel)..."):
                 import openpyxl
                 import datetime
 
-                try:
-                    wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
-                except FileNotFoundError:
-                    st.error("Vorlage 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
-                    st.stop()
-
-                gen_sheets = {}
+                # Prüfe ggf. Outlier-Logic
                 analyzer = PaperAnalyzer(model=model)
-
-                # check outlier logic
                 if compare_mode:
-                    # Falls wir relevant_papers_compare nicht haben, machen wir auto
                     if not st.session_state["relevant_papers_compare"]:
-                        # user hat den "Vergleichs-Analyse starten" Button nicht gedrückt => wir machen auto
+                        # Falls der Nutzer noch nicht auf "Vergleichs-Analyse starten" geklickt hat:
                         paper_map_auto = {}
                         for fpdf in uploaded_files:
                             txt = analyzer.extract_text_from_pdf(fpdf)
@@ -1106,7 +1098,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         return
                     selected_files_for_excel = [f for f in uploaded_files if f.name in relevant_list_for_excel]
                 else:
-                    # Kein Compare => nimm alle
                     selected_files_for_excel = uploaded_files
 
                 for fpdf in selected_files_for_excel:
@@ -1118,21 +1109,18 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     # Standardanalysen
                     summary_result = analyzer.summarize(text, api_key)
                     key_findings_result = analyzer.extract_key_findings(text, api_key)
-                    # Relevanz erfordert topic
                     if not topic:
-                        # optional => user may have left it blank
                         relevance_result = "(No topic => no Relevanz-Bewertung)"
                     else:
                         relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
                     methods_result = analyzer.identify_methods(text, api_key)
 
-                    # Gens und Allele
+                    # Gene & rsID und Frequenzen
                     pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                     match_text = re.search(pattern_obvious, text)
                     gene_via_text = match_text.group(1) if match_text else None
 
                     if not gene_via_text:
-                        # Falls nicht gefunden, in vorlage_gene.xlsx gucken
                         try:
                             wb_gene = openpyxl.load_workbook("vorlage_gene.xlsx")
                         except FileNotFoundError:
@@ -1178,55 +1166,46 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         if data:
                             freq_info = aff.build_freq_info_text(data)
 
-                    sheet_name = found_gene if found_gene else "GEN_UNKNOWN"
-                    sheet_name = sheet_name[:27]
+                    # ------------------------------------------------------------------------
+                    # Für JEDES Paper wird jetzt eine eigene Excel erstellt & downloadbar gemacht
+                    # ------------------------------------------------------------------------
+                    try:
+                        wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
+                    except FileNotFoundError:
+                        st.error("Vorlage 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
+                        return
 
-                    if sheet_name not in gen_sheets:
-                        try:
-                            new_sheet = wb.create_sheet(sheet_name)
-                            new_sheet["A1"] = "Dateiname"
-                            new_sheet["B1"] = "Gene"
-                            new_sheet["C1"] = "rsID"
-                            new_sheet["D1"] = "Genotype Pairs"
-                            new_sheet["E1"] = "Freq Info"
-                            new_sheet["F1"] = "Summary"
-                            new_sheet["G1"] = "Key Findings"
-                            new_sheet["H1"] = "Methods"
-                            new_sheet["I1"] = "Relevance"
-                            new_sheet["J1"] = "Timestamp"
-                            gen_sheets[sheet_name] = new_sheet
-                        except:
-                            gen_sheets[sheet_name] = wb[sheet_name]
-                    else:
-                        new_sheet = gen_sheets[sheet_name]
+                    ws = wb.active  # Wir nehmen das aktive Blatt
+                    # Falls man Header definieren möchte, kann man das hier prüfen. 
+                    # Wir gehen davon aus, dass die Vorlage evtl. Header hat.
+                    # Dann fügen wir eine weitere Zeile hinzu.
+                    next_row = ws.max_row + 1
 
-                    next_row = new_sheet.max_row + 1
-
-                    new_sheet.cell(row=next_row, column=1).value = fpdf.name
-                    new_sheet.cell(row=next_row, column=2).value = found_gene
-                    new_sheet.cell(row=next_row, column=3).value = rs_num
+                    ws.cell(row=next_row, column=1).value = fpdf.name
+                    ws.cell(row=next_row, column=2).value = found_gene
+                    ws.cell(row=next_row, column=3).value = rs_num
                     all_gps = ",".join([x[0] for x in unique_geno_pairs])
-                    new_sheet.cell(row=next_row, column=4).value = all_gps
-                    new_sheet.cell(row=next_row, column=5).value = freq_info
-                    new_sheet.cell(row=next_row, column=6).value = summary_result
-                    new_sheet.cell(row=next_row, column=7).value = key_findings_result
-                    new_sheet.cell(row=next_row, column=8).value = methods_result
+                    ws.cell(row=next_row, column=4).value = all_gps
+                    ws.cell(row=next_row, column=5).value = freq_info
+                    ws.cell(row=next_row, column=6).value = summary_result
+                    ws.cell(row=next_row, column=7).value = key_findings_result
+                    ws.cell(row=next_row, column=8).value = methods_result
                     combined_relevance = f"{relevance_result}\n(Manuell:{user_relevance_score})"
-                    new_sheet.cell(row=next_row, column=9).value = combined_relevance
+                    ws.cell(row=next_row, column=9).value = combined_relevance
                     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    new_sheet.cell(row=next_row, column=10).value = now_str
+                    ws.cell(row=next_row, column=10).value = now_str
 
-            output_buffer = io.BytesIO()
-            wb.save(output_buffer)
-            output_buffer.seek(0)
+                    output_buffer = io.BytesIO()
+                    wb.save(output_buffer)
+                    output_buffer.seek(0)
 
-            st.success("Alle PDFs verarbeitet – Excel-Datei mit mehreren Sheets erstellt!")
-            st.download_button(
-                label="Download Excel (Multi-Gene)",
-                data=output_buffer,
-                file_name="analysis_results_multi.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
+                    # Download-Button pro Paper
+                    st.download_button(
+                        label=f"Download Excel für {fpdf.name}",
+                        data=output_buffer,
+                        file_name=f"analysis_{fpdf.name.replace('.pdf', '')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
 
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
