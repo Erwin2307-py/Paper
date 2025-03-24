@@ -68,7 +68,7 @@ def clean_html_except_br(text):
     return cleaned_text
 
 def translate_text_openai(text, source_language, target_language, api_key):
-    """Übersetzt Text über OpenAI-ChatCompletion (z.B. GPT-4)"""
+    """Übersetzt Text über OpenAI-ChatCompletion (z.B. GPT-4/GPT-3.5)"""
     import openai
     openai.api_key = api_key
     prompt_system = (
@@ -80,7 +80,7 @@ def translate_text_openai(text, source_language, target_language, api_key):
     prompt_user = f"Translate the following text from {source_language} to {target_language}:\n'{text}'"
     try:
         response = openai.chat.completions.create(
-            model="gpt-4o",  # Falls Ihr Account dieses Modell unterstützt
+            model="gpt-4",  
             messages=[
                 {"role": "system", "content": prompt_system},
                 {"role": "user", "content": prompt_user}
@@ -450,6 +450,7 @@ class PaperAnalyzer:
         return text
     
     def analyze_with_openai(self, text, prompt_template, api_key):
+        # GPT-3.5/gpt-4 input limit: hier gekürzt auf ~15000 chars
         if len(text) > 15000:
             text = text[:15000] + "..."
         prompt = prompt_template.format(text=text)
@@ -559,18 +560,28 @@ class AlleleFrequencyFinder:
         return " | ".join(out)
 
 def split_summary(summary_text):
+    """
+    Versucht, aus einem (deutschen) Summary-Text
+    die 'Ergebnisse' und 'Schlussfolgerungen' herauszutrennen.
+    """
     m = re.search(r'Ergebnisse\s*:\s*(.*?)\s*Schlussfolgerungen\s*:\s*(.*)', summary_text, re.DOTALL | re.IGNORECASE)
     if m:
         ergebnisse = m.group(1).strip()
         schlussfolgerungen = m.group(2).strip()
     else:
+        # Falls nicht gefunden, packen wir alles in ergebnisse
         ergebnisse = summary_text
         schlussfolgerungen = ""
     return ergebnisse, schlussfolgerungen
 
 def parse_cohort_info(summary_text: str) -> dict:
+    """
+    Versucht, aus einem deutschen Summary-Text z.B. n Patienten / n Kontrollpersonen
+    oder z.B. 50 Japanese participants etc. zu extrahieren.
+    """
     info = {"study_size": "", "origin": ""}
 
+    # Muster: "50 Japanese children", "100 Chinese participants" etc.
     pattern_nationality = re.compile(
         r"(\d+)\s+(Filipino|Chinese|Japanese|Han\sChinese|[A-Za-z]+)\s+([Cc]hildren(?:\s+and\s+adolescents)?|adolescents?|participants?|subjects?)",
         re.IGNORECASE
@@ -583,6 +594,7 @@ def parse_cohort_info(summary_text: str) -> dict:
         info["study_size"] = f"{num_str} {group_str}"
         info["origin"] = origin_str
 
+    # Muster: "50 Patienten und 40 gesunde Kontrollpersonen"
     pattern_both = re.compile(
         r"(\d+)\s*Patient(?:en)?(?:[^\d]+)(\d+)\s*gesunde\s*Kontroll(?:personen)?",
         re.IGNORECASE
@@ -593,11 +605,13 @@ def parse_cohort_info(summary_text: str) -> dict:
         c_count = m_both.group(2)
         info["study_size"] = f"{p_count} Patienten / {c_count} Kontrollpersonen"
     else:
+        # Muster: "30 Patienten"
         pattern_single_p = re.compile(r"(\d+)\s*Patient(?:en)?", re.IGNORECASE)
         m_single_p = pattern_single_p.search(summary_text)
         if m_single_p and not info["study_size"]:
             info["study_size"] = f"{m_single_p.group(1)} Patienten"
 
+    # Muster: "in der [something] Bevölkerung"
     pattern_origin = re.compile(r"in\s*der\s+(\S+)\s+Bevölkerung", re.IGNORECASE)
     m_orig = pattern_origin.search(summary_text)
     if m_orig and not info["origin"]:
@@ -625,7 +639,7 @@ def page_analyze_paper():
     # Compare Mode
     compare_mode = st.sidebar.checkbox("Alle Paper gemeinsam vergleichen (Outlier ausschließen)?")
 
-    # NEU: Radio: Hauptthema => 'manuell' oder 'GPT'
+    # Radio: Hauptthema => 'Manuell' oder 'GPT'
     theme_mode = st.sidebar.radio(
         "Hauptthema bestimmen",
         ["Manuell", "GPT"]
@@ -659,8 +673,7 @@ def page_analyze_paper():
     analyzer = PaperAnalyzer(model=model)
     api_key = st.session_state["api_key"]
 
-    # Hier speichern wir die "relevant_papers" (Outlier-Check) global, damit wir
-    # in der Excel-Funktion nur diese verarbeiten
+    # "relevant_papers_compare" (für Compare Mode)
     if "relevant_papers_compare" not in st.session_state:
         st.session_state["relevant_papers_compare"] = None
     if "theme_compare" not in st.session_state:
@@ -671,7 +684,6 @@ def page_analyze_paper():
     # -------------------------------------
     def do_outlier_logic(paper_map: dict) -> (list, str):
         """Gibt (relevantPaperList, discoveredTheme) zurück."""
-        # If theme_mode == Manuell => ask GPT for relevance to user_defined_theme
         if theme_mode == "Manuell":
             main_theme = user_defined_theme.strip()
             if not main_theme:
@@ -680,7 +692,7 @@ def page_analyze_paper():
 
             snippet_list = []
             for name, txt_data in paper_map.items():
-                snippet = txt_data[:700].replace("\n"," ")
+                snippet = txt_data[:700].replace("\n", " ")
                 snippet_list.append(f'{{"filename": "{name}", "snippet": "{snippet}"}}')
 
             big_snippet = ",\n".join(snippet_list)
@@ -739,9 +751,9 @@ Nur das JSON, ohne weitere Erklärungen.
             relevant_papers_local = []
             st.write("**Paper-Einstufung**:")
             for p in papers_info:
-                fname = p.get("filename","?")
+                fname = p.get("filename", "?")
                 rel = p.get("relevant", False)
-                reason = p.get("reason","(none)")
+                reason = p.get("reason", "(none)")
                 if rel:
                     relevant_papers_local.append(fname)
                     st.success(f"{fname} => relevant. Begründung: {reason}")
@@ -753,7 +765,7 @@ Nur das JSON, ohne weitere Erklärungen.
             # GPT-based theme detection
             snippet_list = []
             for name, txt_data in paper_map.items():
-                snippet = txt_data[:700].replace("\n"," ")
+                snippet = txt_data[:700].replace("\n", " ")
                 snippet_list.append(f'{{"filename": "{name}", "snippet": "{snippet}"}}')
             big_snippet = ",\n".join(snippet_list)
 
@@ -806,9 +818,9 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
             relevant_papers_local = []
             st.write("**Paper-Einstufung**:")
             for p in papers_info:
-                fname = p.get("filename","?")
+                fname = p.get("filename", "?")
                 rel = p.get("relevant", False)
-                reason = p.get("reason","(none)")
+                reason = p.get("reason", "(none)")
                 if rel:
                     relevant_papers_local.append(fname)
                     st.success(f"{fname} => relevant. Begründung: {reason}")
@@ -816,7 +828,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     st.warning(f"{fname} => NICHT relevant. Begründung: {reason}")
 
             return (relevant_papers_local, main_theme)
-
 
     # -------------------------------------
     # Haupt-Analyse-Bereich
@@ -883,7 +894,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 st.write(final_result)
 
         else:
-            # Einzel- oder Multi-Modus ohne Compare
+            # Einzel-/Multi-Modus ohne Compare
             st.write("### Einzel- oder Multi-Modus (kein Outlier-Check)")
 
             pdf_options = ["(Alle)"] + [f"{i+1}) {f.name}" for i, f in enumerate(uploaded_files)]
@@ -1066,20 +1077,22 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
 
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
 
-    # ----------------------------------------------------------------
-    # -- HIER die geänderte Logik: Für JEDE PDF EINE Excel erstellen --
-    # ----------------------------------------------------------------
+    # --------------------------------------------------------------
+    # -- Für JEDE hochgeladene PDF wird eine eigene Excel erzeugt  --
+    # -- und die Felder werden laut Vorgabe in bestimmte Zellen    --
+    # --------------------------------------------------------------
     if uploaded_files and api_key:
         if st.button("Alle Analysen durchführen & in Excel speichern (Multi)"):
             with st.spinner("Analysiere alle hochgeladenen PDFs (für Excel)..."):
                 import openpyxl
                 import datetime
 
-                # Prüfe ggf. Outlier-Logic
                 analyzer = PaperAnalyzer(model=model)
+
+                # Falls Compare Mode => nur die relevanten
                 if compare_mode:
                     if not st.session_state["relevant_papers_compare"]:
-                        # Falls der Nutzer noch nicht auf "Vergleichs-Analyse starten" geklickt hat:
+                        # Outlier-Check, falls noch nicht gemacht
                         paper_map_auto = {}
                         for fpdf in uploaded_files:
                             txt = analyzer.extract_text_from_pdf(fpdf)
@@ -1100,26 +1113,36 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 else:
                     selected_files_for_excel = uploaded_files
 
+                # Bestimme Hauptthema:
+                if theme_mode == "Manuell":
+                    main_theme_final = user_defined_theme.strip() if user_defined_theme.strip() else "n/a"
+                else:
+                    main_theme_final = st.session_state.get("theme_compare", "n/a")
+
                 for fpdf in selected_files_for_excel:
                     text = analyzer.extract_text_from_pdf(fpdf)
                     if not text.strip():
                         st.error(f"Kein Text aus {fpdf.name} extrahierbar (evtl. kein OCR). Überspringe...")
                         continue
 
-                    # Standardanalysen
                     summary_result = analyzer.summarize(text, api_key)
                     key_findings_result = analyzer.extract_key_findings(text, api_key)
+
+                    # Relevanz
                     if not topic:
                         relevance_result = "(No topic => no Relevanz-Bewertung)"
                     else:
                         relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
+
+                    # Methoden
                     methods_result = analyzer.identify_methods(text, api_key)
 
-                    # Gene & rsID und Frequenzen
+                    # GEN & rsID, Allelfrequenzen
                     pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                     match_text = re.search(pattern_obvious, text)
                     gene_via_text = match_text.group(1) if match_text else None
 
+                    # Falls kein direkter Fund -> in "vorlage_gene.xlsx" nach bekannten Genen suchen
                     if not gene_via_text:
                         try:
                             wb_gene = openpyxl.load_workbook("vorlage_gene.xlsx")
@@ -1152,6 +1175,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                             for m in matches:
                                 found_pairs.append((m, line.strip()))
 
+                    # Eindeutige Genotypen sammeln
                     unique_geno_pairs = []
                     for gp in found_pairs:
                         if gp not in unique_geno_pairs:
@@ -1166,40 +1190,78 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         if data:
                             freq_info = aff.build_freq_info_text(data)
 
-                    # ------------------------------------------------------------------------
-                    # Für JEDES Paper wird jetzt eine eigene Excel erstellt & downloadbar gemacht
-                    # ------------------------------------------------------------------------
+                    # Date of publication => machen wir hier einfach "heutiges Datum"
+                    now_str = datetime.datetime.now().strftime("%Y-%m-%d")
+
+                    # study_size + ethnicity => parse_cohort_info => in D20
+                    cohort_info = parse_cohort_info(summary_result)
+                    size_eth = f"{cohort_info['study_size']} {cohort_info['origin']}".strip()
+                    if size_eth == "":
+                        size_eth = "(n/a)"
+
+                    # summary - key findings => E20
+                    combined_summary_key = summary_result + "\n\nKey Findings:\n" + key_findings_result
+
+                    # Ergebnisse + Schlussfolgerungen => G21 & G22
+                    ergebnisse_txt, schluss_txt = split_summary(summary_result)
+
+                    # Nun füllen wir die Excel-Vorlage
                     try:
                         wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
                     except FileNotFoundError:
                         st.error("Vorlage 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
                         return
 
-                    ws = wb.active  # Wir nehmen das aktive Blatt
-                    # Falls man Header definieren möchte, kann man das hier prüfen. 
-                    # Wir gehen davon aus, dass die Vorlage evtl. Header hat.
-                    # Dann fügen wir eine weitere Zeile hinzu.
-                    next_row = ws.max_row + 1
+                    ws = wb.active
 
-                    ws.cell(row=next_row, column=1).value = fpdf.name
-                    ws.cell(row=next_row, column=2).value = found_gene
-                    ws.cell(row=next_row, column=3).value = rs_num
-                    all_gps = ",".join([x[0] for x in unique_geno_pairs])
-                    ws.cell(row=next_row, column=4).value = all_gps
-                    ws.cell(row=next_row, column=5).value = freq_info
-                    ws.cell(row=next_row, column=6).value = summary_result
-                    ws.cell(row=next_row, column=7).value = key_findings_result
-                    ws.cell(row=next_row, column=8).value = methods_result
-                    combined_relevance = f"{relevance_result}\n(Manuell:{user_relevance_score})"
-                    ws.cell(row=next_row, column=9).value = combined_relevance
-                    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    ws.cell(row=next_row, column=10).value = now_str
+                    # Hauptthema => D2
+                    ws["D2"] = main_theme_final
 
+                    # Gen-Name => D5
+                    ws["D5"] = found_gene if found_gene else "n/a"
+
+                    # rs-Nummer => D6
+                    ws["D6"] = rs_num if rs_num else "n/a"
+
+                    # Wir haben bis zu 3 Genotypen => D10/E10, D11/E11, D12/E12
+                    # freq_info wird immer gleich sein (da wir nur "freq_info" für die rs haben).
+                    # Pro Zeile ein Genotyp.
+                    for i in range(3):
+                        row_idx = 10 + i  # 10, 11, 12
+                        col_geno = f"D{row_idx}"
+                        col_freq = f"E{row_idx}"
+
+                        if i < len(unique_geno_pairs):
+                            genotype_str = unique_geno_pairs[i][0]
+                            ws[col_geno] = genotype_str
+                            ws[col_freq] = freq_info
+                        else:
+                            ws[col_geno] = ""
+                            ws[col_freq] = ""
+
+                    # Datum (Publikationsdatum) => C20
+                    ws["C20"] = now_str
+
+                    # study size + ethnicity => D20
+                    ws["D20"] = size_eth
+
+                    # summary - key findings => E20
+                    ws["E20"] = combined_summary_key
+
+                    # G21 => Ergebnisse, G22 => Schlussfolgerung
+                    ws["G21"] = ergebnisse_txt
+                    ws["G22"] = schluss_txt
+
+                    # (Nur als Beispiel, man könnte auch Relevanz etc. woanders platzieren)
+                    # Falls man die Relevanz noch irgendwo hinsetzen will, kann man es z.B. in B25 packen
+                    # Hier nur als Demonstration
+                    # ws["B25"] = f"Relevanz: {relevance_result}\n(Manuell:{user_relevance_score})"
+
+                    # Jetzt die Excel in einen BytesIO
                     output_buffer = io.BytesIO()
                     wb.save(output_buffer)
                     output_buffer.seek(0)
 
-                    # Download-Button pro Paper
                     st.download_button(
                         label=f"Download Excel für {fpdf.name}",
                         data=output_buffer,
