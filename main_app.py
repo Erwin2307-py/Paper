@@ -13,6 +13,7 @@ import time
 import json
 import pdfplumber
 import io
+import zipfile
 
 from typing import Dict, Any, Optional
 from dotenv import load_dotenv
@@ -69,7 +70,7 @@ def clean_html_except_br(text):
 
 def translate_text_openai(text, source_language, target_language, api_key):
     """
-    Übersetzt Text über OpenAI ChatCompletion (z.B. GPT-4).
+    Übersetzt Text über OpenAI ChatCompletion.
     """
     openai.api_key = api_key
     prompt_system = (
@@ -81,7 +82,7 @@ def translate_text_openai(text, source_language, target_language, api_key):
     prompt_user = f"Translate the following text from {source_language} to {target_language}:\n'{text}'"
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-4",  # Falls dein Account dieses Modell unterstützt
+            model="gpt-4",  # Falls dein Account GPT-4 unterstützt
             messages=[
                 {"role": "system", "content": prompt_system},
                 {"role": "user", "content": prompt_user}
@@ -89,6 +90,7 @@ def translate_text_openai(text, source_language, target_language, api_key):
             temperature=0
         )
         translation = response.choices[0].message.content.strip()
+        # Clean potenzielle Anführungszeichen
         if translation and translation[0] in ["'", '"', "‘", "„"]:
             translation = translation[1:]
             if translation and translation[-1] in ["'", '"']:
@@ -167,7 +169,9 @@ def check_pubmed_connection(timeout=10):
         return False
 
 def search_pubmed_simple(query):
-    """Sucht in PubMed (Kurzversion), ohne Abstract/Details."""
+    """
+    Kurze Version: Sucht nur (Titel, Jahr, Journal), ohne Abstract / Details.
+    """
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 100}
     out = []
@@ -236,7 +240,7 @@ def check_europe_pmc_connection(timeout=10):
         return False
 
 def search_europe_pmc_simple(query):
-    """Sucht in Europe PMC (Kurzversion), ohne erweiterte Details."""
+    """Kurze Version: Sucht nur, ohne erweiterte Details."""
     url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {
         "query": query,
@@ -429,14 +433,14 @@ def page_online_api_filter():
         st.session_state["current_page"] = "Home"
 
 # ------------------------------------------------------------------
-# PaperAnalyzer-Klasse (mit neuem openai.ChatCompletion)
+# PaperAnalyzer-Klasse (mit ChatCompletion)
 # ------------------------------------------------------------------
 class PaperAnalyzer:
     def __init__(self, model="gpt-3.5-turbo"):
         self.model = model
     
     def extract_text_from_pdf(self, pdf_file):
-        """Extrahiert reinen Text via PyPDF2 (ggf. OCR nötig)."""
+        """Extrahiert reinen Text via PyPDF2."""
         reader = PyPDF2.PdfReader(pdf_file)
         text = ""
         for page in reader.pages:
@@ -444,24 +448,20 @@ class PaperAnalyzer:
             if page_text:
                 text += page_text + "\n"
         return text
-
+    
     def analyze_with_openai(self, text, prompt_template, api_key):
-        """
-        Neue API (ChatCompletion)
-        """
+        """Verwendet die neue openai.ChatCompletion.create-Syntax."""
+        openai.api_key = api_key
+        # Langer Text -> kürzen
         if len(text) > 15000:
             text = text[:15000] + "..."
-        openai.api_key = api_key
         prompt = prompt_template.format(text=text)
         response = openai.ChatCompletion.create(
             model=self.model,
             messages=[
                 {
                     "role": "system",
-                    "content": (
-                        "Du bist ein Experte für die Analyse wissenschaftlicher Paper, "
-                        "besonders im Bereich Side-Channel Analysis."
-                    )
+                    "content": "Du bist ein Experte für die Analyse wissenschaftlicher Paper, besonders im Bereich Side-Channel Analysis."
                 },
                 {
                     "role": "user",
@@ -472,42 +472,38 @@ class PaperAnalyzer:
             max_tokens=1500
         )
         return response.choices[0].message.content
-
+    
     def summarize(self, text, api_key):
         prompt = (
-            "Erstelle eine strukturierte Zusammenfassung des folgenden "
-            "wissenschaftlichen Papers. Gliedere sie in mindestens vier klar getrennte Abschnitte "
-            "(z.B. 1. Hintergrund, 2. Methodik, 3. Ergebnisse, 4. Schlussfolgerungen). "
+            "Erstelle eine strukturierte Zusammenfassung des folgenden wissenschaftlichen Papers. "
+            "Gliedere sie in mindestens vier klar getrennte Abschnitte (z.B. 1. Hintergrund, 2. Methodik, 3. Ergebnisse, 4. Schlussfolgerungen). "
             "Verwende maximal 500 Wörter:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
-
+    
     def extract_key_findings(self, text, api_key):
         prompt = (
             "Extrahiere die 5 wichtigsten Erkenntnisse aus diesem wissenschaftlichen "
             "Paper im Bereich Side-Channel Analysis. Liste sie mit Bulletpoints auf:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
-
+    
     def identify_methods(self, text, api_key):
         prompt = (
             "Identifiziere und beschreibe die im Paper verwendeten Methoden "
-            "und Techniken zur Side-Channel-Analyse. Gib zu jeder Methode "
-            "eine kurze Erklärung:\n\n{text}"
+            "und Techniken zur Side-Channel-Analyse. Gib zu jeder Methode eine kurze Erklärung:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
-
+    
     def evaluate_relevance(self, text, topic, api_key):
         prompt = (
-            f"Bewerte die Relevanz dieses Papers für das Thema '{topic}' auf "
-            f"einer Skala von 1-10. Begründe deine Bewertung:\n\n{{text}}"
+            f"Bewerte die Relevanz dieses Papers für das Thema '{topic}' auf einer Skala von 1-10. "
+            f"Begründe deine Bewertung:\n\n{{text}}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
 
-# ------------------------------------------------------------------
-# Klasse: AlleleFrequencyFinder
-# ------------------------------------------------------------------
 class AlleleFrequencyFinder:
+    """Klasse zum Abrufen und Anzeigen von Allelfrequenzen (Ensembl)."""
     def __init__(self):
         self.ensembl_server = "https://rest.ensembl.org"
         self.max_retries = 3
@@ -535,16 +531,16 @@ class AlleleFrequencyFinder:
                 time.sleep(self.retry_delay)
                 return self.get_allele_frequencies(rs_id, retry_count + 1)
             return None
-
+    
     def try_alternative_source(self, rs_id: str) -> Optional[Dict[str, Any]]:
         return None
-
+    
     def parse_and_display_data(self, data: Dict[str, Any]) -> None:
         if not data:
             print("Keine Daten verfügbar.")
             return
         print(json.dumps(data, indent=2))
-
+    
     def build_freq_info_text(self, data: Dict[str, Any]) -> str:
         if not data:
             return "Keine Daten von Ensembl"
@@ -571,13 +567,12 @@ def split_summary(summary_text):
         ergebnisse = m.group(1).strip()
         schlussfolgerungen = m.group(2).strip()
     else:
-        ergebnisse = summary_text
+        ergebnisse = summary_text.strip()
         schlussfolgerungen = ""
     return ergebnisse, schlussfolgerungen
 
 def parse_cohort_info(summary_text: str) -> dict:
     info = {"study_size": "", "origin": ""}
-
     pattern_nationality = re.compile(
         r"(\d+)\s+(Filipino|Chinese|Japanese|Han\sChinese|[A-Za-z]+)\s+([Cc]hildren(?:\s+and\s+adolescents)?|adolescents?|participants?|subjects?)",
         re.IGNORECASE
@@ -590,10 +585,7 @@ def parse_cohort_info(summary_text: str) -> dict:
         info["study_size"] = f"{num_str} {group_str}"
         info["origin"] = origin_str
 
-    pattern_both = re.compile(
-        r"(\d+)\s*Patient(?:en)?(?:[^\d]+)(\d+)\s*gesunde\s*Kontroll(?:personen)?",
-        re.IGNORECASE
-    )
+    pattern_both = re.compile(r"(\d+)\s*Patient(?:en)?(?:[^\d]+)(\d+)\s*gesunde\s*Kontroll(?:personen)?", re.IGNORECASE)
     m_both = pattern_both.search(summary_text)
     if m_both and not info["study_size"]:
         p_count = m_both.group(1)
@@ -614,16 +606,199 @@ def parse_cohort_info(summary_text: str) -> dict:
 
 def page_analyze_paper():
     """
-    Deine Seite zur Analyse hochgeladener PDFs.
-    Hier kannst du weiterhin deine Outlier-Logic etc. pflegen.
-    Wichtig: Alle GPT-Aufrufe verwenden die neue ChatCompletion-Syntax.
+    Deine Haupt-Seite zur PDF-Analyse (gekürzt).
+    Wichtig: Im Excel-Export wird jetzt für jedes PDF eine eigene Datei erstellt.
     """
     st.title("Analyze Paper - Integriert")
-    # ... Restlicher Code (keine alten openai.chat.completions.create-Aufrufe mehr!)
+    
+    if "api_key" not in st.session_state:
+        st.session_state["api_key"] = OPENAI_API_KEY or ""
+    
+    st.sidebar.header("Einstellungen - PaperAnalyzer")
+    new_key_value = st.sidebar.text_input("OpenAI API Key", type="password", value=st.session_state["api_key"])
+    st.session_state["api_key"] = new_key_value
+    
+    model = st.sidebar.selectbox(
+        "OpenAI-Modell",
+        ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4o"],
+        index=0
+    )
+    
+    # Compare Mode
+    compare_mode = st.sidebar.checkbox("Alle Paper gemeinsam vergleichen (Outlier ausschließen)?")
+    
+    # Thema
+    theme_mode = st.sidebar.radio("Hauptthema bestimmen", ["Manuell", "GPT"])
+    user_defined_theme = st.sidebar.text_input("Manuelles Hauptthema") if theme_mode == "Manuell" else ""
+    action = st.sidebar.radio(
+        "Analyseart",
+        ["Zusammenfassung", "Wichtigste Erkenntnisse", "Methoden & Techniken", "Relevanz-Bewertung", "Tabellen & Grafiken"],
+        index=0
+    )
+    topic = st.sidebar.text_input("Thema für Relevanz-Bewertung (falls relevant)")
+    output_lang = st.sidebar.selectbox("Ausgabesprache", ["Deutsch", "Englisch", "Portugiesisch", "Serbisch"], index=0)
+    
+    uploaded_files = st.file_uploader("PDF-Dateien hochladen", type="pdf", accept_multiple_files=True)
+    analyzer = PaperAnalyzer(model=model)
+    api_key = st.session_state["api_key"]
+    
+    # Globale Compare-State
+    if "relevant_papers_compare" not in st.session_state:
+        st.session_state["relevant_papers_compare"] = None
+    if "theme_compare" not in st.session_state:
+        st.session_state["theme_compare"] = ""
 
-    # (Dein bisheriger Code ist hier eingefügt; alle GPT-Aufrufe umgestellt.)
+    # Outlier-Check-Funktion abgekürzt
+    def do_outlier_logic(paper_map: dict) -> (list, str):
+        # Minimierte Dummy-Funktion
+        return list(paper_map.keys()), "(DummyThema)"
 
-    # ENDE page_analyze_paper()
+    # Analyse
+    if uploaded_files and api_key:
+        st.write("### PDFs ready to analyze.")
+        # Dummy-Compare
+        if compare_mode:
+            st.write("#### Vergleichsmodus aktiv")
+        else:
+            st.write("#### Einzel- oder Multi-Modus aktiv")
+
+        # ... Dein sonstiger Code
+
+        st.write("## Alle Analysen & Excel-Ausgabe (Multi-PDF, je PDF ein eigenes Excel)")
+
+        if st.button("Alle Analysen durchführen & als ZIP (Multi)"):
+            with st.spinner("Analysiere alle hochgeladenen PDFs..."):
+                import openpyxl
+
+                # 1) Relevante Paper
+                if compare_mode:
+                    # Dummy: relevant = alle
+                    relevant_list_for_excel = [f.name for f in uploaded_files]
+                else:
+                    relevant_list_for_excel = [f.name for f in uploaded_files]
+
+                # ZIP im Speicher
+                output_zip_buffer = io.BytesIO()
+                with zipfile.ZipFile(output_zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+                    for fpdf in uploaded_files:
+                        # Nur verarbeiten, wenn relevant
+                        if fpdf.name not in relevant_list_for_excel:
+                            continue
+                        text = analyzer.extract_text_from_pdf(fpdf)
+                        if not text.strip():
+                            st.warning(f"Kein Text aus {fpdf.name} extrahierbar (OCR?). Überspringe.")
+                            continue
+
+                        # Analysen
+                        summary_result = analyzer.summarize(text, api_key)
+                        key_findings_result = analyzer.extract_key_findings(text, api_key)
+                        if topic.strip():
+                            relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
+                        else:
+                            relevance_result = "(No topic => keine Relevanz-Bewertung)"
+                        methods_result = analyzer.identify_methods(text, api_key)
+
+                        # Gene/rs
+                        pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
+                        match_text = re.search(pattern_obvious, text)
+                        gene_via_text = match_text.group(1) if match_text else None
+                        
+                        rs_pat = r"(rs\d+)"
+                        found_rs_match = re.search(rs_pat, text)
+                        rs_num = found_rs_match.group(1) if found_rs_match else None
+                        
+                        # Genotypes
+                        genotype_regex = r"\b([ACGT]{2,3})\b"
+                        found_genos = re.findall(genotype_regex, text)
+                        unique_genos = []
+                        for g in found_genos:
+                            if g not in unique_genos:
+                                unique_genos.append(g)
+                            if len(unique_genos) >= 3:
+                                break
+                        
+                        # Frequenzen
+                        aff = AlleleFrequencyFinder()
+                        freq_info = "Keine rsID"
+                        if rs_num:
+                            data = aff.get_allele_frequencies(rs_num)
+                            if data:
+                                freq_info = aff.build_freq_info_text(data)
+
+                        # Publikationsdatum - Dummy
+                        pub_date = "Not found"
+                        # parse_cohort
+                        cohort_info = parse_cohort_info(summary_result)
+                        study_size_ethnicity = (cohort_info["study_size"] + " " + cohort_info["origin"]).strip() or "n/a"
+                        
+                        # Ergebnisse & Schlussfolgerungen
+                        ergebnisse, schlussfolgerungen = split_summary(summary_result)
+
+                        # Excel-Vorlage laden
+                        try:
+                            wb_template = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
+                        except FileNotFoundError:
+                            st.error("Die Datei 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
+                            return
+
+                        ws = wb_template.active
+
+                        # Felder füllen
+                        # D2 => Compare (Dummy)
+                        if compare_mode:
+                            ws["D2"] = "Vergleichsmodus (Dummy)."
+                        else:
+                            ws["D2"] = user_defined_theme or "N/A"
+
+                        ws["D5"] = gene_via_text if gene_via_text else "n/a"
+                        ws["D6"] = rs_num if rs_num else "n/a"
+
+                        def fill_geno_freq(row_i, geno_val):
+                            ws[f"D{row_i}"] = geno_val
+                            ws[f"E{row_i}"] = freq_info
+
+                        if len(unique_genos) > 0:
+                            fill_geno_freq(10, unique_genos[0])
+                        else:
+                            ws["D10"], ws["E10"] = "n/a", "n/a"
+                        if len(unique_genos) > 1:
+                            fill_geno_freq(11, unique_genos[1])
+                        else:
+                            ws["D11"], ws["E11"] = "n/a", "n/a"
+                        if len(unique_genos) > 2:
+                            fill_geno_freq(12, unique_genos[2])
+                        else:
+                            ws["D12"], ws["E12"] = "n/a", "n/a"
+
+                        ws["C20"] = pub_date
+                        ws["D20"] = study_size_ethnicity
+                        ws["E20"] = summary_result
+                        ws["G21"] = ergebnisse
+                        ws["G22"] = schlussfolgerungen
+
+                        # Relevanz
+                        # Ggf. in G23 oder so, falls gewünscht
+                        # ...
+
+                        # Speichern in Bytes
+                        single_file_buffer = io.BytesIO()
+                        wb_template.save(single_file_buffer)
+                        single_file_buffer.seek(0)
+
+                        # In ZIP
+                        out_filename = f"{fpdf.name}_analysis.xlsx"
+                        zf.writestr(out_filename, single_file_buffer.getvalue())
+
+                # ZIP
+                output_zip_buffer.seek(0)
+
+            st.success("Alle PDFs wurden in einzelne Excel-Dateien geschrieben!")
+            st.download_button(
+                label="Download ZIP",
+                data=output_zip_buffer,
+                file_name="analysis_results_all.zip",
+                mime="application/x-zip-compressed"
+            )
 
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
@@ -644,13 +819,14 @@ def sidebar_module_navigation():
 
 def answer_chat(question: str) -> str:
     """
-    Einfaches Chat-Beispiel mit neuer openai.ChatCompletion-Syntax.
+    Einfacher Chat: Nutzt ggf. den Paper-Text aus st.session_state + GPT
+    (mit neuer ChatCompletion).
     """
     api_key = st.session_state.get("api_key", "")
     paper_text = st.session_state.get("paper_text", "")
     if not api_key:
         return f"(Kein API-Key) Echo: {question}"
-
+    
     if not paper_text.strip():
         sys_msg = "Du bist ein hilfreicher Assistent für allgemeine Fragen."
     else:
@@ -659,6 +835,7 @@ def answer_chat(question: str) -> str:
             + paper_text[:12000] + "\n\n"
             "Bitte nutze es, um Fragen möglichst fachkundig zu beantworten."
         )
+    
     openai.api_key = api_key
     try:
         response = openai.ChatCompletion.create(
@@ -678,10 +855,7 @@ def main():
     st.markdown(
         """
         <style>
-        html, body {
-            margin: 0;
-            padding: 0;
-        }
+        html, body { margin: 0; padding: 0; }
         .scrollable-chat {
             max-height: 400px; 
             overflow-y: scroll; 
