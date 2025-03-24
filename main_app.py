@@ -13,16 +13,17 @@ import time
 import json
 import pdfplumber
 import io
+import zipfile
 
 from typing import Dict, Any, Optional
 from dotenv import load_dotenv
 from PIL import Image
 from scholarly import scholarly
 
-from modules.online_api_filter import module_online_api_filter
-
 # Neuer Import für die Übersetzung mit google_trans_new
 from google_trans_new import google_translator
+
+import openpyxl
 
 # ------------------------------------------------------------------
 # Umgebungsvariablen laden (für OPENAI_API_KEY, falls vorhanden)
@@ -79,8 +80,8 @@ def translate_text_openai(text, source_language, target_language, api_key):
     )
     prompt_user = f"Translate the following text from {source_language} to {target_language}:\n'{text}'"
     try:
-        response = openai.chat.completions.create(
-            model="gpt-4o",  # Falls Ihr Account dieses Modell unterstützt
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
             messages=[
                 {"role": "system", "content": prompt_system},
                 {"role": "user", "content": prompt_user}
@@ -454,7 +455,7 @@ class PaperAnalyzer:
             text = text[:15000] + "..."
         prompt = prompt_template.format(text=text)
         openai.api_key = api_key
-        response = openai.chat.completions.create(
+        response = openai.ChatCompletion.create(
             model=self.model,
             messages=[
                 {"role": "system", "content": (
@@ -472,7 +473,7 @@ class PaperAnalyzer:
         prompt = (
             "Erstelle eine strukturierte Zusammenfassung des folgenden "
             "wissenschaftlichen Papers. Gliedere sie in mindestens vier klar getrennte Abschnitte "
-            "(z.B. 1. Hintergrund, 2. Methodik, 3. Ergebnisse, 4. Schlussfolgerungen). "
+            "(z.B. Einleitung/Hintergrund, Methodik, Ergebnisse, Schlussfolgerungen). "
             "Verwende maximal 500 Wörter:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
@@ -480,15 +481,14 @@ class PaperAnalyzer:
     def extract_key_findings(self, text, api_key):
         prompt = (
             "Extrahiere die 5 wichtigsten Erkenntnisse aus diesem wissenschaftlichen "
-            "Paper im Bereich Side-Channel Analysis. Liste sie mit Bulletpoints auf:\n\n{text}"
+            "Paper. Liste sie mit Bulletpoints auf:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
     
     def identify_methods(self, text, api_key):
         prompt = (
             "Identifiziere und beschreibe die im Paper verwendeten Methoden "
-            "und Techniken zur Side-Channel-Analyse. Gib zu jeder Methode "
-            "eine kurze Erklärung:\n\n{text}"
+            "und Techniken. Gib zu jeder Methode eine kurze Erklärung:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
     
@@ -515,7 +515,7 @@ class AlleleFrequencyFinder:
             response = requests.get(url, headers={"Content-Type": "application/json"}, timeout=10)
             response.raise_for_status()
             return response.json()
-        except requests.exceptions.HTTPError:
+        except requests.exceptions.HTTPError as e:
             if response.status_code == 500 and retry_count < self.max_retries:
                 time.sleep(self.retry_delay)
                 return self.get_allele_frequencies(rs_id, retry_count + 1)
@@ -530,6 +530,7 @@ class AlleleFrequencyFinder:
             return None
     
     def try_alternative_source(self, rs_id: str) -> Optional[Dict[str, Any]]:
+        # Placeholder für alternative Datenquelle (falls gewünscht)
         return None
     
     def parse_and_display_data(self, data: Dict[str, Any]) -> None:
@@ -546,6 +547,7 @@ class AlleleFrequencyFinder:
         out = []
         out.append(f"MAF={maf}" if maf else "MAF=n/a")
         if pops:
+            # Zur Demonstration nur einige ausgeben
             max_pop = 2
             for i, pop in enumerate(pops):
                 if i >= max_pop:
@@ -559,20 +561,32 @@ class AlleleFrequencyFinder:
         return " | ".join(out)
 
 def split_summary(summary_text):
-    m = re.search(r'Ergebnisse\s*:\s*(.*?)\s*Schlussfolgerungen\s*:\s*(.*)', summary_text, re.DOTALL | re.IGNORECASE)
-    if m:
-        ergebnisse = m.group(1).strip()
-        schlussfolgerungen = m.group(2).strip()
+    """
+    Versucht, aus dem 'Summary'-Text die Abschnitte 'Ergebnisse' und 'Schlussfolgerungen'
+    herauszufiltern. Falls nicht gefunden, wird alles in 'Ergebnisse' gepackt und 
+    Schlussfolgerungen bleibt leer.
+    """
+    # Beispielhafte Suche nach "Ergebnisse: ... Schlussfolgerungen: ..."
+    regex = re.compile(r'(Ergebnisse\s*:\s*)(.*?)(Schlussfolgerungen\s*:\s*)(.*)', re.IGNORECASE | re.DOTALL)
+    match = regex.search(summary_text)
+    if match:
+        # Alles was zwischen "Ergebnisse:" und "Schlussfolgerungen:" steht
+        ergebnisse = match.group(2).strip()
+        schlussfolgerungen = match.group(4).strip()
+        return ergebnisse, schlussfolgerungen
     else:
-        ergebnisse = summary_text
-        schlussfolgerungen = ""
-    return ergebnisse, schlussfolgerungen
+        return summary_text.strip(), ""  # Falls nicht gefunden
 
 def parse_cohort_info(summary_text: str) -> dict:
+    """
+    Sucht nach typischen Formaten von Studiengrößen und Ethnizitäten.
+    Das ist sehr vereinfacht – je nach Paper-Aufbau kann man hier mehr regex bauen.
+    """
     info = {"study_size": "", "origin": ""}
 
+    # Einfaches Beispiel: "100 Chinese participants"
     pattern_nationality = re.compile(
-        r"(\d+)\s+(Filipino|Chinese|Japanese|Han\sChinese|[A-Za-z]+)\s+([Cc]hildren(?:\s+and\s+adolescents)?|adolescents?|participants?|subjects?)",
+        r"(\d+)\s+(Filipino|Chinese|Japanese|Han\sChinese|[A-Za-z]+)\s+([Cc]hildren|adolescents?|participants?|subjects?)",
         re.IGNORECASE
     )
     match_nat = pattern_nationality.search(summary_text)
@@ -583,21 +597,23 @@ def parse_cohort_info(summary_text: str) -> dict:
         info["study_size"] = f"{num_str} {group_str}"
         info["origin"] = origin_str
 
+    # Beispiel: "50 Patienten und 30 gesunde Kontrollen"
     pattern_both = re.compile(
-        r"(\d+)\s*Patient(?:en)?(?:[^\d]+)(\d+)\s*gesunde\s*Kontroll(?:personen)?",
+        r"(\d+)\s*Patient(?:en)?(?:[^\d]+)(\d+)\s*gesunde\s*Kontroll(?:en|personen)?",
         re.IGNORECASE
     )
     m_both = pattern_both.search(summary_text)
     if m_both and not info["study_size"]:
         p_count = m_both.group(1)
         c_count = m_both.group(2)
-        info["study_size"] = f"{p_count} Patienten / {c_count} Kontrollpersonen"
+        info["study_size"] = f"{p_count} Patienten / {c_count} Kontrollen"
     else:
         pattern_single_p = re.compile(r"(\d+)\s*Patient(?:en)?", re.IGNORECASE)
         m_single_p = pattern_single_p.search(summary_text)
         if m_single_p and not info["study_size"]:
             info["study_size"] = f"{m_single_p.group(1)} Patienten"
 
+    # Beispiel: "in der deutschen Bevölkerung"
     pattern_origin = re.compile(r"in\s*der\s+(\S+)\s+Bevölkerung", re.IGNORECASE)
     m_orig = pattern_origin.search(summary_text)
     if m_orig and not info["origin"]:
@@ -618,7 +634,7 @@ def page_analyze_paper():
     
     model = st.sidebar.selectbox(
         "OpenAI-Modell",
-        ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4o"],
+        ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4"],
         index=0
     )
 
@@ -671,7 +687,8 @@ def page_analyze_paper():
     # -------------------------------------
     def do_outlier_logic(paper_map: dict) -> (list, str):
         """Gibt (relevantPaperList, discoveredTheme) zurück."""
-        # If theme_mode == Manuell => ask GPT for relevance to user_defined_theme
+        import openai
+
         if theme_mode == "Manuell":
             main_theme = user_defined_theme.strip()
             if not main_theme:
@@ -708,7 +725,7 @@ Nur das JSON, ohne weitere Erklärungen.
 """
             try:
                 openai.api_key = api_key
-                scope_resp = openai.chat.completions.create(
+                scope_resp = openai.ChatCompletion.create(
                     model=model,
                     messages=[
                         {"role": "system", "content": "Du checkst Paper-Snippets auf Relevanz zum user-Thema."},
@@ -771,9 +788,10 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
 
 [{big_snippet}]
 """
+            import openai
             try:
                 openai.api_key = api_key
-                scope_resp = openai.chat.completions.create(
+                scope_resp = openai.ChatCompletion.create(
                     model=model,
                     messages=[
                         {"role": "system", "content": "Du bist ein Assistent, der Paper thematisch filtert."},
@@ -816,7 +834,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     st.warning(f"{fname} => NICHT relevant. Begründung: {reason}")
 
             return (relevant_papers_local, main_theme)
-
 
     # -------------------------------------
     # Haupt-Analyse-Bereich
@@ -1024,7 +1041,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                                     )
                                     try:
                                         openai.api_key = api_key
-                                        gpt_resp = openai.chat.completions.create(
+                                        gpt_resp = openai.ChatCompletion.create(
                                             model=model,
                                             messages=[
                                                 {"role": "system", "content": "Du bist ein Experte für PDF-Tabellenanalyse."},
@@ -1066,24 +1083,16 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
 
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
 
+    # ---------------------------------------------------------
+    # Hier erfolgt das Ausfüllen der einzelnen Vorlage pro Paper
+    # ---------------------------------------------------------
     if uploaded_files and api_key:
-        # Falls Compare-Mode => wir nutzen st.session_state["relevant_papers_compare"]
-        # Sonst => wir nehmen alle
         if st.button("Alle Analysen durchführen & in Excel speichern (Multi)"):
+
             with st.spinner("Analysiere alle hochgeladenen PDFs (für Excel)..."):
-                import openpyxl
-                import datetime
 
-                try:
-                    wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
-                except FileNotFoundError:
-                    st.error("Vorlage 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
-                    st.stop()
-
-                gen_sheets = {}
-                analyzer = PaperAnalyzer(model=model)
-
-                # check outlier logic
+                # Falls Compare-Mode => wir nutzen st.session_state["relevant_papers_compare"]
+                # Sonst => wir nehmen alle
                 if compare_mode:
                     # Falls wir relevant_papers_compare nicht haben, machen wir auto
                     if not st.session_state["relevant_papers_compare"]:
@@ -1105,127 +1114,170 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         st.error("Keine relevanten Paper nach Outlier-Check für Excel.")
                         return
                     selected_files_for_excel = [f for f in uploaded_files if f.name in relevant_list_for_excel]
+                    compare_theme_str = st.session_state["theme_compare"]
                 else:
-                    # Kein Compare => nimm alle
                     selected_files_for_excel = uploaded_files
+                    compare_theme_str = "Kein Compare"
 
-                for fpdf in selected_files_for_excel:
-                    text = analyzer.extract_text_from_pdf(fpdf)
-                    if not text.strip():
-                        st.error(f"Kein Text aus {fpdf.name} extrahierbar (evtl. kein OCR). Überspringe...")
-                        continue
+                # Wir sammeln die erzeugten XLSX-Dateien in einem ZIP
+                output_zip_buffer = io.BytesIO()
+                with zipfile.ZipFile(output_zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
 
-                    # Standardanalysen
-                    summary_result = analyzer.summarize(text, api_key)
-                    key_findings_result = analyzer.extract_key_findings(text, api_key)
-                    # Relevanz erfordert topic
-                    if not topic:
-                        # optional => user may have left it blank
-                        relevance_result = "(No topic => no Relevanz-Bewertung)"
-                    else:
-                        relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
-                    methods_result = analyzer.identify_methods(text, api_key)
+                    # --- Schleife über alle (relevanten) PDFs ---
+                    for fpdf in selected_files_for_excel:
+                        text_data = analyzer.extract_text_from_pdf(fpdf)
+                        if not text_data.strip():
+                            st.warning(f"Kein Text aus {fpdf.name} extrahierbar (evtl. kein OCR). Überspringe...")
+                            continue
 
-                    # Gens und Allele
-                    pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
-                    match_text = re.search(pattern_obvious, text)
-                    gene_via_text = match_text.group(1) if match_text else None
+                        # 1) Standardanalysen
+                        summary_result = analyzer.summarize(text_data, api_key)
+                        key_findings_result = analyzer.extract_key_findings(text_data, api_key)
+                        # Relevanz nur, wenn topic != ""
+                        if not topic:
+                            relevance_result = "(No topic => keine Relevanz-Bewertung)"
+                        else:
+                            relevance_result = analyzer.evaluate_relevance(text_data, topic, api_key)
+                        methods_result = analyzer.identify_methods(text_data, api_key)
 
-                    if not gene_via_text:
-                        # Falls nicht gefunden, in vorlage_gene.xlsx gucken
-                        try:
-                            wb_gene = openpyxl.load_workbook("vorlage_gene.xlsx")
-                        except FileNotFoundError:
-                            st.error("Die Datei 'vorlage_gene.xlsx' wurde nicht gefunden!")
-                            st.stop()
-                        ws_gene = wb_gene.active
-                        gene_names_from_excel = []
-                        for row in ws_gene.iter_rows(min_row=3, min_col=3, max_col=3, values_only=True):
-                            cell_value = row[0]
-                            if cell_value and isinstance(cell_value, str):
-                                gene_names_from_excel.append(cell_value.strip())
-                        for g in gene_names_from_excel:
-                            pat = re.compile(r"\b" + re.escape(g) + r"\b", re.IGNORECASE)
-                            if re.search(pat, text):
-                                gene_via_text = g
+                        # 2) Gene & rs
+                        # Einfaches Muster: ...
+                        pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
+                        match_text = re.search(pattern_obvious, text_data)
+                        gene_via_text = match_text.group(1) if match_text else None
+
+                        # rsID
+                        rs_pat = r"(rs\d+)"
+                        found_rs_match = re.search(rs_pat, text_data)
+                        rs_num = found_rs_match.group(1) if found_rs_match else None
+
+                        # 3) Genotypen extrahieren (sehr rudimentäres Beispiel)
+                        genotype_regex = r"\b([ACGT]{2,3})\b"
+                        lines = text_data.split("\n")
+                        found_pairs = []
+                        for line in lines:
+                            matches = re.findall(genotype_regex, line)
+                            if matches:
+                                for m in matches:
+                                    found_pairs.append(m)
+
+                        # Einzigartige Genotypen bis zu 3 Stück
+                        unique_geno_list = []
+                        for gp in found_pairs:
+                            if gp not in unique_geno_list:
+                                unique_geno_list.append(gp)
+                            if len(unique_geno_list) >= 3:
                                 break
 
-                    found_gene = gene_via_text
-                    rs_pat = r"(rs\d+)"
-                    found_rs_match = re.search(rs_pat, text)
-                    rs_num = found_rs_match.group(1) if found_rs_match else None
+                        # 4) Populations-Frequenzen
+                        aff = AlleleFrequencyFinder()
+                        freq_info = "Keine rsID"
+                        if rs_num:
+                            data = aff.get_allele_frequencies(rs_num)
+                            if not data:
+                                data = aff.try_alternative_source(rs_num)
+                            if data:
+                                freq_info = aff.build_freq_info_text(data)
 
-                    genotype_regex = r"\b([ACGT]{2,3})\b"
-                    lines = text.split("\n")
-                    found_pairs = []
-                    for line in lines:
-                        matches = re.findall(genotype_regex, line)
-                        if matches:
-                            for m in matches:
-                                found_pairs.append((m, line.strip()))
+                        # 5) Publikationsdatum - hier Dummy
+                        pub_date_str = "Not found"
 
-                    unique_geno_pairs = []
-                    for gp in found_pairs:
-                        if gp not in unique_geno_pairs:
-                            unique_geno_pairs.append(gp)
+                        # 6) Studiengröße + Ethnizität
+                        cohort_info = parse_cohort_info(summary_result)
+                        study_size_ethn = (cohort_info["study_size"] + " " + cohort_info["origin"]).strip()
 
-                    aff = AlleleFrequencyFinder()
-                    freq_info = "Keine rsID vorhanden"
-                    if rs_num:
-                        data = aff.get_allele_frequencies(rs_num)
-                        if not data:
-                            data = aff.try_alternative_source(rs_num)
-                        if data:
-                            freq_info = aff.build_freq_info_text(data)
+                        # 7) Ergebnisse & Schlussfolgerung aus summary extrahieren
+                        ergebnisse, schlussfolgerungen = split_summary(summary_result)
 
-                    sheet_name = found_gene if found_gene else "GEN_UNKNOWN"
-                    sheet_name = sheet_name[:27]
+                        # 8) (Optional) Relevanz-Skala manuell + GPT
+                        combined_relevance = f"{relevance_result}\n(Manuell: {user_relevance_score})"
 
-                    if sheet_name not in gen_sheets:
+                        # 9) Nun Template laden + ausfüllen
                         try:
-                            new_sheet = wb.create_sheet(sheet_name)
-                            new_sheet["A1"] = "Dateiname"
-                            new_sheet["B1"] = "Gene"
-                            new_sheet["C1"] = "rsID"
-                            new_sheet["D1"] = "Genotype Pairs"
-                            new_sheet["E1"] = "Freq Info"
-                            new_sheet["F1"] = "Summary"
-                            new_sheet["G1"] = "Key Findings"
-                            new_sheet["H1"] = "Methods"
-                            new_sheet["I1"] = "Relevance"
-                            new_sheet["J1"] = "Timestamp"
-                            gen_sheets[sheet_name] = new_sheet
-                        except:
-                            gen_sheets[sheet_name] = wb[sheet_name]
-                    else:
-                        new_sheet = gen_sheets[sheet_name]
+                            wb_template = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
+                        except FileNotFoundError:
+                            st.error("Die Datei 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
+                            return
 
-                    next_row = new_sheet.max_row + 1
+                        ws = wb_template.active  # Nur 1 Sheet
 
-                    new_sheet.cell(row=next_row, column=1).value = fpdf.name
-                    new_sheet.cell(row=next_row, column=2).value = found_gene
-                    new_sheet.cell(row=next_row, column=3).value = rs_num
-                    all_gps = ",".join([x[0] for x in unique_geno_pairs])
-                    new_sheet.cell(row=next_row, column=4).value = all_gps
-                    new_sheet.cell(row=next_row, column=5).value = freq_info
-                    new_sheet.cell(row=next_row, column=6).value = summary_result
-                    new_sheet.cell(row=next_row, column=7).value = key_findings_result
-                    new_sheet.cell(row=next_row, column=8).value = methods_result
-                    combined_relevance = f"{relevance_result}\n(Manuell:{user_relevance_score})"
-                    new_sheet.cell(row=next_row, column=9).value = combined_relevance
-                    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    new_sheet.cell(row=next_row, column=10).value = now_str
+                        # -- Befüllen der Zellen laut Vorgabe --
+                        # D2 => Compare-Thema
+                        if compare_mode:
+                            ws["D2"] = compare_theme_str
+                        else:
+                            # Wenn nicht Compare, kann man hier z.B. das manuelle oder GPT-Thema einsetzen
+                            if theme_mode == "Manuell":
+                                ws["D2"] = user_defined_theme
+                            else:
+                                ws["D2"] = st.session_state["theme_compare"] or "N/A"
 
-            output_buffer = io.BytesIO()
-            wb.save(output_buffer)
-            output_buffer.seek(0)
+                        # D5 => Gen-Name
+                        ws["D5"] = gene_via_text if gene_via_text else "n/a"
 
-            st.success("Alle PDFs verarbeitet – Excel-Datei mit mehreren Sheets erstellt!")
+                        # D6 => rs Nummer
+                        ws["D6"] = rs_num if rs_num else "n/a"
+
+                        # Genotyp/Frequenz in D10/E10, D11/E11, D12/E12
+                        # Bis zu 3 unique_geno_list
+                        # freq_info ist leider nur "eine" Info. Wir packen sie einfach zu jedem Genotyp
+                        def put_genotype_and_freq(row_idx, geno):
+                            cell_geno = f"D{row_idx}"
+                            cell_freq = f"E{row_idx}"
+                            ws[cell_geno] = geno
+                            ws[cell_freq] = freq_info
+
+                        if len(unique_geno_list) > 0:
+                            put_genotype_and_freq(10, unique_geno_list[0])
+                        else:
+                            ws["D10"] = "n/a"
+                            ws["E10"] = "n/a"
+                        if len(unique_geno_list) > 1:
+                            put_genotype_and_freq(11, unique_geno_list[1])
+                        else:
+                            ws["D11"] = "n/a"
+                            ws["E11"] = "n/a"
+                        if len(unique_geno_list) > 2:
+                            put_genotype_and_freq(12, unique_geno_list[2])
+                        else:
+                            ws["D12"] = "n/a"
+                            ws["E12"] = "n/a"
+
+                        # C20 => Publikationsdatum
+                        ws["C20"] = pub_date_str
+                        # D20 => study size und Ethnizität
+                        ws["D20"] = study_size_ethn if study_size_ethn else "n/a"
+                        # E20 => summary
+                        ws["E20"] = summary_result
+                        # G21 => Ergebnisse
+                        ws["G21"] = ergebnisse if ergebnisse else "n/a"
+                        # G22 => Schlussfolgerungen
+                        ws["G22"] = schlussfolgerungen if schlussfolgerungen else "n/a"
+
+                        # (Optional) Irgendwohin Relevanz? Ist in der Vorgabe nicht erwähnt,
+                        # aber man könnte es noch irgendwo ablegen, z.B. G23?
+                        # Hier nur als Hinweis:
+                        # ws["G23"] = combined_relevance
+
+                        # 10) Excel im Speicher ablegen
+                        single_file_buffer = io.BytesIO()
+                        wb_template.save(single_file_buffer)
+                        single_file_buffer.seek(0)
+
+                        # Datei in ZIP packen
+                        out_filename = f"analysis_results_{fpdf.name}.xlsx"
+                        zf.writestr(out_filename, single_file_buffer.getvalue())
+
+                # ZIP zurückspulen
+                output_zip_buffer.seek(0)
+
+            # Download-Button für ZIP anbieten
+            st.success("Alle PDFs wurden in einzelne Excel-Dateien (basierend auf der Vorlage) geschrieben!")
             st.download_button(
-                label="Download Excel (Multi-Gene)",
-                data=output_buffer,
-                file_name="analysis_results_multi.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                label="Download ZIP mit allen Excel-Dateien",
+                data=output_zip_buffer,
+                file_name="analysis_results_all.zip",
+                mime="application/x-zip-compressed",
             )
 
 def sidebar_module_navigation():
@@ -1263,7 +1315,7 @@ def answer_chat(question: str) -> str:
     
     openai.api_key = api_key
     try:
-        response = openai.chat.completions.create(
+        response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": sys_msg},
