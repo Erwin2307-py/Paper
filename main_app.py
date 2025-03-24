@@ -24,16 +24,19 @@ from modules.online_api_filter import module_online_api_filter
 # Neuer Import für die Übersetzung mit google_trans_new
 from google_trans_new import google_translator
 
+
 # ------------------------------------------------------------------
 # Umgebungsvariablen laden (für OPENAI_API_KEY, falls vorhanden)
 # ------------------------------------------------------------------
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+
 # ------------------------------------------------------------------
 # Streamlit-Konfiguration
 # ------------------------------------------------------------------
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
+
 
 # ------------------------------------------------------------------
 # Login-Funktionalität
@@ -52,12 +55,22 @@ def login():
         else:
             st.error("Login failed. Please check your credentials!")
 
+
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
     login()
     st.stop()
+
+# ------------------------------------------------------------------
+# IMPORTANT: Initialize the session_state keys you plan to use!
+# ------------------------------------------------------------------
+if "relevant_papers_compare" not in st.session_state:
+    st.session_state["relevant_papers_compare"] = []
+if "theme_compare" not in st.session_state:
+    st.session_state["theme_compare"] = ""
+
 
 # ------------------------------------------------------------------
 # 1) Gemeinsame Funktionen & Klassen
@@ -67,7 +80,7 @@ def clean_html_except_br(text):
     return cleaned_text
 
 def translate_text_openai(text, source_language, target_language, api_key):
-    """Übersetzt Text über OpenAI-ChatCompletion (z.B. GPT-4)"""
+    """Übersetzt Text über OpenAI-ChatCompletion (z.B. GPT-4)."""
     import openai
     openai.api_key = api_key
     prompt_system = (
@@ -78,8 +91,8 @@ def translate_text_openai(text, source_language, target_language, api_key):
     )
     prompt_user = f"Translate the following text from {source_language} to {target_language}:\n'{text}'"
     try:
-        response = openai.chat.completions.create(
-            model="gpt-4o",  # Falls verfügbar
+        response = openai.ChatCompletion.create(
+            model="gpt-4",  # or "gpt-3.5-turbo", etc.
             messages=[
                 {"role": "system", "content": prompt_system},
                 {"role": "user", "content": prompt_user}
@@ -152,6 +165,7 @@ def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
         st.error(f"CORE search error: {e}")
         return []
 
+
 # ------------------------------------------------------------------
 # 2) PubMed - Einfacher Check + Search
 # ------------------------------------------------------------------
@@ -221,6 +235,7 @@ def fetch_pubmed_abstract(pmid):
     except Exception as e:
         return f"(Error: {e})"
 
+
 # ------------------------------------------------------------------
 # 3) Europe PMC Check + Search
 # ------------------------------------------------------------------
@@ -268,6 +283,7 @@ def search_europe_pmc_simple(query):
         st.error(f"Europe PMC search error: {e}")
         return []
 
+
 # ------------------------------------------------------------------
 # 4) OpenAlex API
 # ------------------------------------------------------------------
@@ -291,6 +307,7 @@ def search_openalex_simple(query):
     """Kurze Version: Liest die rohen Daten, prüft nur, ob was zurückkommt."""
     search_params = {"search": query}
     return fetch_openalex_data("works", params=search_params)
+
 
 # ------------------------------------------------------------------
 # 5) Google Scholar (Test)
@@ -322,6 +339,7 @@ class GoogleScholarSearch:
                 })
         except Exception as e:
             st.error(f"Fehler bei der Google Scholar-Suche: {e}")
+
 
 # ------------------------------------------------------------------
 # 6) Semantic Scholar
@@ -371,11 +389,13 @@ class SemanticScholarSearch:
         except Exception as e:
             st.error(f"Semantic Scholar: {e}")
 
+
 # ------------------------------------------------------------------
 # 7) Excel Online Search - Placeholder
 # ------------------------------------------------------------------
 # (Hier könnte Ihr Modul code stehen, falls benötigt)
 # ------------------------------------------------------------------
+
 
 # ------------------------------------------------------------------
 # 8) Weitere Module + Seiten
@@ -434,6 +454,10 @@ def page_online_api_filter():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
+
+# ------------------------------------------------------------------
+# PaperAnalyzer + AlleleFrequencyFinder classes
+# ------------------------------------------------------------------
 class PaperAnalyzer:
     def __init__(self, model="gpt-3.5-turbo"):
         self.model = model
@@ -453,7 +477,9 @@ class PaperAnalyzer:
             text = text[:15000] + "..."
         prompt = prompt_template.format(text=text)
         openai.api_key = api_key
-        response = openai.chat.completions.create(
+        
+        # You can pick "gpt-3.5-turbo" or "gpt-4" or whichever you prefer:
+        response = openai.ChatCompletion.create(
             model=self.model,
             messages=[
                 {"role": "system", "content": (
@@ -529,6 +555,7 @@ class AlleleFrequencyFinder:
             return None
     
     def try_alternative_source(self, rs_id: str) -> Optional[Dict[str, Any]]:
+        # If you have a second source, implement it here. Placeholder returns None.
         return None
     
     def parse_and_display_data(self, data: Dict[str, Any]) -> None:
@@ -557,6 +584,10 @@ class AlleleFrequencyFinder:
             out.append("Keine Populationsdaten gefunden.")
         return " | ".join(out)
 
+
+# ------------------------------------------------------------------
+# Helper functions
+# ------------------------------------------------------------------
 def split_summary(summary_text):
     m = re.search(r'Ergebnisse\s*:\s*(.*?)\s*Schlussfolgerungen\s*:\s*(.*)', summary_text, re.DOTALL | re.IGNORECASE)
     if m:
@@ -580,6 +611,7 @@ def parse_cohort_info(summary_text: str) -> dict:
         group_str = match_nat.group(3)
         info["study_size"] = f"{num_str} {group_str}"
         info["origin"] = origin_str
+
     pattern_both = re.compile(
         r"(\d+)\s*Patient(?:en)?(?:[^\d]+)(\d+)\s*gesunde\s*Kontroll(?:personen)?",
         re.IGNORECASE
@@ -594,12 +626,33 @@ def parse_cohort_info(summary_text: str) -> dict:
         m_single_p = pattern_single_p.search(summary_text)
         if m_single_p and not info["study_size"]:
             info["study_size"] = f"{m_single_p.group(1)} Patienten"
+
     pattern_origin = re.compile(r"in\s*der\s+(\S+)\s+Bevölkerung", re.IGNORECASE)
     m_orig = pattern_origin.search(summary_text)
     if m_orig and not info["origin"]:
         info["origin"] = m_orig.group(1).strip()
+
     return info
 
+
+# ------------------------------------------------------------------
+# Placeholder for your outlier-logic function (Compare Mode)
+# ------------------------------------------------------------------
+def do_outlier_logic(paper_map_auto):
+    """
+    Placeholder function. 
+    In your code, it presumably checks which papers are 'outliers' and excludes them, 
+    returning a list of relevant papers + the discovered overall theme.
+    """
+    # For example, we pretend all are relevant:
+    relevant_papers_auto = list(paper_map_auto.keys())
+    discovered_theme_auto = "some theme"
+    return relevant_papers_auto, discovered_theme_auto
+
+
+# ------------------------------------------------------------------
+#  Main page function: page_analyze_paper
+# ------------------------------------------------------------------
 def page_analyze_paper():
     st.title("Analyze Paper - Integriert")
     
@@ -653,7 +706,7 @@ def page_analyze_paper():
     analyzer = PaperAnalyzer(model=model)
     api_key = st.session_state["api_key"]
     
-    # Definiere user_relevance_score gleich hier, damit sie in allen Blöcken verfügbar ist
+    # Definiere user_relevance_score für Excel
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
     
     if uploaded_files and api_key:
@@ -678,6 +731,7 @@ def page_analyze_paper():
                     relevant_papers = list(paper_map.keys())
                     st.info("Keine Outlier ausgeschlossen, da 'Manuell' gewählt.")
                 else:
+                    # We apply GPT-based outlier check
                     snippet_list = []
                     for name, txt in paper_map.items():
                         snippet = txt[:700].replace("\n"," ")
@@ -700,7 +754,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
 """
                     try:
                         openai.api_key = api_key
-                        scope_resp = openai.chat.completions.create(
+                        scope_resp = openai.ChatCompletion.create(
                             model=model,
                             messages=[
                                 {"role": "system", "content": "Du bist ein Assistent, der Paper thematisch filtert."},
@@ -718,6 +772,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     st.code(scope_decision, language="json")
                     
                     json_str = scope_decision.strip()
+                    # Remove any possible code fence
                     if json_str.startswith("```"):
                         json_str = re.sub(r"```[\w]*\n?", "", json_str)
                         json_str = re.sub(r"\n?```", "", json_str)
@@ -901,7 +956,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                                     )
                                     try:
                                         openai.api_key = api_key
-                                        gpt_resp = openai.chat.completions.create(
+                                        gpt_resp = openai.ChatCompletion.create(
                                             model=model,
                                             messages=[
                                                 {"role": "system", "content": "Du bist ein Experte für PDF-Tabellenanalyse."},
@@ -954,8 +1009,9 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 
                 analyzer = PaperAnalyzer(model=model)
                 
-                # Check outlier logic
+                # Falls Compare Mode aktiv ist und wir den Outlier-Check machen wollen
                 if compare_mode:
+                    # If user hasn't run the "Vergleichs-Analyse" button, the session might be empty:
                     if not st.session_state["relevant_papers_compare"]:
                         paper_map_auto = {}
                         for fpdf in uploaded_files:
@@ -968,11 +1024,14 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         relevant_papers_auto, discovered_theme_auto = do_outlier_logic(paper_map_auto)
                         st.session_state["relevant_papers_compare"] = relevant_papers_auto
                         st.session_state["theme_compare"] = discovered_theme_auto
+                    
                     relevant_list_for_excel = st.session_state["relevant_papers_compare"] or []
                     if not relevant_list_for_excel:
                         st.error("Keine relevanten Paper nach Outlier-Check für Excel.")
                         return
+                    
                     selected_files_for_excel = [f for f in uploaded_files if f.name in relevant_list_for_excel]
+                
                 else:
                     selected_files_for_excel = uploaded_files
                 
@@ -998,10 +1057,12 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
                     methods_result = analyzer.identify_methods(text, api_key)
                     
+                    # Try to detect a gene name in text:
                     pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                     match_text = re.search(pattern_obvious, text)
                     gene_via_text = match_text.group(1) if match_text else None
                     
+                    # If not found, also read from "vorlage_gene.xlsx" (if you have that):
                     if not gene_via_text:
                         try:
                             wb_gene = openpyxl.load_workbook("vorlage_gene.xlsx")
@@ -1049,13 +1110,10 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                             freq_info = aff.build_freq_info_text(data)
                     
                     # Daten in die Excel-Vorlage eintragen (Ein-Sheet, Offsets)
-                    # D5 => Gene, D6 => rs, Genotypen in D10/E10, D11/E11, D12/E12,
-                    # C20 => Datum, D20 => Studienname (hier fpdf.name), E20 => Key Findings,
-                    # G21 => Ergebnisse, G22 => Schlussfolgerungen, H22 => Relevanz
                     sheet["D5"] = found_gene if found_gene else "(kein Gene)"
                     sheet["D6"] = rs_num if rs_num else "(kein RS)"
                     
-                    for j, gp in enumerate(unique_geno_pairs[:3]):  # j statt i, um Konflikte zu vermeiden
+                    for j, gp in enumerate(unique_geno_pairs[:3]):  # j, to avoid conflict with i
                         row = 10 + j
                         sheet[f"D{row}"] = gp[0]
                         sheet[f"E{row}"] = freq_info
@@ -1084,6 +1142,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     
                     for excel_file in excel_files:
                         sheet_name = os.path.basename(excel_file).replace('.xlsx', '')
+                        # Limit to 31 characters for Excel sheet name
                         if len(sheet_name) > 31:
                             sheet_name = sheet_name[:31]
                         
@@ -1096,6 +1155,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                             for cell in row:
                                 target_sheet[cell.coordinate] = cell.value
                         
+                        # Also copy column widths:
                         for col in source_sheet.columns:
                             letter = openpyxl.utils.get_column_letter(col[0].column)
                             target_sheet.column_dimensions[letter].width = source_sheet.column_dimensions[letter].width
@@ -1127,6 +1187,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         mime="application/zip",
                     )
                     
+                    # Clean up temporary files
                     for excel_file in excel_files:
                         try:
                             os.remove(excel_file)
@@ -1138,7 +1199,11 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         pass
                 else:
                     st.error("Es wurden keine Excel-Dateien erstellt.")
-        
+
+
+# ------------------------------------------------------------------
+# Sidebar navigation + main() function
+# ------------------------------------------------------------------
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
     pages = {
@@ -1172,7 +1237,7 @@ def answer_chat(question: str) -> str:
     
     openai.api_key = api_key
     try:
-        response = openai.chat.completions.create(
+        response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": sys_msg},
@@ -1284,6 +1349,7 @@ def main():
             """,
             unsafe_allow_html=True
         )
-    
+
+
 if __name__ == '__main__':
     main()
