@@ -904,26 +904,29 @@ def page_analyze_paper():
             default_sheet = combined_wb.active
             combined_wb.remove(default_sheet)
 
+            # Helper to sanitize sheet name to avoid ValueError for long or invalid names
+            def make_safe_sheetname(name: str, maxlen: int = 31) -> str:
+                invalid_chars = [":", "*", "/", "\\", "?", "[", "]"]
+                for ch in invalid_chars:
+                    name = name.replace(ch, "")
+                safe_name = name[:maxlen]
+                if not safe_name.strip():
+                    safe_name = "Sheet"
+                return safe_name
+
             for (filename, io_obj) in st.session_state["analysis_results"]:
-                # load the in-memory XLSX
                 xls_bytes = io_obj.getvalue()
                 temp_wb = load_workbook(io.BytesIO(xls_bytes))
-
-                # we assume each file has 1 active sheet?
                 sheet = temp_wb.active
 
-                # pick a sheet name => maybe the gene in D5 or fallback to the filename
                 gene_name = sheet["D5"].value or "GENE_UNKNOWN"
-                # sanitize for Excel sheet name
-                sheet_name = gene_name[:31]
+                sheet_name = make_safe_sheetname(gene_name)
 
                 new_ws = combined_wb.create_sheet(sheet_name)
-                # copy content from source sheet
                 for row_idx, row_data in enumerate(sheet.iter_rows(values_only=True), start=1):
                     for col_idx, cell_val in enumerate(row_data, start=1):
                         new_ws.cell(row=row_idx, column=col_idx, value=cell_val)
 
-            # produce final output
             final_buffer = io.BytesIO()
             combined_wb.save(final_buffer)
             final_buffer.seek(0)
