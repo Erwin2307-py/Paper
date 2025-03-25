@@ -1342,3 +1342,43 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+# -----------------------------------------------------------
+# NEUE ZUSÄTZLICHE FUNKTION FÜR EINZELANALYSE GESCORTER PAPER
+# -----------------------------------------------------------
+def module_scored_paper_selection():
+    """
+    Zeigt ein Dropdown mit allen gescorten Papers aus st.session_state["scored_list"] an.
+    Ermöglicht das Auswählen für eine detaillierte Einzelanalyse (Titel, Abstract, etc.).
+    """
+    # Prüfen, ob scored_list schon existiert und nicht leer ist
+    if "scored_list" not in st.session_state or not st.session_state["scored_list"]:
+        st.info("Keine gescorten Paper vorhanden (st.session_state['scored_list']).")
+        return
+
+    st.subheader("Einzelanalyse der nach ChatGPT-Scoring ausgewählten Paper")
+
+    # Aus dem 'scored_list' ein Dropdown bauen (z.B. basierend auf 'Title')
+    scored_titles = [paper["Title"] for paper in st.session_state["scored_list"]]
+
+    chosen_title = st.selectbox(
+        "Wähle ein Paper aus der Scoring-Liste:",
+        options=["(Bitte wählen)"] + scored_titles
+    )
+
+    if chosen_title != "(Bitte wählen)":
+        # Gewähltes Paper in 'selected_paper' ablegen
+        selected_paper = next(
+            (p for p in st.session_state["scored_list"] if p["Title"] == chosen_title),
+            None
+        )
+        if selected_paper:
+            st.write("**Titel:** ", selected_paper.get("Title", "n/a"))
+            st.write("**Quelle:** ", selected_paper.get("Source", "n/a"))
+            st.write("**PubMed ID:** ", selected_paper.get("PubMed ID", "n/a"))
+            st.write("**Jahr:** ", selected_paper.get("Year", "n/a"))
+            st.write("**Publisher:** ", selected_paper.get("Publisher", "n/a"))
+            st.write("**Abstract:**")
+            st.markdown(f"> {selected_paper.get('Abstract', 'n/a')}")
+        else:
+            st.warning("Paper nicht gefunden (unerwarteter Fehler).")
