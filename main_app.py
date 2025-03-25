@@ -79,8 +79,8 @@ def translate_text_openai(text, source_language, target_language, api_key):
     )
     prompt_user = f"Translate the following text from {source_language} to {target_language}:\n'{text}'"
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+        response = openai.chat.completions.create(
+            model="gpt-4",
             messages=[
                 {"role": "system", "content": prompt_system},
                 {"role": "user", "content": prompt_user}
@@ -458,7 +458,7 @@ class PaperAnalyzer:
             text = text[:15000] + "..."
         prompt = prompt_template.format(text=text)
         openai.api_key = api_key
-        response = openai.ChatCompletion.create(
+        response = openai.chat.completions.create(
             model=self.model,
             messages=[
                 {"role": "system", "content": (
@@ -523,7 +523,7 @@ class AlleleFrequencyFinder:
             response = requests.get(url, headers={"Content-Type": "application/json"}, timeout=10)
             response.raise_for_status()
             return response.json()
-        except requests.exceptions.HTTPError as e:
+        except requests.exceptions.HTTPError:
             if response.status_code == 500 and retry_count < self.max_retries:
                 time.sleep(self.retry_delay)
                 return self.get_allele_frequencies(rs_id, retry_count + 1)
@@ -664,11 +664,7 @@ def page_analyze_paper():
         index=0
     )
 
-    # Outlier check (compare_mode)
-    compare_mode = st.sidebar.checkbox("Compare/Outlier Check Mode?")
-    if compare_mode:
-        st.info("You have enabled the outlier check. (Currently just a placeholder in code.)")
-
+    compare_mode = st.sidebar.checkbox("Compare mode (exclude outlier papers)?")
     theme_mode = st.sidebar.radio("Determine Main Theme", ["Manuell", "GPT"])
     action = st.sidebar.radio(
         "Analysis Type",
@@ -690,20 +686,10 @@ def page_analyze_paper():
     # Additional checkbox: "Combine all selected PDFs in one single text for analysis"
     combine_texts_single_analysis = st.sidebar.checkbox("Combine selected PDFs into one single text?")
 
-    # **New**: Output language choice
-    output_language = st.sidebar.selectbox(
-        "Ausgabesprache (Final Output)",
-        ["Deutsch", "English", "Serbisch", "Portugiesisch"],
-        index=1
-    )
-
     # PDF upload
     uploaded_files = st.file_uploader("Upload PDF files", type="pdf", accept_multiple_files=True)
     analyzer = PaperAnalyzer(model=model)
     api_key = st.session_state["api_key"]
-
-    # Prepare a container for the final combined text (for chatbot context):
-    st.session_state.setdefault("paper_text", "")
 
     # Single or combined analysis (no Excel)
     if uploaded_files and api_key:
@@ -725,34 +711,37 @@ def page_analyze_paper():
                     st.error("No text to analyze from selected PDFs!")
                     return
 
-                # Update chatbot context:
-                st.session_state["paper_text"] = combined_text
-
-                # GPT analysis in German, then optionally translate to user-specified output language
-                result_de = ""
+                result = ""
                 if action == "Zusammenfassung":
-                    result_de = analyzer.summarize(combined_text, api_key)
+                    r_ = analyzer.summarize(combined_text, api_key)
+                    result = translate_text_openai(r_, "German", "English", api_key)
+
                 elif action == "Wichtigste Erkenntnisse":
-                    result_de = analyzer.extract_key_findings(combined_text, api_key)
+                    r_ = analyzer.extract_key_findings(combined_text, api_key)
+                    result = translate_text_openai(r_, "German", "English", api_key)
+
                 elif action == "Methoden & Techniken":
-                    result_de = analyzer.identify_methods(combined_text, api_key)
+                    r_ = analyzer.identify_methods(combined_text, api_key)
+                    result = translate_text_openai(r_, "German", "English", api_key)
+
                 elif action == "Relevanz-Bewertung":
                     if not topic:
                         st.error("Please provide a topic for relevance!")
                         return
-                    result_de = analyzer.evaluate_relevance(combined_text, topic, api_key)
-                elif action == "Tabellen & Grafiken":
-                    st.warning("Tables & Graphics combined analysis is simplified. We only do text-based summarization.")
-                    result_de = "(Tables & Graphics in combined mode not fully implemented.)"
+                    r_ = analyzer.evaluate_relevance(combined_text, topic, api_key)
+                    result = translate_text_openai(r_, "German", "English", api_key)
 
-                # Translate if user wants a language other than 'Deutsch'
-                if output_language != "Deutsch":
-                    final_result = translate_text_openai(result_de, "German", output_language, api_key)
-                else:
-                    final_result = result_de
+                elif action == "Tabellen & Grafiken":
+                    # This is a tricky scenario because combining PDFs might lose the page structure
+                    # We'll do a simpler approach: just disclaim
+                    st.warning("Tables & Graphics combined analysis is simplified.")
+                    # Possibly just do a text-based approach
+                    # Because you'd normally parse each PDF's tables separately
+                    r_ = "(Tables & Graphics in combined mode not fully implemented.)"
+                    result = r_
 
                 st.subheader("Combined Analysis Result:")
-                st.markdown(final_result)
+                st.markdown(result)
 
         else:
             # The "normal" single vs all approach
@@ -766,9 +755,6 @@ def page_analyze_paper():
                     idx = pdf_options.index(selected_pdf) - 1
                     files_to_process = [uploaded_files[idx]]
 
-                # We'll store the final combined text in case user wants chatbot context:
-                combined_context_text = ""
-
                 final_result_text = []
                 for fpdf in files_to_process:
                     text_data = analyzer.extract_text_from_pdf(fpdf)
@@ -776,23 +762,26 @@ def page_analyze_paper():
                         st.error(f"No text extracted from {fpdf.name}. Skipped.")
                         continue
 
-                    # For "compare_mode" / outlier check in single analysis (placeholder):
-                    if compare_mode:
-                        st.info(f"Outlier check for {fpdf.name} is enabled. (Placeholder)")
-
-                    # GPT analysis in German
-                    result_de = ""
+                    result = ""
                     if action == "Zusammenfassung":
-                        result_de = analyzer.summarize(text_data, api_key)
+                        r_ = analyzer.summarize(text_data, api_key)
+                        result = translate_text_openai(r_, "German", "English", api_key)
+
                     elif action == "Wichtigste Erkenntnisse":
-                        result_de = analyzer.extract_key_findings(text_data, api_key)
+                        r_ = analyzer.extract_key_findings(text_data, api_key)
+                        result = translate_text_openai(r_, "German", "English", api_key)
+
                     elif action == "Methoden & Techniken":
-                        result_de = analyzer.identify_methods(text_data, api_key)
+                        r_ = analyzer.identify_methods(text_data, api_key)
+                        result = translate_text_openai(r_, "German", "English", api_key)
+
                     elif action == "Relevanz-Bewertung":
                         if not topic:
                             st.error("Please provide a topic for relevance!")
                             continue
-                        result_de = analyzer.evaluate_relevance(text_data, topic, api_key)
+                        r_ = analyzer.evaluate_relevance(text_data, topic, api_key)
+                        result = translate_text_openai(r_, "German", "English", api_key)
+
                     elif action == "Tabellen & Grafiken":
                         all_tables_text = []
                         try:
@@ -809,7 +798,6 @@ def page_analyze_paper():
                                                 data_rows = table_data
                                                 first_row = [f"Col_{i}" for i in range(len(data_rows[0]))]
 
-                                            # Attempt building a DF
                                             import pandas as pd
                                             new_header = []
                                             used_cols = {}
@@ -840,7 +828,7 @@ def page_analyze_paper():
                                 )
                                 openai.api_key = api_key
                                 try:
-                                    resp = openai.ChatCompletion.create(
+                                    resp = openai.chat.completions.create(
                                         model=model,
                                         messages=[
                                             {"role": "system", "content": "You are an expert in PDF table analysis."},
@@ -849,28 +837,17 @@ def page_analyze_paper():
                                         temperature=0.3,
                                         max_tokens=1000
                                     )
-                                    result_de = resp.choices[0].message.content
+                                    result = resp.choices[0].message.content
                                 except Exception as e_:
                                     st.error(f"GPT table analysis error: {e_}")
-                                    result_de = "(Error in GPT evaluation for tables)"
+                                    result = "(Error in GPT evaluation for tables)"
                             else:
-                                result_de = "No tables found in the PDF."
+                                result = "No tables found in the PDF."
                         except Exception as e_:
                             st.error(f"Error reading PDF tables from {fpdf.name}: {e_}")
-                            result_de = f"(Error reading tables in {fpdf.name})"
+                            result = f"(Error reading tables in {fpdf.name})"
 
-                    # Translate if needed
-                    if output_language != "Deutsch":
-                        final_result_one = translate_text_openai(result_de, "German", output_language, api_key)
-                    else:
-                        final_result_one = result_de
-
-                    # Keep track of the result text
-                    final_result_text.append(f"**Result for {fpdf.name}:**\n\n{final_result_one}")
-                    combined_context_text += f"\n=== {fpdf.name} ===\n{text_data}\n"
-
-                # Update chatbot context with all processed PDF text
-                st.session_state["paper_text"] = combined_context_text
+                    final_result_text.append(f"**Result for {fpdf.name}:**\n\n{result}")
 
                 st.subheader("Analysis Results (No Excel)")
                 combined_output = "\n\n---\n\n".join(final_result_text)
@@ -897,16 +874,11 @@ def page_analyze_paper():
                 import datetime
 
                 if compare_mode:
-                    # If you had a real outlier-check function, you could filter out files here
                     selected_files_for_excel = uploaded_files
-                    st.info("Comparing and outlier checking for Excel generation. (Placeholder)")
                 else:
                     selected_files_for_excel = uploaded_files
 
                 main_theme_final = user_defined_theme.strip() if theme_mode == "Manuell" else "n/a"
-
-                # For combined chatbot context we gather text here as well:
-                combined_text_for_chat = ""
 
                 for fpdf in selected_files_for_excel:
                     text_data = analyzer.extract_text_from_pdf(fpdf)
@@ -914,31 +886,32 @@ def page_analyze_paper():
                         st.error(f"No text from {fpdf.name} (skipped).")
                         continue
 
-                    # GPT-based analysis in German, then later we store or translate as needed
                     summary_de = analyzer.summarize(text_data, api_key)
+                    summary_en = translate_text_openai(summary_de, "German", "English", api_key)
+
                     keyf_de = analyzer.extract_key_findings(text_data, api_key)
+                    keyf_en = translate_text_openai(keyf_de, "German", "English", api_key)
+
                     ergebnisse_de, schlussfolgerung_de = split_summary(summary_de)
+                    ergebnisse_en = translate_text_openai(ergebnisse_de, "German", "English", api_key)
+                    schluss_en = translate_text_openai(schlussfolgerung_de, "German", "English", api_key)
+
                     c_info = parse_cohort_info(summary_de)
                     combined_study = (c_info["study_size"] + " " + c_info["origin"]).strip()
                     if not combined_study:
                         combined_study = "n/a"
+                    combined_study_en = translate_text_openai(combined_study, "German", "English", api_key)
+
                     pub_date_str = parse_publication_date(text_data)
 
-                    # Just as a placeholder for method
-                    found_gene = None
                     pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                     match_text = re.search(pattern_obvious, text_data)
-                    if match_text:
-                        found_gene = match_text.group(1)
+                    found_gene = match_text.group(1) if match_text else None
 
-                    # example for searching an RS id
-                    found_rs = None
                     rs_pat = r"(rs\d+)"
                     match_rs = re.search(rs_pat, text_data)
-                    if match_rs:
-                        found_rs = match_rs.group(1)
+                    found_rs = match_rs.group(1) if match_rs else None
 
-                    # example for genotype
                     genotype_regex = r"\b([ACGT]{2,3})\b"
                     lines = text_data.split("\n")
                     found_pairs = []
@@ -954,7 +927,6 @@ def page_analyze_paper():
                             unique_genos.append(g_)
                     genotypes = unique_genos[:3]
 
-                    # Load template
                     from openpyxl import load_workbook
                     try:
                         wb = load_workbook("vorlage_paperqa2.xlsx")
@@ -980,18 +952,8 @@ def page_analyze_paper():
                             ws[freq_cells[i]] = ""
 
                     ws["C20"] = pub_date_str
-                    # Translate the combined_study to English in the default template, or keep it in German?
-                    # For demonstration we do English:
-                    combined_study_en = translate_text_openai(combined_study, "German", "English", api_key)
                     ws["D20"] = combined_study_en
-
-                    # Key findings => also in English for the cell
-                    keyf_en = translate_text_openai(keyf_de, "German", "English", api_key)
                     ws["E20"] = keyf_en
-
-                    # If you want only "Ergebnisse" / "Schlussfolgerungen" in English:
-                    ergebnisse_en = translate_text_openai(ergebnisse_de, "German", "English", api_key)
-                    schluss_en = translate_text_openai(schlussfolgerung_de, "German", "English", api_key)
                     ws["G21"] = ergebnisse_en
                     ws["G22"] = schluss_en
 
@@ -1000,12 +962,6 @@ def page_analyze_paper():
                     output_buffer.seek(0)
 
                     st.session_state["analysis_results"].append((fpdf.name, output_buffer))
-
-                    # accumulate text for chatbot
-                    combined_text_for_chat += f"\n=== {fpdf.name} ===\n{text_data}\n"
-
-                # Update chatbot context with the entire text from all PDF files
-                st.session_state["paper_text"] = combined_text_for_chat
 
     # Show the individual Excel download buttons
     if "analysis_results" in st.session_state and st.session_state["analysis_results"]:
@@ -1083,7 +1039,7 @@ def sidebar_module_navigation():
     return pages.get(st.session_state["current_page"], page_home)
 
 def answer_chat(question: str) -> str:
-    """Simple chat example with the context of the last-analyzed PDF(s)."""
+    """Simple chat example with possible paper_text context."""
     api_key = st.session_state.get("api_key", "")
     paper_text = st.session_state.get("paper_text", "")
     if not api_key:
@@ -1093,14 +1049,14 @@ def answer_chat(question: str) -> str:
         sys_msg = "You are a helpful assistant for general questions."
     else:
         sys_msg = (
-            "You are a helpful assistant, and here is a paper (or multiple papers) as context:\n\n"
+            "You are a helpful assistant, and here is a paper as context:\n\n"
             + paper_text[:12000] + "\n\n"
-            "Use this information to provide an expert answer. If the user asks about content not in the context, do your best to help, but rely primarily on the provided text."
+            "Use it to provide an expert answer."
         )
 
     openai.api_key = api_key
     try:
-        response = openai.ChatCompletion.create(
+        response = openai.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": sys_msg},
