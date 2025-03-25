@@ -674,152 +674,7 @@ def page_analyze_paper():
         st.session_state["relevant_papers_compare"] = None
     if "theme_compare" not in st.session_state:
         st.session_state["theme_compare"] = ""
-
-    def do_outlier_logic(paper_map: dict) -> (list, str):
-        """Gibt (relevantPaperList, discoveredTheme) zurück."""
-        if theme_mode == "Manuell":
-            main_theme = user_defined_theme.strip()
-            if not main_theme:
-                st.error("Bitte ein manuelles Hauptthema eingeben!")
-                return ([], "")
-
-            snippet_list = []
-            for name, txt_data in paper_map.items():
-                snippet = txt_data[:700].replace("\n", " ")
-                snippet_list.append(f'{{"filename": "{name}", "snippet": "{snippet}"}}')
-
-            big_snippet = ",\n".join(snippet_list)
-
-            big_input = f"""
-Der Nutzer hat folgendes Hauptthema definiert: '{main_theme}'.
-
-Hier sind mehrere Paper in JSON-Form. Entscheide pro Paper, ob es zu diesem Thema passt oder nicht.
-Gib mir am Ende ein JSON-Format zurück:
-
-{{
-  "theme": "du wiederholst das user-defined theme",
-  "papers": [
-    {{
-      "filename": "...",
-      "relevant": true/false,
-      "reason": "Kurzer Grund"
-    }}
-  ]
-}}
-
-Nur das JSON, ohne weitere Erklärungen.
-
-[{big_snippet}]
-"""
-            try:
-                openai.api_key = api_key
-                scope_resp = openai.ChatCompletion.create(
-                    model=model,
-                    messages=[
-                        {"role": "system", "content": "Du checkst Paper-Snippets auf Relevanz zum user-Thema."},
-                        {"role": "user", "content": big_input}
-                    ],
-                    temperature=0.0,
-                    max_tokens=1800
-                )
-                scope_decision = scope_resp.choices[0].message.content
-            except Exception as e1:
-                st.error(f"GPT-Fehler bei Compare-Mode (Manuell): {e1}")
-                return ([], "")
-
-            st.markdown("#### GPT-Ausgabe (Outlier-Check / Manuell):")
-            st.code(scope_decision, language="json")
-            json_str = scope_decision.strip()
-            if json_str.startswith("```"):
-                json_str = re.sub(r"```[\w]*\n?", "", json_str)
-                json_str = re.sub(r"\n?```", "", json_str)
-            try:
-                data_parsed = json.loads(json_str)
-                papers_info = data_parsed.get("papers", [])
-            except Exception as parse_e:
-                st.error(f"Fehler beim JSON-Parsing: {parse_e}")
-                return ([], "")
-
-            st.write(f"**Hauptthema (Manuell)**: {main_theme}")
-            relevant_papers_local = []
-            st.write("**Paper-Einstufung**:")
-            for p in papers_info:
-                fname = p.get("filename", "?")
-                rel = p.get("relevant", False)
-                reason = p.get("reason", "(none)")
-                if rel:
-                    relevant_papers_local.append(fname)
-                    st.success(f"{fname} => relevant. Begründung: {reason}")
-                else:
-                    st.warning(f"{fname} => NICHT relevant. Begründung: {reason}")
-
-            return (relevant_papers_local, main_theme)
-        else:
-            snippet_list = []
-            for name, txt_data in paper_map.items():
-                snippet = txt_data[:700].replace("\n", " ")
-                snippet_list.append(f'{{"filename": "{name}", "snippet": "{snippet}"}}')
-            big_snippet = ",\n".join(snippet_list)
-
-            big_input = f"""
-Hier sind mehrere Paper in JSON-Form. Bitte ermittele das gemeinsame Hauptthema.
-Dann antworte mir in folgendem JSON-Format: 
-{{
-  "main_theme": "Kurzbeschreibung des gemeinsamen Themas",
-  "papers": [
-    {{"filename":"...","relevant":true/false,"reason":"Kurzer Grund"}}
-  ]
-}}
-
-Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
-
-[{big_snippet}]
-"""
-            try:
-                openai.api_key = api_key
-                scope_resp = openai.ChatCompletion.create(
-                    model=model,
-                    messages=[
-                        {"role": "system", "content": "Du bist ein Assistent, der Paper thematisch filtert."},
-                        {"role": "user", "content": big_input}
-                    ],
-                    temperature=0.0,
-                    max_tokens=1800
-                )
-                scope_decision = scope_resp.choices[0].message.content
-            except Exception as e1:
-                st.error(f"GPT-Fehler bei Compare-Mode: {e1}")
-                return ([], "")
-
-            st.markdown("#### GPT-Ausgabe (Outlier-Check / GPT):")
-            st.code(scope_decision, language="json")
-            json_str = scope_decision.strip()
-            if json_str.startswith("```"):
-                json_str = re.sub(r"```[\w]*\n?", "", json_str)
-                json_str = re.sub(r"\n?```", "", json_str)
-            try:
-                data_parsed = json.loads(json_str)
-                main_theme = data_parsed.get("main_theme", "No theme extracted.")
-                papers_info = data_parsed.get("papers", [])
-            except Exception as parse_e:
-                st.error(f"Fehler beim JSON-Parsing: {parse_e}")
-                return ([], "")
-
-            st.write(f"**Hauptthema (GPT)**: {main_theme}")
-            relevant_papers_local = []
-            st.write("**Paper-Einstufung**:")
-            for p in papers_info:
-                fname = p.get("filename", "?")
-                rel = p.get("relevant", False)
-                reason = p.get("reason", "(none)")
-                if rel:
-                    relevant_papers_local.append(fname)
-                    st.success(f"{fname} => relevant. Begründung: {reason}")
-                else:
-                    st.warning(f"{fname} => NICHT relevant. Begründung: {reason}")
-
-            return (relevant_papers_local, main_theme)
-
+    
     # -------------------------
     # Haupt-Logik der Seite
     # -------------------------
@@ -840,6 +695,8 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     st.error("Keine verwertbaren Paper.")
                     return
 
+                # Run the outlier logic to get a list of relevant papers
+                # (This returns a list of filenames and the discovered main theme)
                 relevant_papers, discovered_theme = do_outlier_logic(paper_map)
                 st.session_state["relevant_papers_compare"] = relevant_papers
                 st.session_state["theme_compare"] = discovered_theme
@@ -1193,13 +1050,17 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
 
     st.write("---")
     st.write("## Einzelanalyse der nach ChatGPT-Scoring ausgewählten Paper")
-
-    # --- NEU: Button zum Abspeichern der gescorten Paper ---
-    # Falls st.session_state["scored_list"] noch leer ist, wird hier versucht, sie aus den Suchergebnissen zu erzeugen.
+    
+    # --- NEU: Button zum Abspeichern der gescorten Paper in SessionState ---
     if "scored_list" not in st.session_state or not st.session_state["scored_list"]:
         if "search_results" in st.session_state and st.session_state["search_results"]:
             st.info("Es wurden noch keine gescorten Paper gespeichert. Scoring wird jetzt durchgeführt...")
-            # Wir erwarten, dass in der Suchseite auch Codewörter und ausgewählte Gene in den Session-State gespeichert wurden.
+            # Sicherstellen, dass Codewords und selected genes in SessionState gespeichert sind
+            # Falls nicht, setze leere Standardwerte
+            if "codewords" not in st.session_state:
+                st.session_state["codewords"] = ""
+            if "selected_genes" not in st.session_state:
+                st.session_state["selected_genes"] = []
             codewords_str = st.session_state.get("codewords", "")
             selected_genes = st.session_state.get("selected_genes", [])
             scored_list = chatgpt_online_search_with_genes(
