@@ -182,13 +182,11 @@ def search_pubmed_simple(query):
         idlist = data.get("esearchresult", {}).get("idlist", [])
         if not idlist:
             return out
-
         esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
         sum_params = {"db": "pubmed", "id": ",".join(idlist), "retmode": "json"}
         r2 = requests.get(esummary_url, params=sum_params, timeout=10)
         r2.raise_for_status()
         summary_data = r2.json().get("result", {})
-
         for pmid in idlist:
             info = summary_data.get(pmid, {})
             title = info.get("title", "n/a")
@@ -303,7 +301,6 @@ def search_openalex_simple(query):
 class GoogleScholarSearch:
     def __init__(self):
         self.all_results = []
-
     def search_google_scholar(self, base_query):
         try:
             search_results = scholarly.search_pubs(base_query)
@@ -346,7 +343,6 @@ def check_semantic_scholar_connection(timeout=10):
 class SemanticScholarSearch:
     def __init__(self):
         self.all_results = []
-
     def search_semantic_scholar(self, base_query):
         try:
             url = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -441,6 +437,7 @@ def page_online_api_filter():
 
 # ------------------------------------------------------------------
 # Wichtige Klassen für die Analyse
+# (Die Definitionen wurden hierher verschoben, damit sie vor der Verwendung bekannt sind.)
 # ------------------------------------------------------------------
 class PaperAnalyzer:
     def __init__(self, model="gpt-3.5-turbo"):
@@ -465,10 +462,7 @@ class PaperAnalyzer:
         response = openai.ChatCompletion.create(
             model=self.model,
             messages=[
-                {"role": "system", "content": (
-                    "Du bist ein Experte für die Analyse wissenschaftlicher Paper, "
-                    "besonders im Bereich Side-Channel Analysis."
-                )},
+                {"role": "system", "content": "Du bist ein Experte für die Analyse wissenschaftlicher Paper, besonders im Bereich Side-Channel Analysis."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
@@ -479,9 +473,8 @@ class PaperAnalyzer:
     def summarize(self, text, api_key):
         """Erstellt eine Zusammenfassung in Deutsch."""
         prompt = (
-            "Erstelle eine strukturierte Zusammenfassung des folgenden "
-            "wissenschaftlichen Papers. Gliedere sie in mindestens vier klar getrennte Abschnitte "
-            "(z.B. 1. Hintergrund, 2. Methodik, 3. Ergebnisse, 4. Schlussfolgerungen). "
+            "Erstelle eine strukturierte Zusammenfassung des folgenden wissenschaftlichen Papers. "
+            "Gliedere sie in mindestens vier klar getrennte Abschnitte (z.B. 1. Hintergrund, 2. Methodik, 3. Ergebnisse, 4. Schlussfolgerungen). "
             "Verwende maximal 500 Wörter:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
@@ -489,25 +482,24 @@ class PaperAnalyzer:
     def extract_key_findings(self, text, api_key):
         """Extrahiere die 5 wichtigsten Erkenntnisse."""
         prompt = (
-            "Extrahiere die 5 wichtigsten Erkenntnisse aus diesem wissenschaftlichen "
-            "Paper im Bereich Side-Channel Analysis. Liste sie mit Bulletpoints auf:\n\n{text}"
+            "Extrahiere die 5 wichtigsten Erkenntnisse aus diesem wissenschaftlichen Paper im Bereich Side-Channel Analysis. "
+            "Liste sie mit Bulletpoints auf:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
     
     def identify_methods(self, text, api_key):
         """Ermittelt genutzte Methoden und Techniken."""
         prompt = (
-            "Identifiziere und beschreibe die im Paper verwendeten Methoden "
-            "und Techniken zur Side-Channel-Analyse. Gib zu jeder Methode "
-            "eine kurze Erklärung:\n\n{text}"
+            "Identifiziere und beschreibe die im Paper verwendeten Methoden und Techniken zur Side-Channel-Analyse. "
+            "Gib zu jeder Methode eine kurze Erklärung:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
     
     def evaluate_relevance(self, text, topic, api_key):
         """Bewertet die Relevanz zum Thema (Skala 1-10)."""
         prompt = (
-            f"Bewerte die Relevanz dieses Papers für das Thema '{topic}' auf "
-            f"einer Skala von 1-10. Begründe deine Bewertung:\n\n{{text}}"
+            f"Bewerte die Relevanz dieses Papers für das Thema '{topic}' auf einer Skala von 1-10. "
+            f"Begründe deine Bewertung:\n\n{{text}}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
 
@@ -612,14 +604,75 @@ def parse_cohort_info(summary_text: str) -> dict:
     return info
 
 # ------------------------------------------------------------------
-# NEUER: Funktion zur gemeinsamen Analyse (Gemeinsamkeiten & Widersprüche)
+# NEUER Bereich: Definition der Funktion chatgpt_online_search_with_genes
+# ------------------------------------------------------------------
+def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
+    """
+    Lässt ChatGPT jedes Paper scoren (0-100) basierend auf Codewörtern + Genen.
+    :param papers: Liste von Paper-Dictionaries (mit 'Title' und 'Abstract').
+    :param codewords: String mit Codewörtern.
+    :param genes: Liste von Genen.
+    :param top_k: Maximale Anzahl der Ergebnisse.
+    :return: Liste der gescorten Paper, sortiert nach Relevanz (absteigend).
+    """
+    openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
+    if not openai.api_key:
+        st.error("Kein 'OPENAI_API_KEY' in st.secrets hinterlegt.")
+        return []
+    scored_results = []
+    total = len(papers)
+    progress = st.progress(0)
+    status_text = st.empty()
+    genes_str = ", ".join(genes) if genes else ""
+    for idx, paper in enumerate(papers, start=1):
+        current_title = paper.get("Title", "n/a")
+        status_text.text(f"Verarbeite Paper {idx}/{total}: {current_title}")
+        progress.progress(idx / total)
+        title = paper.get("Title", "n/a")
+        abstract = paper.get("Abstract", "n/a")
+        prompt = f"""
+Codewörter: {codewords}
+Gene: {genes_str}
+
+Paper:
+Titel: {title}
+Abstract: {abstract}
+
+Gib mir eine Zahl von 0 bis 100 (Relevanz), wobei sowohl Codewörter als auch Gene berücksichtigt werden.
+"""
+        try:
+            resp = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=20,
+                temperature=0
+            )
+            raw_text = resp.choices[0].message.content.strip()
+            match = re.search(r'(\d+)', raw_text)
+            if match:
+                score = int(match.group(1))
+            else:
+                score = 0
+        except Exception as e:
+            st.error(f"ChatGPT Fehler beim Scoring: {e}")
+            score = 0
+        new_item = dict(paper)
+        new_item["Relevance"] = score
+        scored_results.append(new_item)
+    status_text.empty()
+    progress.empty()
+    scored_results.sort(key=lambda x: x["Relevance"], reverse=True)
+    return scored_results[:top_k]
+
+# ------------------------------------------------------------------
+# NEUER Bereich: Funktion zur Analyse von Gemeinsamkeiten & Widersprüchen
 # ------------------------------------------------------------------
 def analyze_papers_for_commonalities_and_contradictions(pdf_texts: Dict[str, str], api_key: str, model: str):
     """
     Naive Logik zur Extraktion von Claims aus jedem Paper und Ermittlung von
     Gemeinsamkeiten und Widersprüchen.
     
-    :param pdf_texts: Dictionary, in dem der Schlüssel der Dateiname und der Wert der extrahierte Text ist.
+    :param pdf_texts: Dictionary, wobei der Schlüssel der Dateiname und der Wert der extrahierte Text ist.
     :param api_key: OpenAI API Key.
     :param model: GPT-Modell (z.B. "gpt-3.5-turbo").
     :return: JSON-String mit den Ergebnissen.
@@ -1250,7 +1303,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
     # ------------------------------------------------------------------
     st.write("---")
     st.header("PaperQA Multi-Paper Analyzer: Gemeinsamkeiten & Widersprüche")
-    # Extrahiere (falls noch nicht vorhanden) alle PDF-Texte in st.session_state["paper_texts"]
+    # Falls noch nicht vorhanden, alle PDF-Texte extrahieren und in st.session_state["paper_texts"] speichern
     if "paper_texts" not in st.session_state or not st.session_state["paper_texts"]:
         if uploaded_files:
             st.session_state["paper_texts"] = {}
@@ -1294,6 +1347,9 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 except Exception as e:
                     st.warning("Die GPT-Ausgabe konnte nicht als valides JSON geparst werden.")
                     
+# ------------------------------------------------------------------
+# Sidebar Navigation und Chatbot
+# ------------------------------------------------------------------
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
     pages = {
