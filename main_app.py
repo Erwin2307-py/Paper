@@ -24,6 +24,7 @@ from modules.online_api_filter import module_online_api_filter
 # Neuer Import für die Übersetzung mit google_trans_new
 from google_trans_new import google_translator
 
+
 # ------------------------------------------------------------------
 # Umgebungsvariablen laden (für OPENAI_API_KEY, falls vorhanden)
 # ------------------------------------------------------------------
@@ -34,6 +35,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 # Streamlit-Konfiguration
 # ------------------------------------------------------------------
 st.set_page_config(page_title="Streamlit Multi-Modul Demo", layout="wide")
+
 
 # ------------------------------------------------------------------
 # Login-Funktionalität
@@ -59,6 +61,7 @@ if not st.session_state["logged_in"]:
     login()
     st.stop()
 
+
 # ------------------------------------------------------------------
 # 1) Gemeinsame Funktionen & Klassen
 # ------------------------------------------------------------------
@@ -68,8 +71,9 @@ def clean_html_except_br(text):
     cleaned_text = re.sub(r'</?(?!br\b)[^>]*>', '', text)
     return cleaned_text
 
+
 def translate_text_openai(text, source_language, target_language, api_key):
-    """Übersetzt Text über OpenAI-ChatCompletion (z.B. GPT-4)"""
+    """Übersetzt Text über OpenAI-ChatCompletion (z.B. GPT-4)."""
     import openai
     openai.api_key = api_key
     prompt_system = (
@@ -100,6 +104,7 @@ def translate_text_openai(text, source_language, target_language, api_key):
         st.warning("Übersetzungsfehler: " + str(e))
         return text
 
+
 class CoreAPI:
     def __init__(self, api_key):
         self.base_url = "https://api.core.ac.uk/v3/"
@@ -124,6 +129,7 @@ class CoreAPI:
         r.raise_for_status()
         return r.json()
 
+
 def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", timeout=15):
     """Check, ob CORE aggregator erreichbar ist."""
     try:
@@ -132,6 +138,7 @@ def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", 
         return "results" in result
     except Exception:
         return False
+
 
 def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
     """Einfache Suche in CORE aggregator."""
@@ -157,6 +164,7 @@ def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
         st.error(f"CORE search error: {e}")
         return []
 
+
 # ------------------------------------------------------------------
 # 2) PubMed - Einfacher Check + Search
 # ------------------------------------------------------------------
@@ -171,6 +179,7 @@ def check_pubmed_connection(timeout=10):
         return "esearchresult" in data
     except Exception:
         return False
+
 
 def search_pubmed_simple(query):
     """Kurze Suche (nur Titel/Journal/Year) in PubMed."""
@@ -208,6 +217,7 @@ def search_pubmed_simple(query):
         st.error(f"Error searching PubMed: {e}")
         return []
 
+
 def fetch_pubmed_abstract(pmid):
     """Holt den Abstract via efetch für eine gegebene PubMed-ID."""
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
@@ -227,6 +237,7 @@ def fetch_pubmed_abstract(pmid):
     except Exception as e:
         return f"(Error: {e})"
 
+
 # ------------------------------------------------------------------
 # 3) Europe PMC Check + Search
 # ------------------------------------------------------------------
@@ -241,6 +252,7 @@ def check_europe_pmc_connection(timeout=10):
         return "resultList" in data and "result" in data["resultList"]
     except Exception:
         return False
+
 
 def search_europe_pmc_simple(query):
     """Kurze Suche in Europe PMC."""
@@ -275,6 +287,7 @@ def search_europe_pmc_simple(query):
         st.error(f"Europe PMC search error: {e}")
         return []
 
+
 # ------------------------------------------------------------------
 # 4) OpenAlex API
 # ------------------------------------------------------------------
@@ -294,10 +307,12 @@ def fetch_openalex_data(entity_type, entity_id=None, params=None):
         st.error(f"Fehler: {response.status_code} - {response.text}")
         return None
 
+
 def search_openalex_simple(query):
     """Kurze Version: Liest die rohen Daten, prüft nur, ob was zurückkommt."""
     search_params = {"search": query}
     return fetch_openalex_data("works", params=search_params)
+
 
 # ------------------------------------------------------------------
 # 5) Google Scholar (Test)
@@ -330,6 +345,7 @@ class GoogleScholarSearch:
         except Exception as e:
             st.error(f"Fehler bei der Google Scholar-Suche: {e}")
 
+
 # ------------------------------------------------------------------
 # 6) Semantic Scholar
 # ------------------------------------------------------------------
@@ -344,6 +360,7 @@ def check_semantic_scholar_connection(timeout=10):
         return response.status_code == 200
     except Exception:
         return False
+
 
 class SemanticScholarSearch:
     def __init__(self):
@@ -379,10 +396,12 @@ class SemanticScholarSearch:
         except Exception as e:
             st.error(f"Semantic Scholar: {e}")
 
+
 # ------------------------------------------------------------------
 # 7) Excel Online Search - Placeholder
-# ------------------------------------------------------------------
 # (Hier könnte Ihr Modul code stehen, falls benötigt)
+# ------------------------------------------------------------------
+
 
 # ------------------------------------------------------------------
 # 8) Weitere Module + Seiten
@@ -394,10 +413,12 @@ def module_paperqa2():
     if st.button("Frage absenden"):
         st.write("Antwort: Dies ist eine Dummy-Antwort auf die Frage:", question)
 
+
 def page_home():
     st.title("Welcome to the Main Menu")
     st.write("Choose a module in the sidebar to proceed.")
     st.image("Bild1.jpg", caption="Willkommen!", use_container_width=False, width=600)
+
 
 def page_codewords_pubmed():
     st.title("Codewords & PubMed Settings")
@@ -406,11 +427,13 @@ def page_codewords_pubmed():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
+
 def page_paper_selection():
     st.title("Paper Selection Settings")
     st.write("Define how you want to pick or exclude certain papers. (Dummy placeholder...)")
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
+
 
 def page_analysis():
     st.title("Analysis & Evaluation Settings")
@@ -418,11 +441,13 @@ def page_analysis():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
+
 def page_extended_topics():
     st.title("Extended Topics")
     st.write("Access advanced or extended topics for further research. (Dummy placeholder...)")
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
+
 
 def page_paperqa2():
     st.title("PaperQA2")
@@ -430,9 +455,11 @@ def page_paperqa2():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
+
 def page_excel_online_search():
     st.title("Excel Online Search")
     from modules.online_api_filter import module_online_api_filter
+
 
 def page_online_api_filter():
     st.title("Online-API_Filter (Kombiniert)")
@@ -440,6 +467,7 @@ def page_online_api_filter():
     module_online_api_filter()
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
+
 
 class PaperAnalyzer:
     def __init__(self, model="gpt-3.5-turbo"):
@@ -510,6 +538,7 @@ class PaperAnalyzer:
         )
         return self.analyze_with_openai(text, prompt, api_key)
 
+
 class AlleleFrequencyFinder:
     """Klasse zum Abrufen und Anzeigen von Allelfrequenzen aus verschiedenen Quellen."""
     def __init__(self):
@@ -565,6 +594,7 @@ class AlleleFrequencyFinder:
             out.append("Keine Populationsdaten gefunden.")
         return " | ".join(out)
 
+
 def split_summary(summary_text):
     """Versucht 'Ergebnisse' und 'Schlussfolgerungen' zu splitten, falls im Text vorhanden."""
     m = re.search(r'Ergebnisse\s*:\s*(.*?)\s*Schlussfolgerungen\s*:\s*(.*)', summary_text, re.DOTALL | re.IGNORECASE)
@@ -575,6 +605,7 @@ def split_summary(summary_text):
         ergebnisse = summary_text
         schlussfolgerungen = ""
     return ergebnisse, schlussfolgerungen
+
 
 def parse_cohort_info(summary_text: str) -> dict:
     """Parst grobe Infos zur Kohorte (Anzahl Patienten, Herkunft etc.) aus deutschem Summary."""
@@ -613,6 +644,7 @@ def parse_cohort_info(summary_text: str) -> dict:
         info["origin"] = m_orig.group(1).strip()
 
     return info
+
 
 def page_analyze_paper():
     """
@@ -822,6 +854,9 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
 
             return (relevant_papers_local, main_theme)
 
+    # -------------------------
+    # Haupt-Logik der Seite
+    # -------------------------
     if uploaded_files and api_key:
         if compare_mode:
             st.write("### Vergleichsmodus: Outlier-Paper ausschließen")
@@ -884,7 +919,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
             st.write("### Einzel- oder Multi-Modus (kein Outlier-Check)")
 
             pdf_options = ["(Alle)"] + [f"{i+1}) {f.name}" for i, f in enumerate(uploaded_files)]
-            selected_pdf = st.selectbox("Wähle eine PDF für Einzel-Analyse oder '(Alle)' für alle", pdf_options)
+            selected_pdf = st.selectbox("Wähle eine PDF für Einzel-Analyse oder '(Alle)'", pdf_options)
 
             if st.button("Analyse starten (Einzel-Modus)"):
                 if selected_pdf == "(Alle)":
@@ -1061,7 +1096,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
 
     st.write("---")
     st.write("## Alle Analysen & Excel-Ausgabe (Multi-PDF)")
-
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
 
     if uploaded_files and api_key:
@@ -1191,6 +1225,15 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
 
+    # -----------------------------------------
+    # NEUE ZUSÄTZLICHE FUNKTION IM ANALYZE-PAPER
+    # -----------------------------------------
+    st.write("---")
+    st.write("## Einzelanalyse der nach ChatGPT-Scoring ausgewählten Paper")
+    if st.button("Scored Paper Selection anzeigen"):
+        module_scored_paper_selection()
+
+
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
     pages = {
@@ -1207,6 +1250,7 @@ def sidebar_module_navigation():
         st.session_state["current_page"] = "Home"
 
     return pages.get(st.session_state["current_page"], page_home)
+
 
 def answer_chat(question: str) -> str:
     """Einfaches Beispiel: Nutzt Paper-Text (falls vorhanden) aus st.session_state + GPT."""
@@ -1238,6 +1282,7 @@ def answer_chat(question: str) -> str:
         return response.choices[0].message.content
     except Exception as e:
         return f"OpenAI-Fehler: {e}"
+
 
 def main():
     st.markdown(
@@ -1340,8 +1385,6 @@ def main():
             unsafe_allow_html=True
         )
 
-if __name__ == '__main__':
-    main()
 
 # -----------------------------------------------------------
 # NEUE ZUSÄTZLICHE FUNKTION FÜR EINZELANALYSE GESCORTER PAPER
@@ -1351,23 +1394,19 @@ def module_scored_paper_selection():
     Zeigt ein Dropdown mit allen gescorten Papers aus st.session_state["scored_list"] an.
     Ermöglicht das Auswählen für eine detaillierte Einzelanalyse (Titel, Abstract, etc.).
     """
-    # Prüfen, ob scored_list schon existiert und nicht leer ist
     if "scored_list" not in st.session_state or not st.session_state["scored_list"]:
         st.info("Keine gescorten Paper vorhanden (st.session_state['scored_list']).")
         return
 
     st.subheader("Einzelanalyse der nach ChatGPT-Scoring ausgewählten Paper")
 
-    # Aus dem 'scored_list' ein Dropdown bauen (z.B. basierend auf 'Title')
     scored_titles = [paper["Title"] for paper in st.session_state["scored_list"]]
-
     chosen_title = st.selectbox(
         "Wähle ein Paper aus der Scoring-Liste:",
         options=["(Bitte wählen)"] + scored_titles
     )
 
     if chosen_title != "(Bitte wählen)":
-        # Gewähltes Paper in 'selected_paper' ablegen
         selected_paper = next(
             (p for p in st.session_state["scored_list"] if p["Title"] == chosen_title),
             None
@@ -1382,3 +1421,7 @@ def module_scored_paper_selection():
             st.markdown(f"> {selected_paper.get('Abstract', 'n/a')}")
         else:
             st.warning("Paper nicht gefunden (unerwarteter Fehler).")
+
+
+if __name__ == '__main__':
+    main()
