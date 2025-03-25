@@ -830,6 +830,10 @@ def page_analyze_paper():
     analyzer = PaperAnalyzer(model=model)
     api_key = st.session_state["api_key"]
     
+    # Initialisiere st.session_state["paper_texts"] falls noch nicht vorhanden
+    if "paper_texts" not in st.session_state:
+        st.session_state["paper_texts"] = {}
+    
     if "relevant_papers_compare" not in st.session_state:
         st.session_state["relevant_papers_compare"] = None
     if "theme_compare" not in st.session_state:
