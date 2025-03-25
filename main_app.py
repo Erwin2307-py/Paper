@@ -804,7 +804,8 @@ def page_analyze_paper():
     
     # Neue Optionen für die gemeinsame Analyse
     analysis_method = st.sidebar.selectbox("Analyse-Methode (Gemeinsamkeiten & Widersprüche)", ["Standard GPT", "ContraCrow"])
-    analysis_source = st.sidebar.radio("Analysequelle", ["PDF Volltext", "Abstract"])
+    # Hier entscheiden wir, ob die Analysequelle für Widersprüche aus den gescorten Papern oder aus den hochgeladenen Paper erfolgen soll.
+    widerspruchs_source = st.sidebar.selectbox("Analysequelle für Widersprüche", ["Hochgeladene Paper", "Gescorte Paper"])
     
     # Compare Mode
     compare_mode = st.sidebar.checkbox("Alle Paper gemeinsam vergleichen (Outlier ausschließen)?")
@@ -1332,19 +1333,12 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
         else:
             st.warning("Paper nicht gefunden (unerwarteter Fehler).")
     
-    # ------------------------------------------------------------------
-    # NEUER Abschnitt: PaperQA Multi-Paper Analyzer (Gemeinsamkeiten & Widersprüche)
-    # ------------------------------------------------------------------
+    # NEUER Abschnitt: Auswahl der Quelle für die Widerspruchs-/Gemeinsamkeitsanalyse
     st.write("---")
     st.header("PaperQA Multi-Paper Analyzer: Gemeinsamkeiten & Widersprüche")
-    # Option: Analysequelle (PDF Volltext vs. Abstract)
-    analysis_source = st.selectbox("Analysequelle", ["PDF Volltext", "Abstract"])
-    # Option: Auswahl der Methode (Standard oder ContraCrow)
-    analysis_method = st.selectbox("Analyse-Methode", ["Standard GPT", "ContraCrow"])
-    
-    # Erzeuge Dictionary mit Texten
-    if analysis_source == "Abstract":
-        # Nutze Abstracts aus den gescorten Papern (falls vorhanden)
+    analysis_source_choice = st.selectbox("Analysequelle für Widersprüche", ["Hochgeladene Paper", "Gescorte Paper"])
+    # Erzeuge Dictionary mit Texten basierend auf der gewählten Quelle:
+    if analysis_source_choice == "Gescorte Paper":
         if "scored_list" in st.session_state and st.session_state["scored_list"]:
             paper_texts = {}
             for paper in st.session_state["scored_list"]:
@@ -1355,10 +1349,18 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 else:
                     st.warning(f"Kein Abstract für {title} vorhanden.")
         else:
-            st.error("Keine gescorten Paper vorhanden für die Abstract-Analyse.")
-            paper_texts = {}
+            st.error("Keine gescorten Paper vorhanden. Verwende stattdessen hochgeladene Paper.")
+            if "paper_texts" not in st.session_state or not st.session_state["paper_texts"]:
+                if uploaded_files:
+                    st.session_state["paper_texts"] = {}
+                    for upf in uploaded_files:
+                        text = analyzer.extract_text_from_pdf(upf)
+                        if text.strip():
+                            st.session_state["paper_texts"][upf.name] = text
+                        else:
+                            st.warning(f"Kein Text extrahierbar aus {upf.name}")
+            paper_texts = st.session_state["paper_texts"]
     else:
-        # Nutze die bereits extrahierten PDF-Volltexte (st.session_state["paper_texts"])
         if "paper_texts" not in st.session_state or not st.session_state["paper_texts"]:
             if uploaded_files:
                 st.session_state["paper_texts"] = {}
@@ -1405,9 +1407,9 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 except Exception as e:
                     st.warning("Die GPT-Ausgabe konnte nicht als valides JSON geparst werden.")
                     
-# ------------------------------------------------------------------
-# Sidebar Navigation und Chatbot
-# ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Sidebar Navigation und Chatbot
+    # ------------------------------------------------------------------
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
     pages = {
