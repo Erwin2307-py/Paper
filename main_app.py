@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 from PIL import Image
 from scholarly import scholarly
 
+# Import des Moduls, falls benötigt
 from modules.online_api_filter import module_online_api_filter
 
 # Neuer Import für die Übersetzung mit google_trans_new
@@ -42,6 +43,7 @@ def login():
     st.title("Login")
     user_input = st.text_input("Username")
     pass_input = st.text_input("Password", type="password")
+    
     if st.button("Login"):
         if (
             user_input == st.secrets["login"]["username"]
@@ -53,6 +55,7 @@ def login():
 
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
+
 if not st.session_state["logged_in"]:
     login()
     st.stop()
@@ -77,7 +80,7 @@ def translate_text_openai(text, source_language, target_language, api_key):
     prompt_user = f"Translate the following text from {source_language} to {target_language}:\n'{text}'"
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-4o",  # Falls dein Account dieses Modell unterstützt
+            model="gpt-4o",  # Falls das Modell unterstützt wird
             messages=[
                 {"role": "system", "content": prompt_system},
                 {"role": "user", "content": prompt_user}
@@ -99,6 +102,7 @@ class CoreAPI:
     def __init__(self, api_key):
         self.base_url = "https://api.core.ac.uk/v3/"
         self.headers = {"Authorization": f"Bearer {api_key}"}
+
     def search_publications(self, query, filters=None, sort=None, limit=100):
         endpoint = "search/works"
         params = {"q": query, "limit": limit}
@@ -174,11 +178,13 @@ def search_pubmed_simple(query):
         idlist = data.get("esearchresult", {}).get("idlist", [])
         if not idlist:
             return out
+
         esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
         sum_params = {"db": "pubmed", "id": ",".join(idlist), "retmode": "json"}
         r2 = requests.get(esummary_url, params=sum_params, timeout=10)
         r2.raise_for_status()
         summary_data = r2.json().get("result", {})
+
         for pmid in idlist:
             info = summary_data.get(pmid, {})
             title = info.get("title", "n/a")
@@ -289,6 +295,7 @@ def search_openalex_simple(query):
 class GoogleScholarSearch:
     def __init__(self):
         self.all_results = []
+
     def search_google_scholar(self, base_query):
         try:
             search_results = scholarly.search_pubs(base_query)
@@ -330,6 +337,7 @@ def check_semantic_scholar_connection(timeout=10):
 class SemanticScholarSearch:
     def __init__(self):
         self.all_results = []
+
     def search_semantic_scholar(self, base_query):
         try:
             url = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -363,7 +371,7 @@ class SemanticScholarSearch:
 # ------------------------------------------------------------------
 # 7) Excel Online Search - Placeholder
 # ------------------------------------------------------------------
-# (Hier könnte Ihr Modul code stehen, falls benötigt)
+# (Hier könnte weiterer Code stehen)
 
 # ------------------------------------------------------------------
 # 8) Weitere Module + Seiten
@@ -428,6 +436,7 @@ def page_online_api_filter():
 class PaperAnalyzer:
     def __init__(self, model="gpt-3.5-turbo"):
         self.model = model
+    
     def extract_text_from_pdf(self, pdf_file):
         """Extrahiert reinen Text via PyPDF2 (ggf. OCR nötig, falls PDF nicht durchsuchbar)."""
         reader = PyPDF2.PdfReader(pdf_file)
@@ -437,6 +446,7 @@ class PaperAnalyzer:
             if page_text:
                 text += page_text + "\n"
         return text
+    
     def analyze_with_openai(self, text, prompt_template, api_key):
         """Hilfsfunktion, um OpenAI per ChatCompletion aufzurufen."""
         if len(text) > 15000:
@@ -456,6 +466,7 @@ class PaperAnalyzer:
             max_tokens=1500
         )
         return response.choices[0].message.content
+    
     def summarize(self, text, api_key):
         """Erstellt eine Zusammenfassung in Deutsch."""
         prompt = (
@@ -465,6 +476,7 @@ class PaperAnalyzer:
             "Verwende maximal 500 Wörter:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
+    
     def extract_key_findings(self, text, api_key):
         """Extrahiere die 5 wichtigsten Erkenntnisse."""
         prompt = (
@@ -472,6 +484,7 @@ class PaperAnalyzer:
             "Paper im Bereich Side-Channel Analysis. Liste sie mit Bulletpoints auf:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
+    
     def identify_methods(self, text, api_key):
         """Ermittelt genutzte Methoden und Techniken."""
         prompt = (
@@ -480,6 +493,7 @@ class PaperAnalyzer:
             "eine kurze Erklärung:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
+    
     def evaluate_relevance(self, text, topic, api_key):
         """Bewertet die Relevanz zum Thema (Skala 1-10)."""
         prompt = (
@@ -494,6 +508,7 @@ class AlleleFrequencyFinder:
         self.ensembl_server = "https://rest.ensembl.org"
         self.max_retries = 3
         self.retry_delay = 2
+    
     def get_allele_frequencies(self, rs_id: str, retry_count: int = 0) -> Optional[Dict[str, Any]]:
         if not rs_id.startswith("rs"):
             rs_id = f"rs{rs_id}"
@@ -516,8 +531,10 @@ class AlleleFrequencyFinder:
                 time.sleep(self.retry_delay)
                 return self.get_allele_frequencies(rs_id, retry_count + 1)
             return None
+    
     def try_alternative_source(self, rs_id: str) -> Optional[Dict[str, Any]]:
         return None
+    
     def build_freq_info_text(self, data: Dict[str, Any]) -> str:
         if not data:
             return "Keine Daten von Ensembl"
@@ -561,6 +578,7 @@ def parse_cohort_info(summary_text: str) -> dict:
         group_str = match_nat.group(3)
         info["study_size"] = f"{num_str} {group_str}"
         info["origin"] = origin_str
+
     pattern_both = re.compile(
         r"(\d+)\s*Patient(?:en)?(?:[^\d]+)(\d+)\s*gesunde\s*Kontroll(?:personen)?",
         re.IGNORECASE
@@ -575,10 +593,12 @@ def parse_cohort_info(summary_text: str) -> dict:
         m_single_p = pattern_single_p.search(summary_text)
         if m_single_p and not info["study_size"]:
             info["study_size"] = f"{m_single_p.group(1)} Patienten"
+
     pattern_origin = re.compile(r"in\s*der\s+(\S+)\s+Bevölkerung", re.IGNORECASE)
     m_orig = pattern_origin.search(summary_text)
     if m_orig and not info["origin"]:
         info["origin"] = m_orig.group(1).strip()
+
     return info
 
 # ------------------------------------------------------------------
@@ -588,6 +608,8 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     """
     Lässt ChatGPT jedes Paper scoren (0-100) basierend auf Codewörtern + Genen.
     Zeigt dabei an, welches Paper gerade verarbeitet wird.
+    
+    (Unveränderte openai-Logik)
     """
     if not papers:
         return []
@@ -595,15 +617,19 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     if not openai.api_key:
         st.error("Kein 'OPENAI_API_KEY' in st.secrets hinterlegt.")
         return []
+    
     scored_results = []
     total = len(papers)
     progress = st.progress(0)
     status_text = st.empty()
+    
     genes_str = ", ".join(genes) if genes else ""
+    
     for idx, paper in enumerate(papers, start=1):
         current_title = paper.get("Title", "n/a")
         status_text.text(f"Verarbeite Paper {idx}/{total}: {current_title}")
         progress.progress(idx / total)
+        
         title = paper.get("Title", "n/a")
         abstract = paper.get("Abstract", "n/a")
         prompt = (
@@ -631,32 +657,124 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
         except Exception as e:
             st.error(f"ChatGPT Fehler beim Scoring: {e}")
             score = 0
+        
         new_item = dict(paper)
         new_item["Relevance"] = score
         scored_results.append(new_item)
+    
     status_text.empty()
     progress.empty()
     scored_results.sort(key=lambda x: x["Relevance"], reverse=True)
     return scored_results[:top_k]
 
 # ------------------------------------------------------------------
-# 8) Seite: Analyze Paper
+# PaperQA Multi-Paper Analyzer-Logik (Eingebettet)
+# ------------------------------------------------------------------
+import tempfile
+from paperqa import Docs, Settings
+import asyncio
+
+def paperqa_multi_analyzer_ui():
+    """
+    Zusätzliche UI-Komponente innerhalb von page_analyze_paper()
+    um den PaperQA Multi-Paper Analyzer zu nutzen, ohne die existierende
+    OpenAI-Logik zu verändern.
+    """
+    st.subheader("PaperQA Multi-Paper Analyzer (Mehrere PDFs)")
+    st.write("Hier kannst du Dokumente hochladen, um sie mit PaperQA gemeinsam zu analysieren.")
+    
+    # Initialisierung
+    if "paperqa_docs" not in st.session_state:
+        st.session_state["paperqa_docs"] = None
+    if "paperqa_tempdir" not in st.session_state:
+        st.session_state["paperqa_tempdir"] = None
+    
+    # OpenAI API-Key Eingabe (lokal)
+    local_api_key = st.text_input("OpenAI API Key (PaperQA)", type="password", value="")
+    if local_api_key:
+        os.environ["OPENAI_API_KEY"] = local_api_key
+    
+    # Hochladen
+    multiple_files = st.file_uploader("PDF-Dateien für PaperQA hochladen", type=["pdf"], accept_multiple_files=True)
+    
+    model_options = ["gpt-3.5-turbo", "gpt-4o", "claude-3-5-sonnet-20240620"]
+    selected_model = st.selectbox("LLM-Modell für PaperQA:", model_options)
+    
+    embedding_options = ["text-embedding-3-small", "text-embedding-3-large", "hybrid-text-embedding-3-small"]
+    embedding_model = st.selectbox("Embedding-Modell (PaperQA):", embedding_options)
+    
+    max_sources = st.slider("Maximale Quellen pro Analyse (PaperQA)", 3, 10, 5)
+    
+    if multiple_files and st.button("Dokumente in PaperQA verarbeiten"):
+        if not local_api_key:
+            st.error("Bitte einen OpenAI API-Key für PaperQA eingeben.")
+        else:
+            try:
+                docs = Docs()
+                settings = Settings()
+                settings.llm = selected_model
+                settings.embedding = embedding_model
+                settings.answer.answer_max_sources = max_sources
+                
+                temp_dir = tempfile.TemporaryDirectory()
+                
+                for fpdf in multiple_files:
+                    temp_path = os.path.join(temp_dir.name, fpdf.name)
+                    with open(temp_path, "wb") as f:
+                        f.write(fpdf.getbuffer())
+                    
+                    docs.add(temp_path, settings=settings)
+                
+                st.session_state["paperqa_docs"] = docs
+                st.session_state["paperqa_tempdir"] = temp_dir
+                st.success("Dokumente erfolgreich hinzugefügt.")
+            except Exception as e:
+                st.error(f"Fehler beim PaperQA-Prozess: {e}")
+    
+    if st.session_state["paperqa_docs"] is not None:
+        docs = st.session_state["paperqa_docs"]
+        
+        # Direkte Abfrage
+        st.subheader("Direkte PaperQA-Abfrage")
+        user_query = st.text_input("Frage an die hochgeladenen Dokumente (PaperQA):")
+        if user_query and st.button("PaperQA-Abfrage starten"):
+            with st.spinner("Verarbeite Anfrage..."):
+                settings = Settings()
+                settings.llm = selected_model
+                settings.embedding = embedding_model
+                settings.answer.answer_max_sources = max_sources
+                
+                session = docs.query(user_query, settings=settings)
+                
+                st.markdown("### Antwort:")
+                st.markdown(session.answer)
+                
+                st.markdown("### Quellen:")
+                for source in session.sources:
+                    st.markdown(f"- **{source.name}**")
+
+# ------------------------------------------------------------------
+# page_analyze_paper (Integration)
 # ------------------------------------------------------------------
 def page_analyze_paper():
     """
-    Seite für die Analyse von Papers (Upload PDFs, einzeln oder kombiniert, Outlier-Check usw.).
+    Seite für die Analyse von Papers (Upload PDFs, inkl. optionaler PaperQA Multi-Paper Analyzer).
     """
     st.title("Analyze Paper - Integriert")
+    
     if "api_key" not in st.session_state:
         st.session_state["api_key"] = OPENAI_API_KEY or ""
+    
     st.sidebar.header("Einstellungen - PaperAnalyzer")
-    new_key_value = st.sidebar.text_input("OpenAI API Key", type="password", value=st.session_state["api_key"])
+    new_key_value = st.sidebar.text_input("OpenAI API Key (Analyse)", type="password", value=st.session_state["api_key"])
     st.session_state["api_key"] = new_key_value
+    
     model = st.sidebar.selectbox(
         "OpenAI-Modell",
         ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4o"],
         index=0
     )
+
     compare_mode = st.sidebar.checkbox("Alle Paper gemeinsam vergleichen (Outlier ausschließen)?")
     theme_mode = st.sidebar.radio("Hauptthema bestimmen", ["Manuell", "GPT"])
     action = st.sidebar.radio(
@@ -664,11 +782,14 @@ def page_analyze_paper():
         ["Zusammenfassung", "Wichtigste Erkenntnisse", "Methoden & Techniken", "Relevanz-Bewertung", "Tabellen & Grafiken"],
         index=0
     )
+    
     user_defined_theme = ""
     if theme_mode == "Manuell":
         user_defined_theme = st.sidebar.text_input("Manuelles Hauptthema (bei Compare-Mode)")
+    
     topic = st.sidebar.text_input("Thema für Relevanz-Bewertung (falls relevant)")
     output_lang = st.sidebar.selectbox("Ausgabesprache", ["Deutsch", "Englisch", "Portugiesisch", "Serbisch"], index=0)
+    
     uploaded_files = st.file_uploader("PDF-Dateien hochladen", type="pdf", accept_multiple_files=True)
     analyzer = PaperAnalyzer(model=model)
     api_key = st.session_state["api_key"]
@@ -678,10 +799,13 @@ def page_analyze_paper():
     if "theme_compare" not in st.session_state:
         st.session_state["theme_compare"] = ""
     
-    # Dummy-Implementierung für Outlier-Logik
+    # Dummy-Implementierung einer Outlier-Logik (statisch)
     def do_outlier_logic(paper_map: dict) -> (list, str):
+        # Hier könnte GPT-Logik eingreifen; wir returnen einfach alle
         return list(paper_map.keys()), "Dummy-Thema"
     
+    # Haupt-Abschnitt
+    st.subheader("1) Standard-Analyse (aus hochgeladenen PDFs)")
     if uploaded_files and api_key:
         if compare_mode:
             st.write("### Vergleichsmodus: Outlier-Paper ausschließen")
@@ -693,18 +817,23 @@ def page_analyze_paper():
                         paper_map[fpdf.name] = txt
                     else:
                         st.warning(f"Kein Text aus {fpdf.name} extrahierbar (übersprungen).")
+                
                 if not paper_map:
                     st.error("Keine verwertbaren Paper.")
                     return
+                
                 relevant_papers, discovered_theme = do_outlier_logic(paper_map)
                 st.session_state["relevant_papers_compare"] = relevant_papers
                 st.session_state["theme_compare"] = discovered_theme
+                
                 if not relevant_papers:
                     st.error("Keine relevanten Paper nach Outlier-Check übrig.")
                     return
+                
                 combined_text = ""
                 for rp in relevant_papers:
                     combined_text += f"\n=== {rp} ===\n{paper_map[rp]}"
+                
                 if action == "Tabellen & Grafiken":
                     final_result = "Tabellen & Grafiken nicht im kombinierten Compare-Mode implementiert."
                 else:
@@ -721,22 +850,26 @@ def page_analyze_paper():
                         final_result = analyzer.evaluate_relevance(combined_text, topic, api_key)
                     else:
                         final_result = "(Keine Analyseart gewählt.)"
+                
                 if output_lang != "Deutsch":
                     lang_map = {"Englisch": "English", "Portugiesisch": "Portuguese", "Serbisch": "Serbian"}
                     target_lang = lang_map.get(output_lang, "English")
                     final_result = translate_text_openai(final_result, "German", target_lang, api_key)
+                
                 st.subheader("Ergebnis des Compare-Mode:")
                 st.write(final_result)
         else:
             st.write("### Einzel- oder Multi-Modus (kein Outlier-Check)")
             pdf_options = ["(Alle)"] + [f"{i+1}) {f.name}" for i, f in enumerate(uploaded_files)]
             selected_pdf = st.selectbox("Wähle eine PDF für Einzel-Analyse oder '(Alle)'", pdf_options)
+            
             if st.button("Analyse starten (Einzel-Modus)"):
                 if selected_pdf == "(Alle)":
                     files_to_process = uploaded_files
                 else:
                     idx = pdf_options.index(selected_pdf) - 1
                     files_to_process = [uploaded_files[idx]]
+                
                 final_result_text = []
                 for fpdf in files_to_process:
                     text_data = ""
@@ -748,6 +881,7 @@ def page_analyze_paper():
                                 continue
                             st.success(f"Text aus {fpdf.name} extrahiert!")
                             st.session_state["paper_text"] = text_data[:15000]
+
                     result = ""
                     if action == "Zusammenfassung":
                         with st.spinner(f"Erstelle Zusammenfassung für {fpdf.name}..."):
@@ -784,6 +918,7 @@ def page_analyze_paper():
                                                     st.write("Nur Header vorhanden.")
                                                     data_rows = table_data
                                                     first_row = [f"Col_{i}" for i in range(len(data_rows[0]))]
+                                                
                                                 new_header = []
                                                 used_cols = {}
                                                 for col in first_row:
@@ -794,18 +929,23 @@ def page_analyze_paper():
                                                     else:
                                                         used_cols[col_str] += 1
                                                         new_header.append(f"{col_str}.{used_cols[col_str]}")
+
                                                 import pandas as pd
                                                 if any(len(row) != len(new_header) for row in data_rows):
                                                     st.write("Warnung: Inkonsistente Spaltenanzahl.")
                                                     df = pd.DataFrame(table_data)
                                                 else:
                                                     df = pd.DataFrame(data_rows, columns=new_header)
+
                                                 st.write(f"**Tabelle {table_idx}** in {fpdf.name}:")
                                                 st.dataframe(df)
                                                 table_str = df.to_csv(index=False)
-                                                all_tables_text.append(f"Seite {page_number} - Tabelle {table_idx}\n{table_str}\n")
+                                                all_tables_text.append(
+                                                    f"Seite {page_number} - Tabelle {table_idx}\n{table_str}\n"
+                                                )
                                         else:
                                             st.write("Keine Tabellen hier.")
+
                                         images = page.images
                                         if images:
                                             st.markdown("**Bilder/Grafiken auf dieser Seite**")
@@ -822,6 +962,7 @@ def page_analyze_paper():
                                                         st.write(f"Bild {img_index} konnte nicht extrahiert werden.")
                                         else:
                                             st.write("Keine Bilder hier.")
+                                
                                 st.markdown(f"### Volltext-Suche 'Table' in {fpdf.name}")
                                 try:
                                     text_all_pages = ""
@@ -839,10 +980,12 @@ def page_analyze_paper():
                                         st.write("Keine Erwähnung von 'Table'.")
                                 except Exception as e2:
                                     st.warning(f"Fehler bei Volltext-Suche 'Table': {e2}")
+
                                 if len(all_tables_text) > 0:
                                     combined_tables_text = "\n".join(all_tables_text)
                                     if len(combined_tables_text) > 14000:
                                         combined_tables_text = combined_tables_text[:14000] + "..."
+                                    
                                     gpt_prompt = (
                                         "Bitte analysiere die folgenden Tabellen aus einem wissenschaftlichen PDF. "
                                         "Fasse die wichtigsten Erkenntnisse zusammen und gib (wenn möglich) eine "
@@ -869,12 +1012,15 @@ def page_analyze_paper():
                             except Exception as e_:
                                 st.error(f"Fehler in {fpdf.name}: {str(e_)}")
                                 result = f"(Fehler in {fpdf.name})"
+                    
                     if action != "Tabellen & Grafiken" and result:
                         if output_lang != "Deutsch":
                             lang_map = {"Englisch": "English", "Portugiesisch": "Portuguese", "Serbisch": "Serbian"}
                             target_lang = lang_map.get(output_lang, "English")
                             result = translate_text_openai(result, "German", target_lang, api_key)
+
                     final_result_text.append(f"**Ergebnis für {fpdf.name}:**\n\n{result}")
+
                 st.subheader("Ergebnis der (Multi-)Analyse (Einzelmodus):")
                 combined_output = "\n\n---\n\n".join(final_result_text)
                 st.markdown(combined_output)
@@ -883,17 +1029,19 @@ def page_analyze_paper():
             st.warning("Bitte OpenAI API-Key eingeben!")
         elif not uploaded_files:
             st.info("Bitte eine oder mehrere PDF-Dateien hochladen!")
-    
+
     st.write("---")
     st.write("## Alle Analysen & Excel-Ausgabe (Multi-PDF)")
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
-    
+
     if uploaded_files and api_key:
         if st.button("Alle Analysen durchführen & in Excel speichern (Multi)"):
             with st.spinner("Analysiere alle hochgeladenen PDFs (für Excel)..."):
                 import openpyxl
                 import datetime
                 analyzer = PaperAnalyzer(model=model)
+                
+                # Compare-Mode
                 if compare_mode:
                     if not st.session_state["relevant_papers_compare"]:
                         paper_map_auto = {}
@@ -907,6 +1055,7 @@ def page_analyze_paper():
                         relevant_papers_auto, discovered_theme_auto = do_outlier_logic(paper_map_auto)
                         st.session_state["relevant_papers_compare"] = relevant_papers_auto
                         st.session_state["theme_compare"] = discovered_theme_auto
+
                     relevant_list_for_excel = st.session_state["relevant_papers_compare"] or []
                     if not relevant_list_for_excel:
                         st.error("Keine relevanten Paper nach Outlier-Check für Excel.")
@@ -914,11 +1063,13 @@ def page_analyze_paper():
                     selected_files_for_excel = [f for f in uploaded_files if f.name in relevant_list_for_excel]
                 else:
                     selected_files_for_excel = uploaded_files
+
                 for fpdf in selected_files_for_excel:
                     text = analyzer.extract_text_from_pdf(fpdf)
                     if not text.strip():
                         st.error(f"Kein Text aus {fpdf.name} extrahierbar (evtl. kein OCR). Überspringe...")
                         continue
+
                     summary_result = analyzer.summarize(text, api_key)
                     key_findings_result = analyzer.extract_key_findings(text, api_key)
                     if not topic:
@@ -926,10 +1077,13 @@ def page_analyze_paper():
                     else:
                         relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
                     methods_result = analyzer.identify_methods(text, api_key)
+
                     pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                     match_text = re.search(pattern_obvious, text)
                     gene_via_text = match_text.group(1) if match_text else None
+
                     if not gene_via_text:
+                        import openpyxl
                         try:
                             wb_gene = openpyxl.load_workbook("vorlage_gene.xlsx")
                         except FileNotFoundError:
@@ -946,10 +1100,13 @@ def page_analyze_paper():
                             if re.search(pat, text):
                                 gene_via_text = g
                                 break
+
                     found_gene = gene_via_text
+
                     rs_pat = r"(rs\d+)"
                     found_rs_match = re.search(rs_pat, text)
                     rs_num = found_rs_match.group(1) if found_rs_match else None
+
                     genotype_regex = r"\b([ACGT]{2,3})\b"
                     lines = text.split("\n")
                     found_pairs = []
@@ -958,10 +1115,12 @@ def page_analyze_paper():
                         if matches:
                             for m in matches:
                                 found_pairs.append((m, line.strip()))
+
                     unique_geno_pairs = []
                     for gp in found_pairs:
                         if gp not in unique_geno_pairs:
                             unique_geno_pairs.append(gp)
+
                     aff = AlleleFrequencyFinder()
                     freq_info = "Keine rsID vorhanden"
                     if rs_num:
@@ -970,13 +1129,16 @@ def page_analyze_paper():
                             data = aff.try_alternative_source(rs_num)
                         if data:
                             freq_info = aff.build_freq_info_text(data)
+
                     try:
                         wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
                     except FileNotFoundError:
                         st.error("Vorlage 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
                         return
+
                     ws = wb.active
                     next_row = ws.max_row + 1
+
                     ws.cell(row=next_row, column=1).value = fpdf.name
                     ws.cell(row=next_row, column=2).value = found_gene
                     ws.cell(row=next_row, column=3).value = rs_num
@@ -990,89 +1152,22 @@ def page_analyze_paper():
                     ws.cell(row=next_row, column=9).value = combined_relevance
                     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     ws.cell(row=next_row, column=10).value = now_str
+
                     output_buffer = io.BytesIO()
                     wb.save(output_buffer)
                     output_buffer.seek(0)
+
                     st.download_button(
                         label=f"Download Excel für {fpdf.name}",
                         data=output_buffer,
                         file_name=f"analysis_{fpdf.name.replace('.pdf', '')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
+
     st.write("---")
-    st.write("## Einzelanalyse der nach ChatGPT-Scoring ausgewählten Paper")
-    
-    # --- NEU: Button zum Abspeichern der gescorten Paper in SessionState ---
-    if "scored_list" not in st.session_state or not st.session_state["scored_list"]:
-        if "search_results" in st.session_state and st.session_state["search_results"]:
-            st.info("Es wurden noch keine gescorten Paper gespeichert. Scoring wird jetzt durchgeführt...")
-            if "codewords" not in st.session_state:
-                st.session_state["codewords"] = ""
-            if "selected_genes" not in st.session_state:
-                st.session_state["selected_genes"] = []
-            codewords_str = st.session_state.get("codewords", "")
-            selected_genes = st.session_state.get("selected_genes", [])
-            scored_list = chatgpt_online_search_with_genes(
-                papers=st.session_state["search_results"],
-                codewords=codewords_str,
-                genes=selected_genes,
-                top_k=200
-            )
-            st.session_state["scored_list"] = scored_list
-            st.success("Scored Paper erfolgreich in st.session_state['scored_list'] gespeichert!")
-        else:
-            st.info("Keine gescorten Paper vorhanden (st.session_state['scored_list']).")
-            return
+    st.subheader("2) Optionale PaperQA Multi-Paper Analyzer-Funktion")
+    paperqa_multi_analyzer_ui()  # <-- Einbinden der PaperQA-Logik
 
-    st.subheader("Einzelanalyse der nach ChatGPT-Scoring ausgewählten Paper")
-    scored_titles = [paper["Title"] for paper in st.session_state["scored_list"]]
-    chosen_title = st.selectbox(
-        "Wähle ein Paper aus der Scoring-Liste:",
-        options=["(Bitte wählen)"] + scored_titles
-    )
-    if chosen_title != "(Bitte wählen)":
-        selected_paper = next((p for p in st.session_state["scored_list"] if p["Title"] == chosen_title), None)
-        if selected_paper:
-            st.write("**Titel:** ", selected_paper.get("Title", "n/a"))
-            st.write("**Quelle:** ", selected_paper.get("Source", "n/a"))
-            st.write("**PubMed ID:** ", selected_paper.get("PubMed ID", "n/a"))
-            st.write("**Jahr:** ", selected_paper.get("Year", "n/a"))
-            st.write("**Publisher:** ", selected_paper.get("Publisher", "n/a"))
-            st.write("**Abstract:**")
-            st.markdown(f"> {selected_paper.get('Abstract', 'n/a')}")
-            
-            # NEU: Button für PaperQA Analyse
-            if st.button("PaperQA Analyse durchführen"):
-                abstract = selected_paper.get("Abstract", "")
-                if not abstract.strip():
-                    st.error("Kein Abstract vorhanden, daher kann keine PaperQA Analyse durchgeführt werden.")
-                else:
-                    qa_prompt = (
-                        "Bitte führe eine detaillierte PaperQA Analyse für das folgende Abstract durch. "
-                        "Gib anschließend eine strukturierte Zusammenfassung der wichtigsten Punkte aus, "
-                        "die für die weitere Analyse relevant sind:\n\n" + abstract
-                    )
-                    try:
-                        openai.api_key = api_key
-                        qa_resp = openai.ChatCompletion.create(
-                            model="gpt-3.5-turbo",
-                            messages=[{"role": "user", "content": qa_prompt}],
-                            temperature=0.3,
-                            max_tokens=1000
-                        )
-                        qa_result = qa_resp.choices[0].message.content.strip()
-                        st.subheader("PaperQA Analyse Ergebnis:")
-                        st.write(qa_result)
-                    except Exception as e:
-                        st.error("Fehler bei PaperQA Analyse: " + str(e))
-        else:
-            st.warning("Paper nicht gefunden (unerwarteter Fehler).")
-    else:
-        st.info("Bitte wählen Sie ein Paper aus der Liste aus.")
-
-# ------------------------------------------------------------------
-# Sidebar Navigation und Chatbot
-# ------------------------------------------------------------------
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
     pages = {
@@ -1084,16 +1179,22 @@ def sidebar_module_navigation():
     for label, page in pages.items():
         if st.sidebar.button(label, key=label):
             st.session_state["current_page"] = label
+
     if "current_page" not in st.session_state:
         st.session_state["current_page"] = "Home"
     return pages.get(st.session_state["current_page"], page_home)
 
 def answer_chat(question: str) -> str:
-    """Einfaches Beispiel: Nutzt Paper-Text (falls vorhanden) aus st.session_state + GPT."""
+    """
+    Einfaches Beispiel: Nutzt Paper-Text (falls vorhanden) aus st.session_state + GPT.
+    (Unverändert)
+    """
     api_key = st.session_state.get("api_key", "")
     paper_text = st.session_state.get("paper_text", "")
+    
     if not api_key:
         return f"(Kein API-Key) Echo: {question}"
+    
     if not paper_text.strip():
         sys_msg = "Du bist ein hilfreicher Assistent für allgemeine Fragen."
     else:
@@ -1102,6 +1203,7 @@ def answer_chat(question: str) -> str:
             + paper_text[:12000] + "\n\n"
             "Bitte nutze es, um Fragen möglichst fachkundig zu beantworten."
         )
+    
     openai.api_key = api_key
     try:
         response = openai.ChatCompletion.create(
@@ -1134,6 +1236,7 @@ def main():
             border-radius: 4px;
             background-color: #f9f9f9;
         }
+        
         .message {
             padding: 0.5rem 1rem;
             border-radius: 15px;
@@ -1155,21 +1258,27 @@ def main():
         """,
         unsafe_allow_html=True
     )
+
     col_left, col_right = st.columns([4, 1])
+    
     with col_left:
         page_fn = sidebar_module_navigation()
         if page_fn is not None:
             page_fn()
+
     with col_right:
         st.subheader("Chatbot")
+
         if "chat_history" not in st.session_state:
             st.session_state["chat_history"] = []
+
         user_input = st.text_input("Deine Frage hier", key="chatbot_right_input")
         if st.button("Absenden (Chat)", key="chatbot_right_send"):
             if user_input.strip():
                 st.session_state["chat_history"].append(("user", user_input))
                 bot_answer = answer_chat(user_input)
                 st.session_state["chat_history"].append(("bot", bot_answer))
+
         st.markdown('<div class="scrollable-chat" id="chat-container">', unsafe_allow_html=True)
         for role, msg_text in st.session_state["chat_history"]:
             if role == "user":
@@ -1183,6 +1292,8 @@ def main():
                     unsafe_allow_html=True
                 )
         st.markdown('</div>', unsafe_allow_html=True)
+
+        # Auto-Scroll
         st.markdown(
             """
             <script>
