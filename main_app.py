@@ -28,6 +28,20 @@ import openpyxl
 from google_trans_new import google_translator
 
 # ------------------------------------------------------------------
+# Hilfsfunktion: Setzt einen Zellwert, auch wenn die Zelle zusammengeführt (merged) ist.
+# ------------------------------------------------------------------
+def set_cell_value(ws, row, col, value):
+    """
+    Schreibt den Wert in die Zelle (row, col). Falls die Zelle Teil eines zusammengeführten Bereichs ist,
+    wird der Wert in die oberste linke Zelle dieser Merge-Region geschrieben.
+    """
+    for merged_range in ws.merged_cells.ranges:
+        if (row, col) in merged_range:
+            ws.cell(row=merged_range.min_row, column=merged_range.min_col).value = value
+            return
+    ws.cell(row=row, column=col).value = value
+
+# ------------------------------------------------------------------
 # Umgebungsvariablen laden (für OPENAI_API_KEY, falls vorhanden)
 # ------------------------------------------------------------------
 load_dotenv()
@@ -90,7 +104,6 @@ def translate_text_openai(text, source_language, target_language, api_key):
             temperature=0
         )
         translation = response.choices[0].message.content.strip()
-        # Entfernt führende/abschließende Anführungszeichen
         if translation and translation[0] in ["'", '"', "‘", "„"]:
             translation = translation[1:]
             if translation and translation[-1] in ["'", '"']:
@@ -116,17 +129,11 @@ class CoreAPI:
             params["filter"] = ",".join(filter_expressions)
         if sort:
             params["sort"] = sort
-        r = requests.get(
-            self.base_url + endpoint,
-            headers=self.headers,
-            params=params,
-            timeout=15
-        )
+        r = requests.get(self.base_url + endpoint, headers=self.headers, params=params, timeout=15)
         r.raise_for_status()
         return r.json()
 
 def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", timeout=15):
-    """Check, ob CORE aggregator erreichbar ist."""
     try:
         core = CoreAPI(api_key)
         result = core.search_publications("test", limit=1)
@@ -135,7 +142,6 @@ def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", 
         return False
 
 def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
-    """Einfache Suche in CORE aggregator."""
     if not api_key:
         return []
     try:
@@ -162,7 +168,6 @@ def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
 # 2) PubMed - Einfacher Check + Search
 # ------------------------------------------------------------------
 def check_pubmed_connection(timeout=10):
-    """Kurzer Verbindungstest zu PubMed."""
     test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": "test", "retmode": "json"}
     try:
@@ -174,7 +179,6 @@ def check_pubmed_connection(timeout=10):
         return False
 
 def search_pubmed_simple(query):
-    """Kurze Suche (nur Titel/Journal/Year) in PubMed."""
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 100}
     out = []
@@ -208,7 +212,6 @@ def search_pubmed_simple(query):
         return []
 
 def fetch_pubmed_abstract(pmid):
-    """Holt den Abstract via efetch für eine gegebene PubMed-ID."""
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
     params = {"db": "pubmed", "id": pmid, "retmode": "xml"}
     try:
@@ -230,7 +233,6 @@ def fetch_pubmed_abstract(pmid):
 # 3) Europe PMC Check + Search
 # ------------------------------------------------------------------
 def check_europe_pmc_connection(timeout=10):
-    """Check, ob Europe PMC erreichbar ist."""
     test_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {"query": "test", "format": "json", "pageSize": 100}
     try:
@@ -242,14 +244,8 @@ def check_europe_pmc_connection(timeout=10):
         return False
 
 def search_europe_pmc_simple(query):
-    """Kurze Suche in Europe PMC."""
     url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
-    params = {
-        "query": query,
-        "format": "json",
-        "pageSize": 100,
-        "resultType": "core"
-    }
+    params = {"query": query, "format": "json", "pageSize": 100, "resultType": "core"}
     out = []
     try:
         r = requests.get(url, params=params, timeout=10)
@@ -294,7 +290,6 @@ def fetch_openalex_data(entity_type, entity_id=None, params=None):
         return None
 
 def search_openalex_simple(query):
-    """Kurze Version: Liest die rohen Daten, prüft nur, ob was zurückkommt."""
     search_params = {"search": query}
     return fetch_openalex_data("works", params=search_params)
 
@@ -332,7 +327,6 @@ class GoogleScholarSearch:
 # 6) Semantic Scholar
 # ------------------------------------------------------------------
 def check_semantic_scholar_connection(timeout=10):
-    """Verbindungstest zu Semantic Scholar."""
     try:
         url = "https://api.semanticscholar.org/graph/v1/paper/search"
         params = {"query": "test", "limit": 1, "fields": "title"}
@@ -379,7 +373,6 @@ class SemanticScholarSearch:
 # ------------------------------------------------------------------
 # 7) Excel Online Search - Placeholder
 # ------------------------------------------------------------------
-# (Hier könnte Ihr Modul code stehen, falls benötigt)
 
 # ------------------------------------------------------------------
 # 8) Weitere Module + Seiten
@@ -446,7 +439,6 @@ class PaperAnalyzer:
         self.model = model
     
     def extract_text_from_pdf(self, pdf_file):
-        """Extrahiert reinen Text via PyPDF2 (ggf. OCR nötig, falls PDF nicht durchsuchbar)."""
         reader = PyPDF2.PdfReader(pdf_file)
         text = ""
         for page in reader.pages:
@@ -456,7 +448,6 @@ class PaperAnalyzer:
         return text
     
     def analyze_with_openai(self, text, prompt_template, api_key):
-        """Hilfsfunktion, um OpenAI per ChatCompletion aufzurufen."""
         import openai
         openai.api_key = api_key
         if len(text) > 15000:
@@ -474,7 +465,6 @@ class PaperAnalyzer:
         return response.choices[0].message.content
     
     def summarize(self, text, api_key):
-        """Erstellt eine Zusammenfassung in Deutsch."""
         prompt = (
             "Erstelle eine strukturierte Zusammenfassung des folgenden wissenschaftlichen Papers. "
             "Gliedere sie in mindestens vier klar getrennte Abschnitte (z.B. 1. Hintergrund, 2. Methodik, 3. Ergebnisse, 4. Schlussfolgerungen). "
@@ -483,7 +473,6 @@ class PaperAnalyzer:
         return self.analyze_with_openai(text, prompt, api_key)
     
     def extract_key_findings(self, text, api_key):
-        """Extrahiere die 5 wichtigsten Erkenntnisse."""
         prompt = (
             "Extrahiere die 5 wichtigsten Erkenntnisse aus diesem wissenschaftlichen Paper. "
             "Liste sie mit Bulletpoints auf:\n\n{text}"
@@ -491,7 +480,6 @@ class PaperAnalyzer:
         return self.analyze_with_openai(text, prompt, api_key)
     
     def identify_methods(self, text, api_key):
-        """Ermittelt genutzte Methoden und Techniken."""
         prompt = (
             "Identifiziere und beschreibe die im Paper verwendeten Methoden und Techniken. "
             "Gib zu jeder Methode eine kurze Erklärung:\n\n{text}"
@@ -499,7 +487,6 @@ class PaperAnalyzer:
         return self.analyze_with_openai(text, prompt, api_key)
     
     def evaluate_relevance(self, text, topic, api_key):
-        """Bewertet die Relevanz zum Thema (Skala 1-10)."""
         prompt = (
             f"Bewerte die Relevanz dieses Papers für das Thema '{topic}' auf einer Skala von 1-10. "
             f"Begründe deine Bewertung:\n\n{{text}}"
@@ -511,10 +498,9 @@ class AlleleFrequencyFinder:
     def __init__(self):
         self.ensembl_server = "https://rest.ensembl.org"
         self.max_retries = 3
-        self.retry_delay = 2  # Sekunden zwischen Wiederholungsversuchen
+        self.retry_delay = 2
 
     def get_allele_frequencies(self, rs_id: str, retry_count: int = 0) -> Optional[Dict[str, Any]]:
-        """Holt Allelfrequenzen von Ensembl."""
         if not rs_id.startswith("rs"):
             rs_id = f"rs{rs_id}"
         endpoint = f"/variation/human/{rs_id}?pops=1"
@@ -541,7 +527,6 @@ class AlleleFrequencyFinder:
         return None
     
     def build_freq_info_text(self, data: Dict[str, Any]) -> str:
-        """Erzeugt einen kurzen Text über Allelfrequenzen."""
         if not data:
             return "Keine Daten von Ensembl"
         maf = data.get("MAF", None)
@@ -562,7 +547,6 @@ class AlleleFrequencyFinder:
         return " | ".join(out)
 
 def split_summary(summary_text):
-    """Versucht 'Ergebnisse' und 'Schlussfolgerungen' zu splitten."""
     pattern = re.compile(
         r'(Ergebnisse(?:\:|\s*\n)|Resultate(?:\:|\s*\n))(?P<results>.*?)(Schlussfolgerungen(?:\:|\s*\n)|Fazit(?:\:|\s*\n))(?P<conclusion>.*)',
         re.IGNORECASE | re.DOTALL
@@ -576,7 +560,6 @@ def split_summary(summary_text):
         return summary_text, ""
 
 def parse_cohort_info(summary_text: str) -> dict:
-    """Parst grobe Infos zur Kohorte (Anzahl Patienten, Herkunft etc.) aus deutschem Summary."""
     info = {"study_size": "", "origin": ""}
     pattern_both = re.compile(
         r"(\d+)\s*Patient(?:en)?(?:[^\d]+)(\d+)\s*gesunde\s*Kontroll(?:personen)?",
@@ -599,7 +582,7 @@ def parse_cohort_info(summary_text: str) -> dict:
     return info
 
 # ------------------------------------------------------------------
-# NEUER Bereich: Definition der Funktion chatgpt_online_search_with_genes
+# NEUER Bereich: ChatGPT-Scoring (Codewörter + Gene)
 # ------------------------------------------------------------------
 def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
@@ -652,12 +635,11 @@ Gib mir eine Zahl von 0 bis 100 (Relevanz), wobei sowohl Codewörter als auch Ge
     return scored_results[:top_k]
 
 # ------------------------------------------------------------------
-# NEUER Bereich: Funktion zur Analyse von Gemeinsamkeiten & Widersprüchen
+# NEUER Bereich: Analyse von Gemeinsamkeiten & Widersprüchen
 # ------------------------------------------------------------------
 def analyze_papers_for_commonalities_and_contradictions(pdf_texts: Dict[str, str], api_key: str, model: str, method_choice: str = "Standard"):
     import openai
     openai.api_key = api_key
-
     all_claims = {}
     for fname, txt in pdf_texts.items():
         prompt_claims = f"""
@@ -688,17 +670,12 @@ Text: {txt[:6000]}
         except Exception as e:
             st.error(f"Fehler beim Claims-Extrahieren in {fname}: {e}")
             all_claims[fname] = []
-
     merged_claims = []
     for fname, cllist in all_claims.items():
         for cobj in cllist:
             ctext = cobj.get("claim", "(leer)")
-            merged_claims.append({
-                "paper": fname,
-                "claim": ctext
-            })
+            merged_claims.append({"paper": fname, "claim": ctext})
     big_input_str = json.dumps(merged_claims, ensure_ascii=False, indent=2)
-
     if method_choice == "ContraCrow":
         final_prompt = f"""
 Nutze die ContraCrow-Methodik, um die folgenden Claims (Aussagen) aus mehreren wissenschaftlichen PDF-Papers zu analysieren. 
@@ -753,7 +730,7 @@ Hier die Claims:
         return f"Fehler bei Gemeinsamkeiten/Widersprüche: {e}"
 
 # ------------------------------------------------------------------
-# 8) Seite: Analyze Paper (inkl. PaperQA Multi-Paper Analyzer)
+# Seite: Analyze Paper (inkl. PaperQA Multi-Paper Analyzer)
 # ------------------------------------------------------------------
 def page_analyze_paper():
     st.title("Analyze Paper - Integriert")
@@ -765,24 +742,16 @@ def page_analyze_paper():
     new_key_value = st.sidebar.text_input("OpenAI API Key", type="password", value=st.session_state["api_key"])
     st.session_state["api_key"] = new_key_value
     
-    model = st.sidebar.selectbox(
-        "OpenAI-Modell",
-        ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4"],
-        index=0
-    )
+    model = st.sidebar.selectbox("OpenAI-Modell", ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4"], index=0)
     
     analysis_method = st.sidebar.selectbox("Analyse-Methode (Gemeinsamkeiten & Widersprüche)", ["Standard GPT", "ContraCrow"])
-    
     compare_mode = st.sidebar.checkbox("Alle Paper gemeinsam vergleichen (Outlier ausschließen)?")
-    
     theme_mode = st.sidebar.radio("Hauptthema bestimmen", ["Manuell", "GPT"])
-    
     action = st.sidebar.radio(
         "Analyseart",
         ["Zusammenfassung", "Wichtigste Erkenntnisse", "Methoden & Techniken", "Relevanz-Bewertung", "Tabellen & Grafiken"],
         index=0
     )
-    
     user_defined_theme = ""
     if theme_mode == "Manuell":
         user_defined_theme = st.sidebar.text_input("Manuelles Hauptthema (bei Compare-Mode)")
@@ -796,361 +765,87 @@ def page_analyze_paper():
     
     if "paper_texts" not in st.session_state:
         st.session_state["paper_texts"] = {}
-    
     if "relevant_papers_compare" not in st.session_state:
         st.session_state["relevant_papers_compare"] = None
     if "theme_compare" not in st.session_state:
         st.session_state["theme_compare"] = ""
     
+    # Dummy-Outlier-Logik (Platzhalter)
     def do_outlier_logic(paper_map: dict) -> (list, str):
-        if theme_mode == "Manuell":
-            main_theme = user_defined_theme.strip()
-            if not main_theme:
-                st.error("Bitte ein manuelles Hauptthema eingeben!")
-                return ([], "")
-            snippet_list = []
-            for name, txt_data in paper_map.items():
-                snippet = txt_data[:700].replace("\n", " ")
-                snippet_list.append(f'{{"filename": "{name}", "snippet": "{snippet}"}}')
-            big_snippet = ",\n".join(snippet_list)
-            big_input = f"""
-Der Nutzer hat folgendes Hauptthema definiert: '{main_theme}'.
-
-Hier sind mehrere Paper in JSON-Form. Entscheide pro Paper, ob es zu diesem Thema passt oder nicht.
-Gib mir am Ende ein JSON-Format zurück:
-
-{{
-  "theme": "du wiederholst das user-defined theme",
-  "papers": [
-    {{"filename": "...", "relevant": true/false, "reason": "Kurzer Grund"}}
-  ]
-}}
-
-Nur das JSON, ohne weitere Erklärungen.
-
-[{big_snippet}]
-"""
-            try:
-                openai.api_key = api_key
-                scope_resp = openai.ChatCompletion.create(
-                    model=model,
-                    messages=[
-                        {"role": "system", "content": "Du checkst Paper-Snippets auf Relevanz zum user-Thema."},
-                        {"role": "user", "content": big_input}
-                    ],
-                    temperature=0.0,
-                    max_tokens=1800
-                )
-                scope_decision = scope_resp.choices[0].message.content
-            except Exception as e1:
-                st.error(f"GPT-Fehler bei Compare-Mode (Manuell): {e1}")
-                return ([], "")
-            st.markdown("#### GPT-Ausgabe (Outlier-Check / Manuell):")
-            st.code(scope_decision, language="json")
-            json_str = scope_decision.strip()
-            if json_str.startswith("```"):
-                json_str = re.sub(r"```[\w]*\n?", "", json_str)
-                json_str = re.sub(r"\n?```", "", json_str)
-            try:
-                data_parsed = json.loads(json_str)
-                papers_info = data_parsed.get("papers", [])
-            except Exception as parse_e:
-                st.error(f"Fehler beim JSON-Parsing: {parse_e}")
-                return ([], "")
-            st.write(f"**Hauptthema (Manuell)**: {main_theme}")
-            relevant_papers_local = []
-            st.write("**Paper-Einstufung**:")
-            for p in papers_info:
-                fname = p.get("filename", "?")
-                rel = p.get("relevant", False)
-                reason = p.get("reason", "(none)")
-                if rel:
-                    relevant_papers_local.append(fname)
-                    st.success(f"{fname} => relevant. Begründung: {reason}")
-                else:
-                    st.warning(f"{fname} => NICHT relevant. Begründung: {reason}")
-            return (relevant_papers_local, main_theme)
-        else:
-            snippet_list = []
-            for name, txt_data in paper_map.items():
-                snippet = txt_data[:700].replace("\n", " ")
-                snippet_list.append(f'{{"filename": "{name}", "snippet": "{snippet}"}}')
-            big_snippet = ",\n".join(snippet_list)
-            big_input = f"""
-Hier sind mehrere Paper in JSON-Form. Bitte ermittele das gemeinsame Hauptthema.
-Dann antworte mir in folgendem JSON-Format: 
-{{
-  "main_theme": "Kurzbeschreibung des gemeinsamen Themas",
-  "papers": [
-    {{"filename":"...","relevant":true/false,"reason":"Kurzer Grund"}}
-  ]
-}}
-
-Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
-
-[{big_snippet}]
-"""
-            try:
-                openai.api_key = api_key
-                scope_resp = openai.ChatCompletion.create(
-                    model=model,
-                    messages=[
-                        {"role": "system", "content": "Du bist ein Assistent, der Paper thematisch filtert."},
-                        {"role": "user", "content": big_input}
-                    ],
-                    temperature=0.0,
-                    max_tokens=1800
-                )
-                scope_decision = scope_resp.choices[0].message.content
-            except Exception as e1:
-                st.error(f"GPT-Fehler bei Compare-Mode: {e1}")
-                return ([], "")
-            st.markdown("#### GPT-Ausgabe (Outlier-Check / GPT):")
-            st.code(scope_decision, language="json")
-            json_str = scope_decision.strip()
-            if json_str.startswith("```"):
-                json_str = re.sub(r"```[\w]*\n?", "", json_str)
-                json_str = re.sub(r"\n?```", "", json_str)
-            try:
-                data_parsed = json.loads(json_str)
-                main_theme = data_parsed.get("main_theme", "No theme extracted.")
-                papers_info = data_parsed.get("papers", [])
-            except Exception as parse_e:
-                st.error(f"Fehler beim JSON-Parsing: {parse_e}")
-                return ([], "")
-            st.write(f"**Hauptthema (GPT)**: {main_theme}")
-            relevant_papers_local = []
-            st.write("**Paper-Einstufung**:")
-            for p in papers_info:
-                fname = p.get("filename", "?")
-                rel = p.get("relevant", False)
-                reason = p.get("reason", "(none)")
-                if rel:
-                    relevant_papers_local.append(fname)
-                    st.success(f"{fname} => relevant. Begründung: {reason}")
-                else:
-                    st.warning(f"{fname} => NICHT relevant. Begründung: {reason}")
-            return (relevant_papers_local, main_theme)
-
+        # Hier werden alle Paper als relevant betrachtet, Hauptthema wird als Dummy zurückgegeben.
+        return list(paper_map.keys()), "Dummy-Hauptthema"
+    
+    # ------------------------- Einzel-/Multi-Modus (kein Outlier-Check) -------------------------
     if uploaded_files and api_key:
-        if compare_mode:
-            st.write("### Vergleichsmodus: Outlier-Paper ausschließen")
-            if st.button("Vergleichs-Analyse starten"):
-                paper_map = {}
-                for fpdf in uploaded_files:
-                    txt = analyzer.extract_text_from_pdf(fpdf)
-                    if txt.strip():
-                        paper_map[fpdf.name] = txt
-                    else:
-                        st.warning(f"Kein Text aus {fpdf.name} extrahierbar (übersprungen).")
-                if not paper_map:
-                    st.error("Keine verwertbaren Paper.")
-                    return
-                relevant_papers, discovered_theme = do_outlier_logic(paper_map)
-                st.session_state["relevant_papers_compare"] = relevant_papers
-                st.session_state["theme_compare"] = discovered_theme
-                if not relevant_papers:
-                    st.error("Keine relevanten Paper nach Outlier-Check übrig.")
-                    return
-                combined_text = ""
-                for rp in relevant_papers:
-                    combined_text += f"\n=== {rp} ===\n{paper_map[rp]}"
-                if action == "Tabellen & Grafiken":
-                    final_result = "Tabellen & Grafiken nicht im kombinierten Compare-Mode implementiert."
+        st.write("### Einzel- oder Multi-Modus (kein Outlier-Check)")
+        pdf_options = ["(Alle)"] + [f"{i+1}) {f.name}" for i, f in enumerate(uploaded_files)]
+        selected_pdf = st.selectbox("Wähle eine PDF für Einzel-Analyse oder '(Alle)'", pdf_options)
+        
+        col_analysis, col_contradiction = st.columns(2)
+        
+        with col_analysis:
+            if st.button("Analyse starten (Einzel-Modus)"):
+                if selected_pdf == "(Alle)":
+                    files_to_process = uploaded_files
                 else:
+                    idx = pdf_options.index(selected_pdf) - 1
+                    if idx < 0:
+                        st.warning("Keine Datei ausgewählt.")
+                        return
+                    files_to_process = [uploaded_files[idx]]
+                final_result_text = []
+                for fpdf in files_to_process:
+                    text_data = ""
+                    if action != "Tabellen & Grafiken":
+                        with st.spinner(f"Extrahiere Text aus {fpdf.name}..."):
+                            text_data = analyzer.extract_text_from_pdf(fpdf)
+                            if not text_data.strip():
+                                st.error(f"Kein Text aus {fpdf.name} extrahierbar.")
+                                continue
+                            st.success(f"Text aus {fpdf.name} extrahiert!")
+                            st.session_state["paper_text"] = text_data[:15000]
+                    result = ""
                     if action == "Zusammenfassung":
-                        final_result = analyzer.summarize(combined_text, api_key)
+                        with st.spinner(f"Erstelle Zusammenfassung für {fpdf.name}..."):
+                            result = analyzer.summarize(text_data, api_key)
                     elif action == "Wichtigste Erkenntnisse":
-                        final_result = analyzer.extract_key_findings(combined_text, api_key)
+                        with st.spinner(f"Extrahiere Erkenntnisse aus {fpdf.name}..."):
+                            result = analyzer.extract_key_findings(text_data, api_key)
                     elif action == "Methoden & Techniken":
-                        final_result = analyzer.identify_methods(combined_text, api_key)
+                        with st.spinner(f"Identifiziere Methoden aus {fpdf.name}..."):
+                            result = analyzer.identify_methods(text_data, api_key)
                     elif action == "Relevanz-Bewertung":
                         if not topic:
                             st.error("Bitte Thema angeben!")
                             return
-                        final_result = analyzer.evaluate_relevance(combined_text, topic, api_key)
-                    else:
-                        final_result = "(Keine Analyseart gewählt.)"
-                if output_lang != "Deutsch":
-                    lang_map = {"Englisch": "English", "Portugiesisch": "Portuguese", "Serbisch": "Serbian"}
-                    target_lang = lang_map.get(output_lang, "English")
-                    final_result = translate_text_openai(final_result, "German", target_lang, api_key)
-                st.subheader("Ergebnis des Compare-Mode:")
-                st.write(final_result)
-        else:
-            st.write("### Einzel- oder Multi-Modus (kein Outlier-Check)")
-            
-            pdf_options = ["(Alle)"] + [f"{i+1}) {f.name}" for i, f in enumerate(uploaded_files)]
-            selected_pdf = st.selectbox("Wähle eine PDF für Einzel-Analyse oder '(Alle)'", pdf_options)
-            
-            col_analysis, col_contradiction = st.columns(2)
-
-            with col_analysis:
-                if st.button("Analyse starten (Einzel-Modus)"):
-                    if selected_pdf == "(Alle)":
-                        files_to_process = uploaded_files
-                    else:
-                        idx = pdf_options.index(selected_pdf) - 1
-                        if idx < 0:
-                            st.warning("Keine Datei ausgewählt.")
-                            return
-                        files_to_process = [uploaded_files[idx]]
-                    final_result_text = []
-                    for fpdf in files_to_process:
-                        text_data = ""
-                        if action != "Tabellen & Grafiken":
-                            with st.spinner(f"Extrahiere Text aus {fpdf.name}..."):
-                                text_data = analyzer.extract_text_from_pdf(fpdf)
-                                if not text_data.strip():
-                                    st.error(f"Kein Text aus {fpdf.name} extrahierbar.")
-                                    continue
-                                st.success(f"Text aus {fpdf.name} extrahiert!")
-                                st.session_state["paper_text"] = text_data[:15000]
-                        result = ""
-                        if action == "Zusammenfassung":
-                            with st.spinner(f"Erstelle Zusammenfassung für {fpdf.name}..."):
-                                result = analyzer.summarize(text_data, api_key)
-                        elif action == "Wichtigste Erkenntnisse":
-                            with st.spinner(f"Extrahiere Erkenntnisse aus {fpdf.name}..."):
-                                result = analyzer.extract_key_findings(text_data, api_key)
-                        elif action == "Methoden & Techniken":
-                            with st.spinner(f"Identifiziere Methoden aus {fpdf.name}..."):
-                                result = analyzer.identify_methods(text_data, api_key)
-                        elif action == "Relevanz-Bewertung":
-                            if not topic:
-                                st.error("Bitte Thema angeben!")
-                                return
-                            with st.spinner(f"Bewerte Relevanz von {fpdf.name}..."):
-                                result = analyzer.evaluate_relevance(text_data, topic, api_key)
-                        elif action == "Tabellen & Grafiken":
-                            with st.spinner(f"Suche Tabellen/Grafiken in {fpdf.name}..."):
-                                all_tables_text = []
-                                try:
-                                    with pdfplumber.open(fpdf) as pdf_:
-                                        for page_number, page in enumerate(pdf_.pages, start=1):
-                                            st.markdown(f"### Seite {page_number} in {fpdf.name}")
-                                            tables = page.extract_tables()
-                                            if tables:
-                                                st.markdown("**Tabellen auf dieser Seite**")
-                                                for table_idx, table_data in enumerate(tables, start=1):
-                                                    if not table_data:
-                                                        st.write("Leere Tabelle erkannt.")
-                                                        continue
-                                                    first_row = table_data[0]
-                                                    data_rows = table_data[1:]
-                                                    if not data_rows:
-                                                        st.write("Nur Header vorhanden.")
-                                                        data_rows = table_data
-                                                        first_row = [f"Col_{i}" for i in range(len(data_rows[0]))]
-                                                    import pandas as pd
-                                                    new_header = []
-                                                    used_cols = {}
-                                                    for col in first_row:
-                                                        col_str = col if col else "N/A"
-                                                        if col_str not in used_cols:
-                                                            used_cols[col_str] = 1
-                                                            new_header.append(col_str)
-                                                        else:
-                                                            used_cols[col_str] += 1
-                                                            new_header.append(f"{col_str}.{used_cols[col_str]}")
-                                                    if any(len(row) != len(new_header) for row in data_rows):
-                                                        st.write("Warnung: Inkonsistente Spaltenanzahl.")
-                                                        df = pd.DataFrame(table_data)
-                                                    else:
-                                                        df = pd.DataFrame(data_rows, columns=new_header)
-                                                    st.write(f"**Tabelle {table_idx}** in {fpdf.name}:")
-                                                    st.dataframe(df)
-                                                    table_str = df.to_csv(index=False)
-                                                    all_tables_text.append(f"Seite {page_number} - Tabelle {table_idx}\n{table_str}\n")
-                                            else:
-                                                st.write("Keine Tabellen hier.")
-                                            images = page.images
-                                            if images:
-                                                st.markdown("**Bilder/Grafiken auf dieser Seite**")
-                                                for img_index, img_dict in enumerate(images, start=1):
-                                                    xref = img_dict.get("xref")
-                                                    if xref is not None:
-                                                        extracted_img = page.extract_image(xref)
-                                                        if extracted_img:
-                                                            image_data = extracted_img["image"]
-                                                            image = Image.open(io.BytesIO(image_data))
-                                                            st.write(f"**Bild {img_index}** in {fpdf.name}:")
-                                                            st.image(image, use_column_width=True)
-                                                        else:
-                                                            st.write(f"Bild {img_index} konnte nicht extrahiert werden.")
-                                            else:
-                                                st.write("Keine Bilder hier.")
-                                    # Volltextsuche "Table"
-                                    st.markdown(f"### Volltext-Suche 'Table' in {fpdf.name}")
-                                    try:
-                                        text_all_pages = ""
-                                        with pdfplumber.open(fpdf) as pdf2:
-                                            for pg in pdf2.pages:
-                                                t_ = pg.extract_text() or ""
-                                                text_all_pages += t_ + "\n"
-                                        lines = text_all_pages.splitlines()
-                                        matches = [ln for ln in lines if "Table" in ln]
-                                        if matches:
-                                            st.write("Zeilen mit 'Table':")
-                                            for ln in matches:
-                                                st.write(f"- {ln}")
-                                        else:
-                                            st.write("Keine Erwähnung von 'Table'.")
-                                    except Exception as e2:
-                                        st.warning(f"Fehler bei Volltext-Suche 'Table': {e2}")
-                                    if len(all_tables_text) > 0:
-                                        combined_tables_text = "\n".join(all_tables_text)
-                                        if len(combined_tables_text) > 14000:
-                                            combined_tables_text = combined_tables_text[:14000] + "..."
-                                        gpt_prompt = (
-                                            "Bitte analysiere die folgenden Tabellen aus einem wissenschaftlichen PDF. "
-                                            "Fasse die wichtigsten Erkenntnisse zusammen und gib (wenn möglich) eine "
-                                            "kurze Interpretation in Bezug auf Lifestyle und Health Genetics:\n\n"
-                                            f"{combined_tables_text}"
-                                        )
-                                        try:
-                                            openai.api_key = api_key
-                                            gpt_resp = openai.ChatCompletion.create(
-                                                model=model,
-                                                messages=[
-                                                    {"role": "system", "content": "Du bist ein Experte für PDF-Tabellenanalyse."},
-                                                    {"role": "user", "content": gpt_prompt}
-                                                ],
-                                                temperature=0.3,
-                                                max_tokens=1000
-                                            )
-                                            result = gpt_resp.choices[0].message.content
-                                        except Exception as e2:
-                                            st.error(f"Fehler bei GPT-Tabellenanalyse: {str(e2)}")
-                                            result = "(Fehler bei GPT-Auswertung)"
-                                    else:
-                                        result = f"In {fpdf.name} keine Tabellen erkannt."
-                                except Exception as e_:
-                                    st.error(f"Fehler in {fpdf.name}: {str(e_)}")
-                                    result = f"(Fehler in {fpdf.name})"
-                        if action != "Tabellen & Grafiken" and result:
-                            if output_lang != "Deutsch":
-                                lang_map = {"Englisch": "English", "Portugiesisch": "Portuguese", "Serbisch": "Serbian"}
-                                target_lang = lang_map.get(output_lang, "English")
-                                result = translate_text_openai(result, "German", target_lang, api_key)
-                        final_result_text.append(f"**Ergebnis für {fpdf.name}:**\n\n{result}")
-                    st.subheader("Ergebnis der (Multi-)Analyse (Einzelmodus):")
-                    combined_output = "\n\n---\n\n".join(final_result_text)
-                    st.markdown(combined_output)
-
-            with col_contradiction:
-                st.write("Widerspruchsanalyse (Hochgeladene Paper)")
-                if st.button("Widerspruchsanalyse jetzt starten"):
-                    if "paper_texts" not in st.session_state or not st.session_state["paper_texts"]:
-                        st.session_state["paper_texts"] = {}
-                        for upf in uploaded_files:
-                            t_ = analyzer.extract_text_from_pdf(upf)
-                            if t_.strip():
-                                st.session_state["paper_texts"][upf.name] = t_
-                    paper_texts = st.session_state["paper_texts"]
-                    if not paper_texts:
-                        st.error("Keine Texte für die Widerspruchsanalyse vorhanden (hochgeladene Paper).")
-                        return
+                        with st.spinner(f"Bewerte Relevanz von {fpdf.name}..."):
+                            result = analyzer.evaluate_relevance(text_data, topic, api_key)
+                    elif action == "Tabellen & Grafiken":
+                        result = "(Tabellen & Grafiken noch nicht implementiert)"
+                    
+                    if action != "Tabellen & Grafiken" and result:
+                        if output_lang != "Deutsch":
+                            lang_map = {"Englisch": "English", "Portugiesisch": "Portuguese", "Serbisch": "Serbian"}
+                            target_lang = lang_map.get(output_lang, "English")
+                            result = translate_text_openai(result, "German", target_lang, api_key)
+                    final_result_text.append(f"**Ergebnis für {fpdf.name}:**\n\n{result}")
+                
+                st.subheader("Ergebnis der (Multi-)Analyse (Einzelmodus):")
+                combined_output = "\n\n---\n\n".join(final_result_text)
+                st.markdown(combined_output)
+        
+        with col_contradiction:
+            st.write("Widerspruchsanalyse (Hochgeladene Paper)")
+            if st.button("Widerspruchsanalyse jetzt starten"):
+                if not st.session_state["paper_texts"]:
+                    for upf in uploaded_files:
+                        t_ = analyzer.extract_text_from_pdf(upf)
+                        if t_.strip():
+                            st.session_state["paper_texts"][upf.name] = t_
+                paper_texts = st.session_state["paper_texts"]
+                if not paper_texts:
+                    st.error("Keine Texte für die Widerspruchsanalyse vorhanden (hochgeladene Paper).")
+                else:
                     with st.spinner("Analysiere hochgeladene Paper auf Gemeinsamkeiten & Widersprüche..."):
                         result_json_str = analyze_papers_for_commonalities_and_contradictions(
                             pdf_texts=paper_texts,
@@ -1158,7 +853,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                             model=model,
                             method_choice="ContraCrow" if analysis_method == "ContraCrow" else "Standard"
                         )
-                        st.subheader("Ergebnis (JSON)")
+                        st.subheader("Ergebnis der Widerspruchsanalyse (Hochgeladene Paper) (JSON)")
                         st.code(result_json_str, language="json")
                         try:
                             data_js = json.loads(result_json_str)
@@ -1187,11 +882,12 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
             st.warning("Bitte OpenAI API-Key eingeben!")
         elif not uploaded_files:
             st.info("Bitte eine oder mehrere PDF-Dateien hochladen!")
-
+    
+    # ------------------------- Excel-Ausgabe (Multi-PDF) -------------------------
     st.write("---")
     st.write("## Alle Analysen & Excel-Ausgabe (Multi-PDF)")
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
-
+    
     if uploaded_files and api_key:
         if st.button("Alle Analysen durchführen & in Excel speichern (Multi)"):
             with st.spinner("Analysiere alle hochgeladenen PDFs (für Excel)..."):
@@ -1210,14 +906,10 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         relevant_papers_auto, discovered_theme_auto = do_outlier_logic(paper_map_auto)
                         st.session_state["relevant_papers_compare"] = relevant_papers_auto
                         st.session_state["theme_compare"] = discovered_theme_auto
-                    relevant_list_for_excel = st.session_state["relevant_papers_compare"] or []
-                    if not relevant_list_for_excel:
-                        st.error("Keine relevanten Paper nach Outlier-Check für Excel.")
-                        return
-                    selected_files_for_excel = [f for f in uploaded_files if f.name in relevant_list_for_excel]
+                    selected_files_for_excel = [f for f in uploaded_files if f.name in st.session_state.get("relevant_papers_compare", [])]
                 else:
                     selected_files_for_excel = uploaded_files
-
+                
                 for fpdf in selected_files_for_excel:
                     text = analyzer.extract_text_from_pdf(fpdf)
                     if not text.strip():
@@ -1232,15 +924,16 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
                     methods_result = analyzer.identify_methods(text, api_key)
                     
+                    # Gene und Rs-ID extrahieren
                     pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                     match_text = re.search(pattern_obvious, text)
-                    gene_via_text = match_text.group(1) if match_text else None
-                    
-                    found_gene = gene_via_text
-                    rs_pat = r"(rs\d+)"
+                    gene_via_text = match_text.group(1) if match_text else ""
+                    found_gene = gene_via_text  # Genname in D5
+                    rs_pat = re.compile(r"(rs\d+)", re.IGNORECASE)
                     found_rs_match = re.search(rs_pat, text)
-                    rs_num = found_rs_match.group(1) if found_rs_match else None
+                    rs_num = found_rs_match.group(1) if found_rs_match else "n/a"  # Rs-Nummer in D6
                     
+                    # Genotypen ermitteln
                     genotype_regex = r"\b([ACGT]{2,3})\b"
                     lines = text.split("\n")
                     found_pairs = []
@@ -1254,57 +947,65 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         if gp not in unique_geno_pairs:
                             unique_geno_pairs.append(gp)
                     
+                    # Populationsfrequenz ermitteln
                     aff = AlleleFrequencyFinder()
                     freq_info = "Keine rsID vorhanden"
-                    if rs_num:
+                    if rs_num.lower() != "n/a":
                         data = aff.get_allele_frequencies(rs_num)
                         if not data:
                             data = aff.try_alternative_source(rs_num)
                         if data:
                             freq_info = aff.build_freq_info_text(data)
                     
-                    ergebnisse, schlussfolgerungen = split_summary(summary_de)
+                    # Zusammenfassung splitten
+                    results_text, conclusion_text = split_summary(summary_de)
                     cohort_data = parse_cohort_info(summary_de)
-                    study_size = cohort_data.get("study_size", "")
-                    origin = cohort_data.get("origin", "")
-                    if study_size or origin:
-                        cohort_info = f"{study_size}, {origin}".strip(", ")
-                    else:
-                        cohort_info = ""
-
+                    study_size = cohort_data.get("study_size", "N/A")
+                    
                     try:
                         wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
                     except FileNotFoundError:
                         st.error("Vorlage 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
                         return
                     ws = wb.active
-
-                    # Hier wird in Zelle row=5, column=5 der Wert rs_num eingetragen
-                    ws.cell(row=5, column=5).value = rs_num
-
-                    # Ansonsten alle anderen Zellen wie gewohnt
-                    ws.cell(row=2, column=4).value = st.session_state.get("theme_compare", "N/A")
-                    ws.cell(row=5, column=4).value = found_gene if found_gene else ""
                     
-                    # D10–D12 / E10–E12
+                    # Excel-Zuordnung gemäß neuer Vorgaben:
+                    # D2: Hauptthema (aus st.session_state["theme_compare"])
+                    set_cell_value(ws, 2, 4, st.session_state.get("theme_compare", "N/A"))
+                    
+                    # D5: Genname, E5: LEER (nichts schreiben)
+                    set_cell_value(ws, 5, 4, found_gene)
+                    set_cell_value(ws, 5, 5, "")  # Leerlassen
+                    
+                    # D6: Rs-Nummer
+                    set_cell_value(ws, 6, 4, rs_num)
+                    
+                    # D10: Erster Genotyp, E10: Populationsfrequenz
+                    # D11: Zweiter Genotyp, E11: Populationsfrequenz
+                    # D12: Dritter Genotyp, E12: Populationsfrequenz
                     for i in range(3):
                         row_index = 10 + i
                         if i < len(unique_geno_pairs):
-                            genotype_str = unique_geno_pairs[i][0]
-                            ws.cell(row=row_index, column=4).value = genotype_str
-                            ws.cell(row=row_index, column=5).value = freq_info
+                            set_cell_value(ws, row_index, 4, unique_geno_pairs[i][0])
                         else:
-                            ws.cell(row=row_index, column=4).value = ""
-                            ws.cell(row=row_index, column=5).value = ""
+                            set_cell_value(ws, row_index, 4, "")
+                        set_cell_value(ws, row_index, 5, freq_info)
+                    
+                    # C20: Datum der Publikation ("N/A")
+                    set_cell_value(ws, 20, 3, "N/A")
+                    # D20: Study Size
+                    set_cell_value(ws, 20, 4, study_size)
+                    # E20: Key Findings
+                    set_cell_value(ws, 20, 5, key_findings_result)
+                    # G21: Results
+                    set_cell_value(ws, 21, 7, results_text)
+                    # G22: Conclusion
+                    set_cell_value(ws, 22, 7, conclusion_text)
                     
                     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    ws.cell(row=2, column=10).value = now_str
-                    ws.cell(row=20, column=3).value = "N/A"
-                    ws.cell(row=20, column=4).value = cohort_info
-                    ws.cell(row=20, column=5).value = key_findings_result
-                    ws.cell(row=21, column=7).value = ergebnisse
-                    ws.cell(row=22, column=7).value = schlussfolgerungen
-
+                    # Optional: Falls Datum des Excel-Exports gewünscht in J2:
+                    set_cell_value(ws, 2, 10, now_str)
+                    
                     output_buffer = io.BytesIO()
                     wb.save(output_buffer)
                     output_buffer.seek(0)
@@ -1321,7 +1022,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
             st.warning("Bitte OpenAI API-Key eingeben!")
         elif not uploaded_files:
             st.info("Bitte eine oder mehrere PDF-Dateien hochladen!")
-
+    
     st.write("---")
     st.write("## Einzelanalyse der nach ChatGPT-Scoring ausgewählten Paper")
     if "scored_list" not in st.session_state or not st.session_state["scored_list"]:
@@ -1341,11 +1042,8 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
             st.info("Keine gescorten Paper vorhanden (st.session_state['scored_list']).")
             return
     st.subheader("Einzelanalyse der nach ChatGPT-Scoring ausgewählten Paper")
-    scored_titles = [paper["Title"] for paper in st.session_state["scored_list"]]
-    chosen_title = st.selectbox(
-        "Wähle ein Paper aus der Scoring-Liste:",
-        options=["(Bitte wählen)"] + scored_titles
-    )
+    scored_titles = [paper["Title"] for paper in st.session_state.get("scored_list", [])]
+    chosen_title = st.selectbox("Wähle ein Paper aus der Scoring-Liste:", options=["(Bitte wählen)"] + scored_titles)
     if chosen_title != "(Bitte wählen)":
         selected_paper = next((p for p in st.session_state["scored_list"] if p["Title"] == chosen_title), None)
         if selected_paper:
@@ -1362,7 +1060,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 st.warning(f"Kein Abstract für {selected_paper.get('Title', 'Unbenannt')} vorhanden.")
         else:
             st.warning("Paper nicht gefunden (unerwarteter Fehler).")
-
+    
     st.write("---")
     st.header("PaperQA Multi-Paper Analyzer: Gemeinsamkeiten & Widersprüche (Gescorte Paper)")
     if st.button("Analyse (Gescorte Paper) durchführen"):
@@ -1407,7 +1105,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         else:
                             st.info("Keine Widersprüche erkannt.")
                     except Exception as e:
-                        st.warning("Die GPT-Ausgabe konnte nicht als valides JSON geparst werden.")
+                        st.warning(f"Die GPT-Ausgabe konnte nicht als valides JSON geparst werden.\nFehler: {e}")
         else:
             st.error("Keine gescorten Paper vorhanden. Bitte zuerst Scoring durchführen.")
 
@@ -1430,7 +1128,6 @@ def sidebar_module_navigation():
     return pages.get(st.session_state["current_page"], page_home)
 
 def answer_chat(question: str) -> str:
-    """Einfaches Beispiel: Nutzt Paper-Text (falls vorhanden) aus st.session_state + GPT."""
     api_key = st.session_state.get("api_key", "")
     paper_text = st.session_state.get("paper_text", "")
     if not api_key:
@@ -1514,15 +1211,9 @@ def main():
         st.markdown('<div class="scrollable-chat" id="chat-container">', unsafe_allow_html=True)
         for role, msg_text in st.session_state["chat_history"]:
             if role == "user":
-                st.markdown(
-                    f'<div class="message user-message"><strong>Du:</strong> {msg_text}</div>',
-                    unsafe_allow_html=True
-                )
+                st.markdown(f'<div class="message user-message"><strong>Du:</strong> {msg_text}</div>', unsafe_allow_html=True)
             else:
-                st.markdown(
-                    f'<div class="message assistant-message"><strong>Bot:</strong> {msg_text}</div>',
-                    unsafe_allow_html=True
-                )
+                st.markdown(f'<div class="message assistant-message"><strong>Bot:</strong> {msg_text}</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
         st.markdown(
             """
