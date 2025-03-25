@@ -1320,9 +1320,8 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
             st.write("**Jahr:** ", selected_paper.get("Year", "n/a"))
             st.write("**Publisher:** ", selected_paper.get("Publisher", "n/a"))
             st.write("**Abstract:**")
-            # Hier wird nun geprüft, ob Abstract vorhanden ist, bevor .strip() aufgerufen wird:
-            abstract = selected_paper.get("Abstract", "")
-            if abstract and abstract.strip():
+            abstract = selected_paper.get("Abstract") or ""
+            if abstract.strip():
                 st.markdown(f"> {abstract}")
             else:
                 st.warning(f"Kein Abstract für {selected_paper.get('Title', 'Unbenannt')} vorhanden.")
@@ -1346,8 +1345,8 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
             paper_texts = {}
             for paper in st.session_state["scored_list"]:
                 title = paper.get("Title", "Unbenannt")
-                abstract = paper.get("Abstract", "")
-                if abstract and abstract.strip():
+                abstract = paper.get("Abstract") or ""
+                if abstract.strip():
                     paper_texts[title] = abstract
                 else:
                     st.warning(f"Kein Abstract für {title} vorhanden.")
