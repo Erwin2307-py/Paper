@@ -11,6 +11,7 @@ try:
 except ImportError:
     pass  # Falls Scholarly nicht installiert ist
 
+
 ###############################################################################
 # Hilfsfunktionen
 ###############################################################################
@@ -23,6 +24,9 @@ def load_profile(profile_name: str):
 
 # --- PubMed-Funktionen ---
 def esearch_pubmed(query: str, max_results=100, timeout=10):
+    """
+    Sucht via eSearch in PubMed und gibt eine Liste von PMID-Strings zurück.
+    """
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {
         "db": "pubmed",
@@ -40,6 +44,9 @@ def esearch_pubmed(query: str, max_results=100, timeout=10):
         return []
 
 def parse_efetch_response(xml_text: str) -> dict:
+    """
+    Parst die XML-Antwort von efetch und erzeugt ein Mapping: PMID -> Abstract.
+    """
     root = ET.fromstring(xml_text)
     pmid_abstract_map = {}
     for article in root.findall(".//PubmedArticle"):
@@ -52,6 +59,10 @@ def parse_efetch_response(xml_text: str) -> dict:
     return pmid_abstract_map
 
 def fetch_pubmed_abstracts(pmids, timeout=10):
+    """
+    Holt über efetch die Abstracts für die angegebenen PMID-Liste.
+    Gibt ein Dict pmid->abstract zurück.
+    """
     if not pmids:
         return {}
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
@@ -65,6 +76,10 @@ def fetch_pubmed_abstracts(pmids, timeout=10):
         return {}
 
 def get_pubmed_details(pmids: list):
+    """
+    Holt über eSummary Titel, Jahr, Journal etc. für die PMIDs
+    und merged das mit den via fetch_pubmed_abstracts geholten Abstracts.
+    """
     if not pmids:
         return []
     url_summary = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
@@ -104,13 +119,19 @@ def get_pubmed_details(pmids: list):
     return results
 
 def search_pubmed(query: str, max_results=100):
+    """Kombinierte PubMed-Suche: eSearch -> eSummary + eFetch(abstracts)."""
     pmids = esearch_pubmed(query, max_results=max_results)
     if not pmids:
         return []
     return get_pubmed_details(pmids)
 
+
 # --- Europe PMC ---
 def search_europe_pmc(query: str, max_results=100, timeout=10):
+    """
+    Sucht in Europe PMC und liefert eine Ergebnisliste mit
+    Title, PubMed ID, Abstract, DOI, Year, Publisher, Population.
+    """
     url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {"query": query, "format": "json", "pageSize": max_results}
     try:
@@ -138,8 +159,13 @@ def search_europe_pmc(query: str, max_results=100, timeout=10):
         st.error(f"Europe PMC-Suche fehlgeschlagen: {e}")
         return []
 
+
 # --- Google Scholar ---
 def search_google_scholar(query: str, max_results=100):
+    """
+    Sucht mithilfe von scholarly in Google Scholar.
+    ACHTUNG: Rate-Limiting möglich, bei Problemen ggf. reduzieren.
+    """
     results = []
     try:
         from scholarly import scholarly
@@ -165,8 +191,12 @@ def search_google_scholar(query: str, max_results=100):
         st.error(f"Google Scholar-Suche fehlgeschlagen: {e}")
         return []
 
+
 # --- Semantic Scholar ---
 def search_semantic_scholar(query: str, max_results=100):
+    """
+    Sucht in Semantic Scholar über deren öffentliche API.
+    """
     url = "https://api.semanticscholar.org/graph/v1/paper/search"
     params = {"query": query, "limit": max_results, "fields": "title,authors,year,abstract"}
     try:
@@ -192,8 +222,12 @@ def search_semantic_scholar(query: str, max_results=100):
         st.error(f"Semantic Scholar-Suche fehlgeschlagen: {e}")
         return []
 
+
 # --- OpenAlex ---
 def search_openalex(query: str, max_results=100):
+    """
+    Sucht via OpenAlex-API.
+    """
     url = "https://api.openalex.org/works"
     params = {"search": query, "per-page": max_results}
     results = []
@@ -221,8 +255,12 @@ def search_openalex(query: str, max_results=100):
         st.error(f"OpenAlex-Suche fehlgeschlagen: {e}")
         return results
 
-# --- CORE (falls gewünscht) ---
+
+# --- CORE ---
 def search_core(query: str, max_results=10):
+    """
+    Sucht via CORE API (falls KEY vorhanden).
+    """
     core_api_key = st.secrets.get("CORE_API_KEY", "")
     if not core_api_key:
         st.error("CORE API Key fehlt! Bitte in st.secrets['CORE_API_KEY'] hinterlegen.")
@@ -251,10 +289,10 @@ def search_core(query: str, max_results=10):
         st.error(f"CORE API Anfrage fehlgeschlagen: {e}")
         return []
 
+
 ###############################################################################
 # ChatGPT-Scoring mit Genes und Codewords
 ###############################################################################
-
 def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     """
     Lässt ChatGPT jedes Paper scoren (0-100) basierend auf Codewörtern + Genen.
@@ -276,10 +314,11 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     genes_str = ", ".join(genes) if genes else ""
 
     for idx, paper in enumerate(papers, start=1):
-        # Update Status: Zeige an, welches Paper aktuell verarbeitet wird.
+        # Update Status: Zeige an, welches Paper gerade verarbeitet wird.
         current_title = paper.get("Title", "n/a")
         status_text.text(f"Verarbeite Paper {idx}/{total}: {current_title}")
         progress.progress(idx / total)
+
         title = paper.get("Title", "n/a")
         abstract = paper.get("Abstract", "n/a")
 
@@ -316,13 +355,16 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     # Status-Platzhalter leeren, wenn fertig.
     status_text.empty()
     progress.empty()
+
+    # Sortieren nach Relevance
     scored_results.sort(key=lambda x: x["Relevance"], reverse=True)
+
     return scored_results[:top_k]
+
 
 ###############################################################################
 # Haupt-Funktion: Multi-API-Suche + ChatGPT
 ###############################################################################
-
 def module_codewords_pubmed():
     st.title("Modul 2: Multi-API-Suche + ChatGPT-Scoring (Profil-Übernahme)")
 
@@ -363,7 +405,6 @@ def module_codewords_pubmed():
     # NEU: Zusätzliches manuelles Codewort
     manual_codeword = st.text_input("Manuelles Codewort (optional) eingeben:")
     if manual_codeword.strip():
-        # Falls der Nutzer ein manuelles Codewort eingegeben hat, fügen wir es hinzu
         if codewords_str.strip():
             codewords_str += " " + manual_codeword.strip()
         else:
@@ -396,7 +437,7 @@ def module_codewords_pubmed():
 
         all_results = []
 
-        # Auf APIs loslassen
+        # APIs aufrufen
         if use_pubmed:
             pm = search_pubmed(query_str, max_results=150)
             st.write(f"PubMed: {len(pm)} Treffer")
@@ -408,7 +449,7 @@ def module_codewords_pubmed():
             all_results.extend(ep)
 
         if use_google:
-            gg = search_google_scholar(query_str, max_results=50)  # Google Scholar is slow / rate-limited
+            gg = search_google_scholar(query_str, max_results=50)
             st.write(f"Google Scholar: {len(gg)} Treffer")
             all_results.extend(gg)
 
@@ -431,10 +472,11 @@ def module_codewords_pubmed():
             st.info("Keine Treffer gefunden.")
             return
 
+        # Ab in den Session-State
         st.session_state["search_results"] = all_results
         st.write(f"**Gesamtanzahl** gefundener Papers: {len(all_results)}")
 
-    # Ergebnisse anzeigen + ChatGPT-Scoring
+    # Sobald Suchergebnisse da sind:
     if "search_results" in st.session_state and st.session_state["search_results"]:
         df_main = pd.DataFrame(st.session_state["search_results"])
         st.dataframe(df_main)
@@ -442,7 +484,7 @@ def module_codewords_pubmed():
         if use_chatgpt:
             st.subheader("ChatGPT Relevanz-Scoring")
             if st.button("Scoring ausführen"):
-                # Begrenzung, z.B. max 200, um Kosten zu minimieren
+                # Begrenzung, z.B. max 200
                 all_found = st.session_state["search_results"]
                 if len(all_found) > 200:
                     all_found = all_found[:200]
@@ -456,8 +498,15 @@ def module_codewords_pubmed():
                 st.subheader("Top-Ergebnisse nach Relevanz")
                 df_scored = pd.DataFrame(scored_list)
                 st.dataframe(df_scored)
+
+                # NEU: Button zum Speichern in SessionState, damit Analyze Paper darauf zugreifen kann
+                if st.button("Scored Paper abspeichern"):
+                    st.session_state["scored_list"] = scored_list
+                    st.success("Scored Paper erfolgreich in st.session_state['scored_list'] gespeichert!")
+
         else:
             st.info("ChatGPT ist im gewählten Profil nicht aktiviert (use_chatgpt=False).")
+
 
 def main():
     st.set_page_config(layout="wide")
