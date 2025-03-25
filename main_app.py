@@ -21,6 +21,9 @@ from scholarly import scholarly
 
 from modules.online_api_filter import module_online_api_filter
 
+# Neu: Excel / openpyxl-Import
+import openpyxl
+
 # Neuer Import für die Übersetzung mit google_trans_new
 from google_trans_new import google_translator
 
@@ -1159,10 +1162,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
             with col_contradiction:
                 st.write("Widerspruchsanalyse (Hochgeladene Paper)")
                 if st.button("Widerspruchsanalyse jetzt starten"):
-                    # Wir nutzen hier dieselbe Logik, die auch im unteren Abschnitt
-                    # „PaperQA Multi-Paper Analyzer“ für hochgeladene Paper verwendet wird.
                     if "paper_texts" not in st.session_state or not st.session_state["paper_texts"]:
-                        # Falls wir noch keine Texte haben, extrahieren wir sie:
                         st.session_state["paper_texts"] = {}
                         for upf in uploaded_files:
                             t_ = analyzer.extract_text_from_pdf(upf)
@@ -1213,20 +1213,170 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
     st.write("## Alle Analysen & Excel-Ausgabe (Multi-PDF)")
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
     
+    # -----------------------------
+    # Excel-Export-Button
+    # -----------------------------
     if uploaded_files and api_key:
         if st.button("Alle Analysen durchführen & in Excel speichern (Multi)"):
-            # ... (Restlicher Code für Excel-Export, unverändert)
-            st.write("(Hier käme dein Excel-Export-Code hin.)")
+            with st.spinner("Analysiere alle hochgeladenen PDFs (für Excel)..."):
+                analyzer = PaperAnalyzer(model=model)
+                
+                # Falls Compare-Mode aktiv ist, prüfen wir, ob st.session_state["relevant_papers_compare"] existiert
+                if compare_mode:
+                    if not st.session_state["relevant_papers_compare"]:
+                        # Falls noch kein Outlier-Check gemacht, machen wir das on-the-fly
+                        paper_map_auto = {}
+                        for fpdf in uploaded_files:
+                            txt = analyzer.extract_text_from_pdf(fpdf)
+                            if txt.strip():
+                                paper_map_auto[fpdf.name] = txt
+                        if not paper_map_auto:
+                            st.error("Keine verwertbaren Paper.")
+                            return
+                        relevant_papers_auto, discovered_theme_auto = do_outlier_logic(paper_map_auto)
+                        st.session_state["relevant_papers_compare"] = relevant_papers_auto
+                        st.session_state["theme_compare"] = discovered_theme_auto
+                    
+                    # Nun haben wir "relevant papers"
+                    relevant_list_for_excel = st.session_state["relevant_papers_compare"] or []
+                    if not relevant_list_for_excel:
+                        st.error("Keine relevanten Paper nach Outlier-Check für Excel.")
+                        return
+                    selected_files_for_excel = [f for f in uploaded_files if f.name in relevant_list_for_excel]
+                else:
+                    selected_files_for_excel = uploaded_files
+
+                # Nun iterieren wir über diese Files und erstellen die Einträge:
+                for fpdf in selected_files_for_excel:
+                    text = analyzer.extract_text_from_pdf(fpdf)
+                    if not text.strip():
+                        st.error(f"Kein Text aus {fpdf.name} extrahierbar (evtl. kein OCR). Überspringe...")
+                        continue
+                    
+                    # Standard-Analysen
+                    summary_de = analyzer.summarize(text, api_key)
+                    key_findings_result = analyzer.extract_key_findings(text, api_key)
+                    if not topic:
+                        relevance_result = "(No topic => no Relevanz-Bewertung)"
+                    else:
+                        relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
+                    methods_result = analyzer.identify_methods(text, api_key)
+                    
+                    # Gen + rs-ID extrahieren
+                    pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
+                    match_text = re.search(pattern_obvious, text)
+                    gene_via_text = match_text.group(1) if match_text else None
+                    
+                    if not gene_via_text:
+                        # hier könntest du ggf. "vorlage_gene.xlsx" einlesen, falls existiert
+                        pass
+                    
+                    found_gene = gene_via_text
+                    rs_pat = r"(rs\d+)"
+                    found_rs_match = re.search(rs_pat, text)
+                    rs_num = found_rs_match.group(1) if found_rs_match else None
+                    
+                    # Genotypen
+                    genotype_regex = r"\b([ACGT]{2,3})\b"
+                    lines = text.split("\n")
+                    found_pairs = []
+                    for line in lines:
+                        matches = re.findall(genotype_regex, line)
+                        if matches:
+                            for m in matches:
+                                found_pairs.append((m, line.strip()))
+                    unique_geno_pairs = []
+                    for gp in found_pairs:
+                        if gp not in unique_geno_pairs:
+                            unique_geno_pairs.append(gp)
+                    
+                    # Populationsfrequenz
+                    aff = AlleleFrequencyFinder()
+                    freq_info = "Keine rsID vorhanden"
+                    if rs_num:
+                        data = aff.get_allele_frequencies(rs_num)
+                        if not data:
+                            data = aff.try_alternative_source(rs_num)
+                        if data:
+                            freq_info = aff.build_freq_info_text(data)
+                    
+                    ergebnisse, schlussfolgerungen = split_summary(summary_de)
+                    cohort_data = parse_cohort_info(summary_de)
+                    study_size = cohort_data.get("study_size", "")
+                    origin = cohort_data.get("origin", "")
+                    if study_size or origin:
+                        cohort_info = f"{study_size}, {origin}".strip(", ")
+                    else:
+                        cohort_info = ""
+
+                    try:
+                        wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
+                    except FileNotFoundError:
+                        st.error("Vorlage 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
+                        return
+                    ws = wb.active
+                    
+                    # D2: Hauptthema aus st.session_state["theme_compare"] (oder "N/A")
+                    ws["D2"].value = st.session_state.get("theme_compare", "N/A")
+                    
+                    # D5: Gen
+                    ws["D5"].value = found_gene if found_gene else ""
+                    
+                    # E5: rs‑Nummer (leer falls None)
+                    ws["E5"].value = rs_num if rs_num else ""
+                    
+                    # D10–D12: die ersten drei Genotypen
+                    # E10–E12: freq_info
+                    for i in range(3):
+                        row_index = 10 + i
+                        if i < len(unique_geno_pairs):
+                            genotype_str = unique_geno_pairs[i][0]
+                            ws.cell(row=row_index, column=4).value = genotype_str  # D10 / D11 / D12
+                            ws.cell(row=row_index, column=5).value = freq_info    # E10 / E11 / E12
+                        else:
+                            ws.cell(row=row_index, column=4).value = ""
+                            ws.cell(row=row_index, column=5).value = ""
+                    
+                    # J2: Aktuelles Datum/Uhrzeit
+                    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    ws["J2"].value = now_str
+                    
+                    # C20: "N/A" (Datum der Publikation)
+                    ws["C20"].value = "N/A"
+                    
+                    # D20: Studiengröße + Ethnie
+                    ws["D20"].value = cohort_info
+                    
+                    # E20: Key Findings
+                    ws["E20"].value = key_findings_result
+                    
+                    # G21: Results
+                    ws["G21"].value = ergebnisse
+                    
+                    # G22: Conclusion
+                    ws["G22"].value = schlussfolgerungen
+                    
+                    # Du könntest optional Relevanz etc. noch irgendwo ablegen:
+                    # z.B. ws["E22"].value = relevance_result
+                    # (nur ein Beispiel, da nicht gefordert)
+
+                    # Anschließend als Download anbieten
+                    output_buffer = io.BytesIO()
+                    wb.save(output_buffer)
+                    output_buffer.seek(0)
+                    
+                    xlsx_name = f"analysis_{fpdf.name.replace('.pdf','')}.xlsx"
+                    st.download_button(
+                        label=f"Download Excel für {fpdf.name}",
+                        data=output_buffer,
+                        file_name=xlsx_name,
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
     else:
         if not api_key:
             st.warning("Bitte OpenAI API-Key eingeben!")
         elif not uploaded_files:
             st.info("Bitte eine oder mehrere PDF-Dateien hochladen!")
-
-    # ------------------------------------------------------------------
-    # Einzelanalyse der nach ChatGPT-Scoring ausgewählten Paper
-    # (Unverändert, bzw. wie bisher)
-    # ------------------------------------------------------------------
 
     st.write("---")
     st.write("## Einzelanalyse der nach ChatGPT-Scoring ausgewählten Paper")
@@ -1269,7 +1419,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
         else:
             st.warning("Paper nicht gefunden (unerwarteter Fehler).")
 
-    # Zusätzlicher Abschnitt für PaperQA Multi-Paper Analyzer (gescorte Paper)
+    # --- Abschnitt: PaperQA Multi-Paper Analyzer (Gemeinsamkeiten & Widersprüche) für gescorte Paper ---
     st.write("---")
     st.header("PaperQA Multi-Paper Analyzer: Gemeinsamkeiten & Widersprüche (Gescorte Paper)")
     if st.button("Analyse (Gescorte Paper) durchführen"):
