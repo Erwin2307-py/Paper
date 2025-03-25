@@ -68,6 +68,7 @@ def clean_html_except_br(text):
 
 def translate_text_openai(text, source_language, target_language, api_key):
     """Übersetzt Text über OpenAI-ChatCompletion (z.B. GPT-4)."""
+    import openai
     openai.api_key = api_key
     prompt_system = (
         f"You are a translation engine from {source_language} to {target_language} for a biotech company called Novogenia "
@@ -78,7 +79,7 @@ def translate_text_openai(text, source_language, target_language, api_key):
     prompt_user = f"Translate the following text from {source_language} to {target_language}:\n'{text}'"
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-4o",  # Falls dein Account dieses Modell unterstützt
+            model="gpt-4o",  # Falls Dein Account dieses Modell unterstützt
             messages=[
                 {"role": "system", "content": prompt_system},
                 {"role": "user", "content": prompt_user}
@@ -436,14 +437,13 @@ def page_online_api_filter():
 
 # ------------------------------------------------------------------
 # Wichtige Klassen für die Analyse
-# (Die Definitionen wurden hierher verschoben, damit sie vor der Verwendung bekannt sind.)
 # ------------------------------------------------------------------
 class PaperAnalyzer:
     def __init__(self, model="gpt-3.5-turbo"):
         self.model = model
     
     def extract_text_from_pdf(self, pdf_file):
-        """Extrahiere reinen Text via PyPDF2 (ggf. OCR nötig, falls PDF nicht durchsuchbar)."""
+        """Extrahiert reinen Text via PyPDF2 (ggf. OCR nötig, falls PDF nicht durchsuchbar)."""
         reader = PyPDF2.PdfReader(pdf_file)
         text = ""
         for page in reader.pages:
@@ -603,7 +603,7 @@ def parse_cohort_info(summary_text: str) -> dict:
     return info
 
 # ------------------------------------------------------------------
-# NEUER Bereich: Definition der Funktion chatgpt_online_search_with_genes
+# NEUER Bereich: Funktion für ChatGPT-Scoring (Codewörter + Gene)
 # ------------------------------------------------------------------
 def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     """
@@ -614,6 +614,7 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     :param top_k: Maximale Anzahl der Ergebnisse.
     :return: Liste der gescorten Paper, sortiert nach Relevanz (absteigend).
     """
+    import openai
     openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
     if not openai.api_key:
         st.error("Kein 'OPENAI_API_KEY' in st.secrets hinterlegt.")
@@ -670,13 +671,8 @@ def analyze_papers_for_commonalities_and_contradictions(pdf_texts: Dict[str, str
     """
     Naive Logik zur Extraktion von Claims aus jedem Paper und Ermittlung von
     Gemeinsamkeiten und Widersprüchen.
-    
-    :param pdf_texts: Dictionary, wobei der Schlüssel der Dateiname und der Wert der extrahierte Text ist.
-    :param api_key: OpenAI API Key.
-    :param model: GPT-Modell (z.B. "gpt-3.5-turbo").
-    :param method_choice: "Standard" oder "ContraCrow" – bestimmt den verwendeten Prompt.
-    :return: JSON-String mit den Ergebnissen.
     """
+    import openai
     openai.api_key = api_key
 
     # 1) Claims extrahieren pro Paper
@@ -703,6 +699,7 @@ Text: {txt[:6000]}
             try:
                 claims_list = json.loads(raw)
             except Exception:
+                # Falls wir JSON nicht parsen können, packen wir den Output als "claim" in ein dict
                 claims_list = [{"claim": raw}]
             if not isinstance(claims_list, list):
                 claims_list = [claims_list]
@@ -800,11 +797,6 @@ def page_analyze_paper():
         index=0
     )
     
-    # Neue Optionen für die gemeinsame Analyse
-    analysis_method = st.sidebar.selectbox("Analyse-Methode (Gemeinsamkeiten & Widersprüche)", ["Standard GPT", "ContraCrow"])
-    # Auswahl der Datenquelle für Widerspruchsanalyse
-    widerspruchs_source = st.sidebar.selectbox("Analysequelle für Widersprüche", ["Gescorte Paper", "Hochgeladene Paper"])
-    
     # Compare Mode
     compare_mode = st.sidebar.checkbox("Alle Paper gemeinsam vergleichen (Outlier ausschließen)?")
     
@@ -838,7 +830,7 @@ def page_analyze_paper():
     if "theme_compare" not in st.session_state:
         st.session_state["theme_compare"] = ""
     
-    # Dummy-Outlier-Logik (unverändert)
+    # ------------------------- Hilfsfunktion zum Outlier-Check -------------------------
     def do_outlier_logic(paper_map: dict) -> (list, str):
         if theme_mode == "Manuell":
             main_theme = user_defined_theme.strip()
@@ -1220,6 +1212,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     match_text = re.search(pattern_obvious, text)
                     gene_via_text = match_text.group(1) if match_text else None
                     if not gene_via_text:
+                        # Versuche, Gene aus einer Excel-Vorlage auszulesen
                         try:
                             wb_gene = openpyxl.load_workbook("vorlage_gene.xlsx")
                         except FileNotFoundError:
@@ -1295,6 +1288,9 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
         elif not uploaded_files:
             st.info("Bitte eine oder mehrere PDF-Dateien hochladen!")
     
+    # -------------------------
+    # Einzelanalyse der nach ChatGPT-Scoring ausgewählten Paper
+    # -------------------------
     st.write("---")
     st.write("## Einzelanalyse der nach ChatGPT-Scoring ausgewählten Paper")
     if "scored_list" not in st.session_state or not st.session_state["scored_list"]:
@@ -1336,55 +1332,108 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
         else:
             st.warning("Paper nicht gefunden (unerwarteter Fehler).")
     
-    # NEUER Abschnitt: Widerspruchsanalyse der hochgeladenen Paper (unabhängig von gescorten Paper)
+    # -------------------------
+    # NEUER Abschnitt: 2 Buttons für die Widerspruchsanalyse
+    # -------------------------
     st.write("---")
-    st.header("Widerspruchsanalyse der hochgeladenen Paper (unabhängig von gescorten Paper)")
-    if st.button("Widerspruchsanalyse (Hochgeladene Paper) durchführen"):
-        # Falls die extrahierten Volltexte noch nicht vorliegen, erzeugen wir sie aus den hochgeladenen Dateien
-        if "paper_texts" not in st.session_state or not st.session_state["paper_texts"]:
-            if uploaded_files:
-                st.session_state["paper_texts"] = {}
-                for upf in uploaded_files:
-                    text = analyzer.extract_text_from_pdf(upf)
-                    if text.strip():
-                        st.session_state["paper_texts"][upf.name] = text
-                    else:
-                        st.warning(f"Kein Text extrahierbar aus {upf.name}")
-        paper_texts = st.session_state["paper_texts"]
-        if not paper_texts:
-            st.error("Keine Texte für die Analyse vorhanden.")
+    st.header("PaperQA Multi-Paper Analyzer: Gemeinsamkeiten & Widersprüche")
+
+    # Button 1: Hochgeladene Paper
+    if st.button("Widerspruchsanalyse (Hochgeladene Paper)"):
+        if not uploaded_files:
+            st.error("Keine PDF-Dateien hochgeladen. Bitte hochladen, um die Analyse durchzuführen.")
         else:
-            with st.spinner("Analysiere hochgeladene Paper auf Gemeinsamkeiten & Widersprüche..."):
-                result_json_str = analyze_papers_for_commonalities_and_contradictions(
-                    paper_texts,
-                    api_key,
-                    model,
-                    method_choice="ContraCrow" if analysis_method == "ContraCrow" else "Standard"
-                )
-                st.subheader("Ergebnis der Widerspruchsanalyse (Hochgeladene Paper) (JSON)")
-                st.code(result_json_str, language="json")
-                try:
-                    data_js = json.loads(result_json_str)
-                    common = data_js.get("commonalities", [])
-                    contras = data_js.get("contradictions", [])
-                    st.write("## Gemeinsamkeiten")
-                    if common:
-                        for c in common:
-                            st.write(f"- {c}")
+            # Falls noch nicht geschehen, extrahiere die Texte
+            if not st.session_state["paper_texts"]:
+                for upf in uploaded_files:
+                    txt = analyzer.extract_text_from_pdf(upf)
+                    if txt.strip():
+                        st.session_state["paper_texts"][upf.name] = txt
                     else:
-                        st.info("Keine Gemeinsamkeiten erkannt.")
-                    st.write("## Widersprüche")
-                    if contras:
-                        for i, cobj in enumerate(contras, start=1):
-                            st.write(f"Widerspruch {i}:")
-                            st.write(f"- **Paper A**: {cobj.get('paperA')} => {cobj.get('claimA')}")
-                            st.write(f"- **Paper B**: {cobj.get('paperB')} => {cobj.get('claimB')}")
-                            st.write(f"  Grund: {cobj.get('reason','(none)')}")
-                    else:
-                        st.info("Keine Widersprüche erkannt.")
-                except Exception as e:
-                    st.warning("Die GPT-Ausgabe konnte nicht als valides JSON geparst werden.")
-                    
+                        st.warning(f"Kein Text extrahierbar aus {upf.name}.")
+            paper_texts = st.session_state["paper_texts"]
+            if not paper_texts:
+                st.error("Keine Texte für die Analyse vorhanden (alle PDFs leer?).")
+            else:
+                with st.spinner("Analysiere hochgeladene Paper auf Gemeinsamkeiten & Widersprüche..."):
+                    result_json_str = analyze_papers_for_commonalities_and_contradictions(
+                        paper_texts,
+                        api_key,
+                        model,
+                        method_choice="ContraCrow"  # Oder "Standard"
+                    )
+                    st.subheader("Ergebnis der Widerspruchsanalyse (Hochgeladene Paper) (JSON)")
+                    st.code(result_json_str, language="json")
+                    try:
+                        data_js = json.loads(result_json_str)
+                        common = data_js.get("commonalities", [])
+                        contras = data_js.get("contradictions", [])
+                        st.write("## Gemeinsamkeiten")
+                        if common:
+                            for c in common:
+                                st.write(f"- {c}")
+                        else:
+                            st.info("Keine Gemeinsamkeiten erkannt.")
+                        st.write("## Widersprüche")
+                        if contras:
+                            for i, cobj in enumerate(contras, start=1):
+                                st.write(f"Widerspruch {i}:")
+                                st.write(f"- **Paper A**: {cobj.get('paperA')} => {cobj.get('claimA')}")
+                                st.write(f"- **Paper B**: {cobj.get('paperB')} => {cobj.get('claimB')}")
+                                st.write(f"  Grund: {cobj.get('reason','(none)')}")
+                        else:
+                            st.info("Keine Widersprüche erkannt.")
+                    except Exception as e:
+                        st.warning("Die GPT-Ausgabe konnte nicht als valides JSON geparst werden.")
+
+    # Button 2: Gescorte Paper
+    if st.button("Widerspruchsanalyse (Gescorte Paper)"):
+        if "scored_list" not in st.session_state or not st.session_state["scored_list"]:
+            st.error("Keine gescorten Paper vorhanden. Bitte zuerst Scoring durchführen.")
+        else:
+            # Aus den gescorten Papern nur den Abstract nehmen (o.ä.)
+            paper_texts_scored = {}
+            for paper in st.session_state["scored_list"]:
+                title = paper.get("Title", "Unbenannt")
+                abstract = paper.get("Abstract", "")
+                if abstract.strip():
+                    paper_texts_scored[title] = abstract
+                else:
+                    st.warning(f"Kein Abstract für Paper '{title}'.")
+            if not paper_texts_scored:
+                st.error("Keine Abstracts in den gescorten Paper gefunden.")
+            else:
+                with st.spinner("Analysiere gescorte Paper auf Gemeinsamkeiten & Widersprüche..."):
+                    result_json_str = analyze_papers_for_commonalities_and_contradictions(
+                        paper_texts_scored,
+                        api_key,
+                        model,
+                        method_choice="ContraCrow"  # Oder "Standard"
+                    )
+                    st.subheader("Ergebnis der Widerspruchsanalyse (Gescorte Paper) (JSON)")
+                    st.code(result_json_str, language="json")
+                    try:
+                        data_js = json.loads(result_json_str)
+                        common = data_js.get("commonalities", [])
+                        contras = data_js.get("contradictions", [])
+                        st.write("## Gemeinsamkeiten")
+                        if common:
+                            for c in common:
+                                st.write(f"- {c}")
+                        else:
+                            st.info("Keine Gemeinsamkeiten erkannt.")
+                        st.write("## Widersprüche")
+                        if contras:
+                            for i, cobj in enumerate(contras, start=1):
+                                st.write(f"Widerspruch {i}:")
+                                st.write(f"- **Paper A**: {cobj.get('paperA')} => {cobj.get('claimA')}")
+                                st.write(f"- **Paper B**: {cobj.get('paperB')} => {cobj.get('claimB')}")
+                                st.write(f"  Grund: {cobj.get('reason','(none)')}")
+                        else:
+                            st.info("Keine Widersprüche erkannt.")
+                    except Exception as e:
+                        st.warning("Die GPT-Ausgabe konnte nicht als valides JSON geparst werden.")
+
 # ------------------------------------------------------------------
 # Sidebar Navigation und Chatbot
 # ------------------------------------------------------------------
