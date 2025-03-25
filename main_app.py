@@ -175,13 +175,11 @@ def search_pubmed_simple(query):
         idlist = data.get("esearchresult", {}).get("idlist", [])
         if not idlist:
             return out
-
         esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
         sum_params = {"db": "pubmed", "id": ",".join(idlist), "retmode": "json"}
         r2 = requests.get(esummary_url, params=sum_params, timeout=10)
         r2.raise_for_status()
         summary_data = r2.json().get("result", {})
-
         for pmid in idlist:
             info = summary_data.get(pmid, {})
             title = info.get("title", "n/a")
@@ -292,7 +290,6 @@ def search_openalex_simple(query):
 class GoogleScholarSearch:
     def __init__(self):
         self.all_results = []
-
     def search_google_scholar(self, base_query):
         try:
             search_results = scholarly.search_pubs(base_query)
@@ -334,7 +331,6 @@ def check_semantic_scholar_connection(timeout=10):
 class SemanticScholarSearch:
     def __init__(self):
         self.all_results = []
-
     def search_semantic_scholar(self, base_query):
         try:
             url = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -505,9 +501,7 @@ class AlleleFrequencyFinder:
         self.ensembl_server = "https://rest.ensembl.org"
         self.max_retries = 3
         self.retry_delay = 2  # Sekunden zwischen Wiederholungsversuchen
-
     def get_allele_frequencies(self, rs_id: str, retry_count: int = 0) -> Optional[Dict[str, Any]]:
-        """Holt Allelfrequenzen von Ensembl."""
         if not rs_id.startswith("rs"):
             rs_id = f"rs{rs_id}"
         endpoint = f"/variation/human/{rs_id}?pops=1"
@@ -529,12 +523,9 @@ class AlleleFrequencyFinder:
                 time.sleep(self.retry_delay)
                 return self.get_allele_frequencies(rs_id, retry_count + 1)
             return None
-    
     def try_alternative_source(self, rs_id: str) -> Optional[Dict[str, Any]]:
         return None
-    
     def build_freq_info_text(self, data: Dict[str, Any]) -> str:
-        """Erzeugt einen kurzen Text über Allelfrequenzen."""
         if not data:
             return "Keine Daten von Ensembl"
         maf = data.get("MAF", None)
@@ -555,7 +546,6 @@ class AlleleFrequencyFinder:
         return " | ".join(out)
 
 def split_summary(summary_text):
-    """Versucht 'Ergebnisse' und 'Schlussfolgerungen' zu splitten."""
     m = re.search(r'Ergebnisse\s*:\s*(.*?)\s*Schlussfolgerungen\s*:\s*(.*)', summary_text, re.DOTALL | re.IGNORECASE)
     if m:
         ergebnisse = m.group(1).strip()
@@ -566,7 +556,6 @@ def split_summary(summary_text):
     return ergebnisse, schlussfolgerungen
 
 def parse_cohort_info(summary_text: str) -> dict:
-    """Parst grobe Infos zur Kohorte (Anzahl Patienten, Herkunft etc.) aus deutschem Summary."""
     info = {"study_size": "", "origin": ""}
     pattern_nationality = re.compile(
         r"(\d+)\s+(Filipino|Chinese|Japanese|Han\sChinese|[A-Za-z]+)\s+([Cc]hildren(?:\s+and\s+adolescents)?|adolescents?|participants?|subjects?)",
@@ -599,9 +588,9 @@ def parse_cohort_info(summary_text: str) -> dict:
         info["origin"] = m_orig.group(1).strip()
     return info
 
-# ---------------------------
-# Neue Funktion: ChatGPT-Scoring mit Genes und Codewörtern
-# ---------------------------
+# ------------------------------------------------------------------
+# Wichtige Funktion: ChatGPT-Scoring mit Genes und Codewörtern
+# ------------------------------------------------------------------
 def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     """
     Lässt ChatGPT jedes Paper scoren (0-100) basierend auf Codewörtern + Genen.
@@ -698,13 +687,10 @@ def page_analyze_paper():
     if "theme_compare" not in st.session_state:
         st.session_state["theme_compare"] = ""
     
-    # Hier wird angenommen, dass do_outlier_logic bereits definiert ist.
-    # Falls nicht, könnte man hier eine Dummy-Implementierung einsetzen.
+    # Dummy-Implementierung für Outlier-Logik (hier können Sie Ihre eigene Logik einfügen)
     def do_outlier_logic(paper_map: dict) -> (list, str):
-        # Dummy-Implementierung: Alle Paper werden als relevant betrachtet
         return list(paper_map.keys()), "Dummy-Thema"
     
-    # Haupt-Logik:
     if uploaded_files and api_key:
         if compare_mode:
             st.write("### Vergleichsmodus: Outlier-Paper ausschließen")
@@ -1025,7 +1011,7 @@ def page_analyze_paper():
     st.write("---")
     st.write("## Einzelanalyse der nach ChatGPT-Scoring ausgewählten Paper")
     
-    # --- NEU: Button zum Abspeichern der gescorten Paper in SessionState ---
+    # --- Button zum Abspeichern der gescorten Paper in SessionState ---
     if "scored_list" not in st.session_state or not st.session_state["scored_list"]:
         if "search_results" in st.session_state and st.session_state["search_results"]:
             st.info("Es wurden noch keine gescorten Paper gespeichert. Scoring wird jetzt durchgeführt...")
@@ -1068,6 +1054,8 @@ def page_analyze_paper():
             st.markdown(f"> {selected_paper.get('Abstract', 'n/a')}")
         else:
             st.warning("Paper nicht gefunden (unerwarteter Fehler).")
+    else:
+        st.info("Bitte wählen Sie ein Paper aus der Liste aus.")
 
 # ------------------------------------------------------------------
 # Sidebar Navigation und Chatbot
