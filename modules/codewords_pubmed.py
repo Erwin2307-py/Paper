@@ -360,6 +360,15 @@ def module_codewords_pubmed():
 
     codewords_str = profile_data.get("codewords_str", "")
 
+    # NEU: Zusätzliches manuelles Codewort
+    manual_codeword = st.text_input("Manuelles Codewort (optional) eingeben:")
+    if manual_codeword.strip():
+        # Falls der Nutzer ein manuelles Codewort eingegeben hat, fügen wir es hinzu
+        if codewords_str.strip():
+            codewords_str += " " + manual_codeword.strip()
+        else:
+            codewords_str = manual_codeword.strip()
+
     # 2) Such-Logik
     st.subheader("Such-Logik (AND / OR für Codewörter/Gene)")
     logic_option = st.radio("Logik:", ["AND", "OR"], index=1)
