@@ -399,10 +399,6 @@ def page_home():
     st.image("Bild1.jpg", caption="Willkommen!", use_container_width=False, width=600)
 
 def page_codewords_pubmed():
-    """
-    Diese Funktion lädt das modul_codewords_pubmed, in dem wir
-    die Multi-API-Suche durchführen + ChatGPT-Scoring + Abspeichern.
-    """
     st.title("Codewords & PubMed Settings")
     from modules.codewords_pubmed import module_codewords_pubmed
     module_codewords_pubmed()
@@ -489,7 +485,7 @@ class PaperAnalyzer:
         return self.analyze_with_openai(text, prompt, api_key)
     
     def extract_key_findings(self, text, api_key):
-        """Extrahiert die 5 wichtigsten Erkenntnisse."""
+        """Extrahiere die 5 wichtigsten Erkenntnisse."""
         prompt = (
             "Extrahiere die 5 wichtigsten Erkenntnisse aus diesem wissenschaftlichen "
             "Paper im Bereich Side-Channel Analysis. Liste sie mit Bulletpoints auf:\n\n{text}"
@@ -689,7 +685,7 @@ def page_analyze_paper():
 
             snippet_list = []
             for name, txt_data in paper_map.items():
-                snippet = txt_data[:700].replace("\n"," ")
+                snippet = txt_data[:700].replace("\n", " ")
                 snippet_list.append(f'{{"filename": "{name}", "snippet": "{snippet}"}}')
 
             big_snippet = ",\n".join(snippet_list)
@@ -748,9 +744,9 @@ Nur das JSON, ohne weitere Erklärungen.
             relevant_papers_local = []
             st.write("**Paper-Einstufung**:")
             for p in papers_info:
-                fname = p.get("filename","?")
+                fname = p.get("filename", "?")
                 rel = p.get("relevant", False)
-                reason = p.get("reason","(none)")
+                reason = p.get("reason", "(none)")
                 if rel:
                     relevant_papers_local.append(fname)
                     st.success(f"{fname} => relevant. Begründung: {reason}")
@@ -761,7 +757,7 @@ Nur das JSON, ohne weitere Erklärungen.
         else:
             snippet_list = []
             for name, txt_data in paper_map.items():
-                snippet = txt_data[:700].replace("\n"," ")
+                snippet = txt_data[:700].replace("\n", " ")
                 snippet_list.append(f'{{"filename": "{name}", "snippet": "{snippet}"}}')
             big_snippet = ",\n".join(snippet_list)
 
@@ -797,7 +793,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
 
             st.markdown("#### GPT-Ausgabe (Outlier-Check / GPT):")
             st.code(scope_decision, language="json")
-
             json_str = scope_decision.strip()
             if json_str.startswith("```"):
                 json_str = re.sub(r"```[\w]*\n?", "", json_str)
@@ -814,9 +809,9 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
             relevant_papers_local = []
             st.write("**Paper-Einstufung**:")
             for p in papers_info:
-                fname = p.get("filename","?")
+                fname = p.get("filename", "?")
                 rel = p.get("relevant", False)
-                reason = p.get("reason","(none)")
+                reason = p.get("reason", "(none)")
                 if rel:
                     relevant_papers_local.append(fname)
                     st.success(f"{fname} => relevant. Begründung: {reason}")
@@ -1199,9 +1194,49 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
     st.write("---")
     st.write("## Einzelanalyse der nach ChatGPT-Scoring ausgewählten Paper")
 
-    # Button, um die Funktion module_scored_paper_selection() aufzurufen
-    if st.button("Scored Paper Selection anzeigen"):
-        module_scored_paper_selection()
+    # --- NEU: Button zum Abspeichern der gescorten Paper ---
+    # Falls st.session_state["scored_list"] noch leer ist, wird hier versucht, sie aus den Suchergebnissen zu erzeugen.
+    if "scored_list" not in st.session_state or not st.session_state["scored_list"]:
+        if "search_results" in st.session_state and st.session_state["search_results"]:
+            st.info("Es wurden noch keine gescorten Paper gespeichert. Scoring wird jetzt durchgeführt...")
+            # Wir erwarten, dass in der Suchseite auch Codewörter und ausgewählte Gene in den Session-State gespeichert wurden.
+            codewords_str = st.session_state.get("codewords", "")
+            selected_genes = st.session_state.get("selected_genes", [])
+            scored_list = chatgpt_online_search_with_genes(
+                papers=st.session_state["search_results"],
+                codewords=codewords_str,
+                genes=selected_genes,
+                top_k=200
+            )
+            st.session_state["scored_list"] = scored_list
+            st.success("Scored Paper erfolgreich in st.session_state['scored_list'] gespeichert!")
+        else:
+            st.info("Keine gescorten Paper vorhanden (st.session_state['scored_list']).")
+            return
+
+    st.subheader("Einzelanalyse der nach ChatGPT-Scoring ausgewählten Paper")
+    scored_titles = [paper["Title"] for paper in st.session_state["scored_list"]]
+
+    chosen_title = st.selectbox(
+        "Wähle ein Paper aus der Scoring-Liste:",
+        options=["(Bitte wählen)"] + scored_titles
+    )
+
+    if chosen_title != "(Bitte wählen)":
+        selected_paper = next(
+            (p for p in st.session_state["scored_list"] if p["Title"] == chosen_title),
+            None
+        )
+        if selected_paper:
+            st.write("**Titel:** ", selected_paper.get("Title", "n/a"))
+            st.write("**Quelle:** ", selected_paper.get("Source", "n/a"))
+            st.write("**PubMed ID:** ", selected_paper.get("PubMed ID", "n/a"))
+            st.write("**Jahr:** ", selected_paper.get("Year", "n/a"))
+            st.write("**Publisher:** ", selected_paper.get("Publisher", "n/a"))
+            st.write("**Abstract:**")
+            st.markdown(f"> {selected_paper.get('Abstract', 'n/a')}")
+        else:
+            st.warning("Paper nicht gefunden (unerwarteter Fehler).")
 
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
@@ -1351,46 +1386,6 @@ def main():
             """,
             unsafe_allow_html=True
         )
-
-# -----------------------------------------------------------
-# NEUE ZUSÄTZLICHE FUNKTION FÜR EINZELANALYSE GESCORTER PAPER
-# -----------------------------------------------------------
-def module_scored_paper_selection():
-    """
-    Zeigt ein Dropdown mit allen gescorten Papers aus st.session_state["scored_list"] an.
-    Ermöglicht das Auswählen für eine detaillierte Einzelanalyse (Titel, Abstract, etc.).
-    """
-    if "scored_list" not in st.session_state:
-        st.session_state["scored_list"] = []
-
-    if not st.session_state["scored_list"]:
-        st.info("Keine gescorten Paper vorhanden (st.session_state['scored_list']).")
-        return
-
-    st.subheader("Einzelanalyse der nach ChatGPT-Scoring ausgewählten Paper")
-    scored_titles = [paper["Title"] for paper in st.session_state["scored_list"]]
-
-    chosen_title = st.selectbox(
-        "Wähle ein Paper aus der Scoring-Liste:",
-        options=["(Bitte wählen)"] + scored_titles
-    )
-
-    if chosen_title != "(Bitte wählen)":
-        selected_paper = next(
-            (p for p in st.session_state["scored_list"] if p["Title"] == chosen_title),
-            None
-        )
-        if selected_paper:
-            st.write("**Titel:** ", selected_paper.get("Title", "n/a"))
-            st.write("**Quelle:** ", selected_paper.get("Source", "n/a"))
-            st.write("**PubMed ID:** ", selected_paper.get("PubMed ID", "n/a"))
-            st.write("**Jahr:** ", selected_paper.get("Year", "n/a"))
-            st.write("**Publisher:** ", selected_paper.get("Publisher", "n/a"))
-            st.write("**Abstract:**")
-            st.markdown(f"> {selected_paper.get('Abstract', 'n/a')}")
-        else:
-            st.warning("Paper nicht gefunden (unerwarteter Fehler).")
-
 
 if __name__ == '__main__':
     main()
