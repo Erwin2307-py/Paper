@@ -444,7 +444,7 @@ class PaperAnalyzer:
         self.model = model
     
     def extract_text_from_pdf(self, pdf_file):
-        """Extrahiert reinen Text via PyPDF2 (ggf. OCR nötig, falls PDF nicht durchsuchbar)."""
+        """Extrahiere reinen Text via PyPDF2 (ggf. OCR nötig, falls PDF nicht durchsuchbar)."""
         reader = PyPDF2.PdfReader(pdf_file)
         text = ""
         for page in reader.pages:
@@ -804,8 +804,8 @@ def page_analyze_paper():
     
     # Neue Optionen für die gemeinsame Analyse
     analysis_method = st.sidebar.selectbox("Analyse-Methode (Gemeinsamkeiten & Widersprüche)", ["Standard GPT", "ContraCrow"])
-    # Hier entscheiden wir, ob die Widerspruchsanalyse mit den hochgeladenen oder gescorten Papieren durchgeführt werden soll.
-    widerspruchs_source = st.sidebar.selectbox("Analysequelle für Widersprüche", ["Hochgeladene Paper", "Gescorte Paper"])
+    # Hier wählen wir, welche Datenquelle für die Widerspruchsanalyse genutzt werden soll.
+    widerspruchs_source = st.sidebar.selectbox("Analysequelle für Widersprüche", ["Gescorte Paper", "Hochgeladene Paper"])
     
     # Compare Mode
     compare_mode = st.sidebar.checkbox("Alle Paper gemeinsam vergleichen (Outlier ausschließen)?")
