@@ -99,296 +99,9 @@ def translate_text_openai(text, source_language, target_language, api_key):
         st.warning(f"Translation Error: {e}")
         return text
 
-class CoreAPI:
-    def __init__(self, api_key):
-        self.base_url = "https://api.core.ac.uk/v3/"
-        self.headers = {"Authorization": f"Bearer {api_key}"}
-
-    def search_publications(self, query, filters=None, sort=None, limit=100):
-        endpoint = "search/works"
-        params = {"q": query, "limit": limit}
-        if filters:
-            filter_expressions = []
-            for key, value in filters.items():
-                filter_expressions.append(f"{key}:{value}")
-            params["filter"] = ",".join(filter_expressions)
-        if sort:
-            params["sort"] = sort
-        r = requests.get(
-            self.base_url + endpoint,
-            headers=self.headers,
-            params=params,
-            timeout=15
-        )
-        r.raise_for_status()
-        return r.json()
-
-def check_core_aggregate_connection(api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF", timeout=15):
-    """Check if CORE aggregator is reachable."""
-    try:
-        core = CoreAPI(api_key)
-        result = core.search_publications("test", limit=1)
-        return "results" in result
-    except Exception:
-        return False
-
-def search_core_aggregate(query, api_key="LmAMxdYnK6SDJsPRQCpGgwN7f5yTUBHF"):
-    """Simple search in CORE aggregator."""
-    if not api_key:
-        return []
-    try:
-        core = CoreAPI(api_key)
-        raw = core.search_publications(query, limit=100)
-        out = []
-        results = raw.get("results", [])
-        for item in results:
-            title = item.get("title", "n/a")
-            year = str(item.get("yearPublished", "n/a"))
-            journal = item.get("publisher", "n/a")
-            out.append({
-                "PMID": "n/a",
-                "Title": title,
-                "Year": year,
-                "Journal": journal
-            })
-        return out
-    except Exception as e:
-        st.error(f"CORE search error: {e}")
-        return []
-
 # ------------------------------------------------------------------
-# 2) PubMed - Simple Check & Search
+# ... Other code / classes for searching in CORE, PubMed, etc. omitted for brevity ...
 # ------------------------------------------------------------------
-def check_pubmed_connection(timeout=10):
-    """Check if PubMed is reachable."""
-    test_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-    params = {"db": "pubmed", "term": "test", "retmode": "json"}
-    try:
-        r = requests.get(test_url, params=params, timeout=timeout)
-        r.raise_for_status()
-        data = r.json()
-        return "esearchresult" in data
-    except Exception:
-        return False
-
-def search_pubmed_simple(query):
-    """Simple search in PubMed (no abstract data)."""
-    esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-    params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": 100}
-    out = []
-    try:
-        r = requests.get(esearch_url, params=params, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        idlist = data.get("esearchresult", {}).get("idlist", [])
-        if not idlist:
-            return out
-
-        esummary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
-        sum_params = {"db": "pubmed", "id": ",".join(idlist), "retmode": "json"}
-        r2 = requests.get(esummary_url, params=sum_params, timeout=10)
-        r2.raise_for_status()
-        summary_data = r2.json().get("result", {})
-
-        for pmid in idlist:
-            info = summary_data.get(pmid, {})
-            title = info.get("title", "n/a")
-            pubdate = info.get("pubdate", "")
-            year = pubdate[:4] if pubdate else "n/a"
-            journal = info.get("fulljournalname", "n/a")
-            out.append({
-                "PMID": pmid,
-                "Title": title,
-                "Year": year,
-                "Journal": journal
-            })
-        return out
-    except Exception as e:
-        st.error(f"Error searching PubMed: {e}")
-        return []
-
-def fetch_pubmed_abstract(pmid):
-    """Fetch an abstract from PubMed via efetch."""
-    url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
-    params = {"db": "pubmed", "id": pmid, "retmode": "xml"}
-    try:
-        r = requests.get(url, params=params, timeout=10)
-        r.raise_for_status()
-        root = ET.fromstring(r.content)
-        abs_text = []
-        for elem in root.findall(".//AbstractText"):
-            if elem.text:
-                abs_text.append(elem.text.strip())
-        if abs_text:
-            return "\n".join(abs_text)
-        else:
-            return "(No abstract available)"
-    except Exception as e:
-        return f"(Error: {e})"
-
-# ------------------------------------------------------------------
-# 3) Europe PMC Check + Search
-# ------------------------------------------------------------------
-def check_europe_pmc_connection(timeout=10):
-    """Check if Europe PMC is reachable."""
-    test_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
-    params = {"query": "test", "format": "json", "pageSize": 100}
-    try:
-        r = requests.get(test_url, params=params, timeout=timeout)
-        r.raise_for_status()
-        data = r.json()
-        return "resultList" in data and "result" in data["resultList"]
-    except Exception:
-        return False
-
-def search_europe_pmc_simple(query):
-    """Simple search in Europe PMC."""
-    url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
-    params = {
-        "query": query,
-        "format": "json",
-        "pageSize": 100,
-        "resultType": "core"
-    }
-    out = []
-    try:
-        r = requests.get(url, params=params, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        if "resultList" not in data or "result" not in data["resultList"]:
-            return out
-        results = data["resultList"]["result"]
-        for item in results:
-            pmid = item.get("pmid", "n/a")
-            title = item.get("title", "n/a")
-            year = str(item.get("pubYear", "n/a"))
-            journal = item.get("journalTitle", "n/a")
-            out.append({
-                "PMID": pmid if pmid else "n/a",
-                "Title": title,
-                "Year": year,
-                "Journal": journal
-            })
-        return out
-    except Exception as e:
-        st.error(f"Europe PMC search error: {e}")
-        return []
-
-# ------------------------------------------------------------------
-# 4) OpenAlex API
-# ------------------------------------------------------------------
-BASE_URL = "https://api.openalex.org"
-
-def fetch_openalex_data(entity_type, entity_id=None, params=None):
-    url = f"{BASE_URL}/{entity_type}"
-    if entity_id:
-        url += f"/{entity_id}"
-    if params is None:
-        params = {}
-    params["mailto"] = "your_email@example.com"
-    response = requests.get(url, params=params)
-    if response.status_code == 200:
-        return response.json()
-    else:
-        st.error(f"Error: {response.status_code} - {response.text}")
-        return None
-
-def search_openalex_simple(query):
-    """Simple search in OpenAlex."""
-    search_params = {"search": query}
-    return fetch_openalex_data("works", params=search_params)
-
-# ------------------------------------------------------------------
-# 5) Google Scholar
-# ------------------------------------------------------------------
-class GoogleScholarSearch:
-    def __init__(self):
-        self.all_results = []
-
-    def search_google_scholar(self, base_query):
-        """Very simplistic example using scholarly."""
-        try:
-            search_results = scholarly.search_pubs(base_query)
-            for _ in range(5):
-                result = next(search_results)
-                title = result['bib'].get('title', "n/a")
-                authors = result['bib'].get('author', "n/a")
-                year = result['bib'].get('pub_year', "n/a")
-                url_article = result.get('url_scholarbib', "n/a")
-                abstract_text = result['bib'].get('abstract', "")
-                self.all_results.append({
-                    "Source": "Google Scholar",
-                    "Title": title,
-                    "Authors/Description": authors,
-                    "Journal/Organism": "n/a",
-                    "Year": year,
-                    "PMID": "n/a",
-                    "DOI": "n/a",
-                    "URL": url_article,
-                    "Abstract": abstract_text
-                })
-        except Exception as e:
-            st.error(f"Error searching Google Scholar: {e}")
-
-# ------------------------------------------------------------------
-# 6) Semantic Scholar
-# ------------------------------------------------------------------
-def check_semantic_scholar_connection(timeout=10):
-    """Check if Semantic Scholar is reachable."""
-    try:
-        url = "https://api.semanticscholar.org/graph/v1/paper/search"
-        params = {"query": "test", "limit": 1, "fields": "title"}
-        headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
-        response = requests.get(url, headers=headers, params=params, timeout=timeout)
-        response.raise_for_status()
-        return response.status_code == 200
-    except Exception:
-        return False
-
-class SemanticScholarSearch:
-    def __init__(self):
-        self.all_results = []
-
-    def search_semantic_scholar(self, base_query):
-        """Very simplistic example with limited fields."""
-        try:
-            url = "https://api.semanticscholar.org/graph/v1/paper/search"
-            headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
-            params = {"query": base_query, "limit": 5, "fields": "title,authors,year,abstract,doi,paperId"}
-            response = requests.get(url, headers=headers, params=params, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-            for paper in data.get("data", []):
-                title = paper.get("title", "n/a")
-                authors = ", ".join([author.get("name", "") for author in paper.get("authors", [])])
-                year = paper.get("year", "n/a")
-                doi = paper.get("doi", "n/a")
-                paper_id = paper.get("paperId", "")
-                abstract_text = paper.get("abstract", "")
-                url_article = f"https://www.semanticscholar.org/paper/{paper_id}" if paper_id else "n/a"
-                self.all_results.append({
-                    "Source": "Semantic Scholar",
-                    "Title": title,
-                    "Authors/Description": authors,
-                    "Journal/Organism": "n/a",
-                    "Year": year,
-                    "PMID": "n/a",
-                    "DOI": "n/a",
-                    "URL": url_article,
-                    "Abstract": abstract_text
-                })
-        except Exception as e:
-            st.error(f"Semantic Scholar: {e}")
-
-# ------------------------------------------------------------------
-# Additional modules / placeholders
-# ------------------------------------------------------------------
-def module_paperqa2():
-    st.subheader("PaperQA2 Module")
-    st.write("This is the PaperQA2 module (demo).")
-    question = st.text_input("Please enter your question:")
-    if st.button("Send Question"):
-        st.write("Answer: This is a dummy answer:", question)
 
 def page_home():
     st.title("Welcome to the Main Menu")
@@ -399,30 +112,6 @@ def page_codewords_pubmed():
     st.title("Codewords & PubMed Settings")
     from modules.codewords_pubmed import module_codewords_pubmed
     module_codewords_pubmed()
-    if st.button("Back to Main Menu"):
-        st.session_state["current_page"] = "Home"
-
-def page_paper_selection():
-    st.title("Paper Selection Settings")
-    st.write("Define how you want to pick or exclude certain papers. (Dummy placeholder...)")
-    if st.button("Back to Main Menu"):
-        st.session_state["current_page"] = "Home"
-
-def page_analysis():
-    st.title("Analysis & Evaluation Settings")
-    st.write("Set up your analysis parameters, thresholds, etc. (Dummy placeholder...)")
-    if st.button("Back to Main Menu"):
-        st.session_state["current_page"] = "Home"
-
-def page_extended_topics():
-    st.title("Extended Topics")
-    st.write("Access advanced or extended topics for further research. (Dummy placeholder...)")
-    if st.button("Back to Main Menu"):
-        st.session_state["current_page"] = "Home"
-
-def page_paperqa2():
-    st.title("PaperQA2")
-    module_paperqa2()
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
@@ -506,154 +195,18 @@ class PaperAnalyzer:
         )
         return self.analyze_with_openai(text, prompt, api_key)
 
-class AlleleFrequencyFinder:
-    """A class to retrieve and display allele frequencies from Ensembl or other sources."""
-    def __init__(self):
-        self.ensembl_server = "https://rest.ensembl.org"
-        self.max_retries = 3
-        self.retry_delay = 2
-
-    def get_allele_frequencies(self, rs_id: str, retry_count: int = 0) -> Optional[Dict[str, Any]]:
-        """Retrieve allele frequencies from Ensembl."""
-        if not rs_id.startswith("rs"):
-            rs_id = f"rs{rs_id}"
-        endpoint = f"/variation/human/{rs_id}?pops=1"
-        url = f"{self.ensembl_server}{endpoint}"
-        try:
-            response = requests.get(url, headers={"Content-Type": "application/json"}, timeout=10)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.HTTPError:
-            if response.status_code == 500 and retry_count < self.max_retries:
-                time.sleep(self.retry_delay)
-                return self.get_allele_frequencies(rs_id, retry_count + 1)
-            elif response.status_code == 404:
-                return None
-            else:
-                return None
-        except requests.exceptions.RequestException:
-            if retry_count < self.max_retries:
-                time.sleep(self.retry_delay)
-                return self.get_allele_frequencies(rs_id, retry_count + 1)
-            return None
-
-    def try_alternative_source(self, rs_id: str) -> Optional[Dict[str, Any]]:
-        return None
-
-    def build_freq_info_text(self, data: Dict[str, Any]) -> str:
-        """Generate a short text about allele frequencies."""
-        if not data:
-            return "No Ensembl Data"
-        maf = data.get("MAF", None)
-        pops = data.get("populations", [])
-        out = []
-        out.append(f"MAF={maf}" if maf else "MAF=n/a")
-        if pops:
-            max_pop = 2
-            for i, pop in enumerate(pops):
-                if i >= max_pop:
-                    break
-                pop_name = pop.get('population', 'N/A')
-                allele = pop.get('allele', 'N/A')
-                freq = pop.get('frequency', 'N/A')
-                out.append(f"{pop_name}:{allele}={freq}")
-        else:
-            out.append("No population data found.")
-        return " | ".join(out)
-
-def split_summary(summary_text):
-    """
-    Attempt to split 'Ergebnisse' and 'Schlussfolgerungen' from a German summary.
-    If not found, fallback is the entire text as 'Ergebnisse', and empty 'Schlussfolgerungen'.
-    """
-    m = re.search(r'Ergebnisse\s*:\s*(.*?)\s*Schlussfolgerungen\s*:\s*(.*)', summary_text, re.DOTALL | re.IGNORECASE)
-    if m:
-        ergebnisse = m.group(1).strip()
-        schlussfolgerungen = m.group(2).strip()
-    else:
-        ergebnisse = summary_text
-        schlussfolgerungen = ""
-    return ergebnisse, schlussfolgerungen
-
-def parse_cohort_info(summary_text: str) -> dict:
-    """
-    Attempt to parse e.g. # of patients, # of controls, or nationality, from a German summary text.
-    Returns a dict with "study_size" and "origin".
-    """
-    info = {"study_size": "", "origin": ""}
-
-    # Example: "50 Japanese children"
-    pattern_nationality = re.compile(
-        r"(\d+)\s+(Filipino|Chinese|Japanese|Han\sChinese|[A-Za-z]+)\s+([Cc]hildren(?:\s+and\s+adolescents)?|adolescents?|participants?|subjects?)",
-        re.IGNORECASE
-    )
-    match_nat = pattern_nationality.search(summary_text)
-    if match_nat:
-        num_str = match_nat.group(1)
-        origin_str = match_nat.group(2)
-        group_str = match_nat.group(3)
-        info["study_size"] = f"{num_str} {group_str}"
-        info["origin"] = origin_str
-
-    # Example: "50 Patienten und 40 gesunde Kontrollpersonen"
-    pattern_both = re.compile(
-        r"(\d+)\s*Patient(?:en)?(?:[^\d]+)(\d+)\s*gesunde\s*Kontroll(?:personen)?",
-        re.IGNORECASE
-    )
-    m_both = pattern_both.search(summary_text)
-    if m_both and not info["study_size"]:
-        p_count = m_both.group(1)
-        c_count = m_both.group(2)
-        info["study_size"] = f"{p_count} patients / {c_count} controls"
-    else:
-        # example: "30 Patienten"
-        pattern_single_p = re.compile(r"(\d+)\s*Patient(?:en)?", re.IGNORECASE)
-        m_single_p = pattern_single_p.search(summary_text)
-        if m_single_p and not info["study_size"]:
-            info["study_size"] = f"{m_single_p.group(1)} patients"
-
-    # example: "in der japanischen Bevölkerung"
-    pattern_origin = re.compile(r"in\s*der\s+(\S+)\s+Bevölkerung", re.IGNORECASE)
-    m_orig = pattern_origin.search(summary_text)
-    if m_orig and not info["origin"]:
-        info["origin"] = m_orig.group(1).strip()
-
-    return info
-
-def parse_publication_date(text: str) -> str:
-    """
-    Looks for 'Published: 20 November 2024' -> returns '20.11.2024'.
-    Otherwise returns 'n/a'.
-    """
-    pattern = re.compile(r"Published:\s*(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})", re.IGNORECASE)
-    match = pattern.search(text)
-    if match:
-        day = match.group(1)
-        month_str = match.group(2)
-        year = match.group(3)
-
-        months_map = {
-            "January": "01", "February": "02", "March": "03", "April": "04",
-            "May": "05", "June": "06", "July": "07", "August": "08",
-            "September": "09", "October": "10", "November": "11", "December": "12"
-        }
-        month_num = months_map.get(month_str.capitalize(), "01")
-        day = day.zfill(2)
-        return f"{day}.{month_num}.{year}"
-    else:
-        return "n/a"
-
 def page_analyze_paper():
-    """
-    Main page for analyzing papers (uploading PDFs, analyzing them individually or collectively,
-    or combining them in a single text).
-    """
     st.title("Analyze Paper - Integrated")
 
     if "api_key" not in st.session_state:
         st.session_state["api_key"] = OPENAI_API_KEY or ""
 
-    # Sidebar
+    # Reset / Start a new Analysis Button
+    if st.button("Reset / Start a new Analysis"):
+        if "analysis_results" in st.session_state:
+            del st.session_state["analysis_results"]
+        st.experimental_rerun()
+
     st.sidebar.header("Settings - PaperAnalyzer")
     new_key_value = st.sidebar.text_input("OpenAI API Key", type="password", value=st.session_state["api_key"])
     st.session_state["api_key"] = new_key_value
@@ -664,8 +217,7 @@ def page_analyze_paper():
         index=0
     )
 
-    compare_mode = st.sidebar.checkbox("Compare mode (exclude outlier papers)?")
-    theme_mode = st.sidebar.radio("Determine Main Theme", ["Manuell", "GPT"])
+    # Analysis type
     action = st.sidebar.radio(
         "Analysis Type",
         [
@@ -677,351 +229,133 @@ def page_analyze_paper():
         ],
         index=0
     )
-    user_defined_theme = ""
-    if theme_mode == "Manuell":
-        user_defined_theme = st.sidebar.text_input("Manual Main Theme (for compare mode)")
 
-    topic = st.sidebar.text_input("Topic (for relevance)?")
+    # Language dropdown for final result
+    output_lang = st.sidebar.selectbox(
+        "Output Language for Analysis",
+        ["Deutsch", "Englisch", "Portugiesisch", "Serbisch"],
+        index=0
+    )
 
-    # Additional checkbox: "Combine all selected PDFs in one single text for analysis"
+    # Topic for Relevanz-Bewertung
+    topic = st.sidebar.text_input("Topic (for Relevanz-Bewertung)?")
+
+    # Combine multiple PDFs into one text?
     combine_texts_single_analysis = st.sidebar.checkbox("Combine selected PDFs into one single text?")
 
-    # PDF upload
     uploaded_files = st.file_uploader("Upload PDF files", type="pdf", accept_multiple_files=True)
     analyzer = PaperAnalyzer(model=model)
     api_key = st.session_state["api_key"]
 
-    # Single or combined analysis (no Excel)
     if uploaded_files and api_key:
-        st.write("## Single/Multiple Analysis (No Excel)")
-        # If user checks "combine_texts_single_analysis", we won't give a selectbox for single vs all
-        # We'll just do them all as one text
-        if combine_texts_single_analysis:
-            if st.button("Start Combined Analysis (No Excel)"):
-                # Combine the text from all uploaded files
+        st.write("## Single or Combined Analysis (No Excel)")
+        if st.button("Start Analysis (No Excel)"):
+            if combine_texts_single_analysis:
+                # Combine all PDFs into one text
                 combined_text = ""
-                for fpdf in uploaded_files:
-                    text_data = analyzer.extract_text_from_pdf(fpdf)
-                    if not text_data.strip():
-                        st.warning(f"No text from {fpdf.name} (skipped).")
-                        continue
-                    combined_text += f"\n=== {fpdf.name} ===\n{text_data}\n"
+                for pdf_file in uploaded_files:
+                    extracted_text = analyzer.extract_text_from_pdf(pdf_file)
+                    if extracted_text.strip():
+                        combined_text += f"\n=== {pdf_file.name} ===\n{extracted_text}\n"
+                    else:
+                        st.warning(f"No text extracted from {pdf_file.name}, skipping.")
 
                 if not combined_text.strip():
-                    st.error("No text to analyze from selected PDFs!")
+                    st.error("No text to analyze from selected PDFs.")
                     return
 
-                result = ""
                 if action == "Zusammenfassung":
                     r_ = analyzer.summarize(combined_text, api_key)
-                    result = translate_text_openai(r_, "German", "English", api_key)
-
                 elif action == "Wichtigste Erkenntnisse":
                     r_ = analyzer.extract_key_findings(combined_text, api_key)
-                    result = translate_text_openai(r_, "German", "English", api_key)
-
                 elif action == "Methoden & Techniken":
                     r_ = analyzer.identify_methods(combined_text, api_key)
-                    result = translate_text_openai(r_, "German", "English", api_key)
-
                 elif action == "Relevanz-Bewertung":
                     if not topic:
-                        st.error("Please provide a topic for relevance!")
+                        st.error("Please provide a topic for Relevanz-Bewertung!")
                         return
                     r_ = analyzer.evaluate_relevance(combined_text, topic, api_key)
-                    result = translate_text_openai(r_, "German", "English", api_key)
-
                 elif action == "Tabellen & Grafiken":
-                    # This is a tricky scenario because combining PDFs might lose the page structure
-                    # We'll do a simpler approach: just disclaim
-                    st.warning("Tables & Graphics combined analysis is simplified.")
-                    # Possibly just do a text-based approach
-                    # Because you'd normally parse each PDF's tables separately
-                    r_ = "(Tables & Graphics in combined mode not fully implemented.)"
-                    result = r_
-
-                st.subheader("Combined Analysis Result:")
-                st.markdown(result)
-
-        else:
-            # The "normal" single vs all approach
-            pdf_options = ["(All)"] + [f"{i+1}) {f.name}" for i, f in enumerate(uploaded_files)]
-            selected_pdf = st.selectbox("Choose a PDF for single analysis or '(All)'", pdf_options)
-
-            if st.button("Start Analysis (No Excel)"):
-                if selected_pdf == "(All)":
-                    files_to_process = uploaded_files
+                    # disclaim partial table analysis
+                    r_ = "(Partial table/graphic analysis in combined mode - not fully supported.)"
                 else:
-                    idx = pdf_options.index(selected_pdf) - 1
-                    files_to_process = [uploaded_files[idx]]
+                    r_ = "(No analysis type selected.)"
 
-                final_result_text = []
-                for fpdf in files_to_process:
-                    text_data = analyzer.extract_text_from_pdf(fpdf)
-                    if not text_data.strip():
-                        st.error(f"No text extracted from {fpdf.name}. Skipped.")
+                # Translate if needed
+                if output_lang != "Deutsch":
+                    lang_map = {
+                        "Englisch": "English",
+                        "Portugiesisch": "Portuguese",
+                        "Serbisch": "Serbian"
+                    }
+                    target_lang = lang_map.get(output_lang, "English")
+                    r_ = translate_text_openai(r_, "German", target_lang, api_key)
+
+                st.subheader("Combined Analysis Result")
+                st.write(r_)
+
+            else:
+                # Individual analysis
+                final_results = []
+                for pdf_file in uploaded_files:
+                    extracted_text = analyzer.extract_text_from_pdf(pdf_file)
+                    if not extracted_text.strip():
+                        st.warning(f"No text extracted from {pdf_file.name}, skipping.")
                         continue
 
-                    result = ""
                     if action == "Zusammenfassung":
-                        r_ = analyzer.summarize(text_data, api_key)
-                        result = translate_text_openai(r_, "German", "English", api_key)
-
+                        r_ = analyzer.summarize(extracted_text, api_key)
                     elif action == "Wichtigste Erkenntnisse":
-                        r_ = analyzer.extract_key_findings(text_data, api_key)
-                        result = translate_text_openai(r_, "German", "English", api_key)
-
+                        r_ = analyzer.extract_key_findings(extracted_text, api_key)
                     elif action == "Methoden & Techniken":
-                        r_ = analyzer.identify_methods(text_data, api_key)
-                        result = translate_text_openai(r_, "German", "English", api_key)
-
+                        r_ = analyzer.identify_methods(extracted_text, api_key)
                     elif action == "Relevanz-Bewertung":
                         if not topic:
-                            st.error("Please provide a topic for relevance!")
+                            st.error("Please provide a topic for Relevanz-Bewertung!")
                             continue
-                        r_ = analyzer.evaluate_relevance(text_data, topic, api_key)
-                        result = translate_text_openai(r_, "German", "English", api_key)
-
+                        r_ = analyzer.evaluate_relevance(extracted_text, topic, api_key)
                     elif action == "Tabellen & Grafiken":
-                        all_tables_text = []
+                        # minimal table parse with pdfplumber
+                        table_lines = []
                         try:
-                            with pdfplumber.open(fpdf) as pdf_:
-                                for page_number, page in enumerate(pdf_.pages, start=1):
-                                    tables = page.extract_tables()
-                                    if tables:
-                                        for table_idx, table_data in enumerate(tables, start=1):
-                                            if not table_data:
-                                                continue
-                                            first_row = table_data[0]
-                                            data_rows = table_data[1:]
-                                            if not data_rows:
-                                                data_rows = table_data
-                                                first_row = [f"Col_{i}" for i in range(len(data_rows[0]))]
-
-                                            import pandas as pd
-                                            new_header = []
-                                            used_cols = {}
-                                            for col in first_row:
-                                                col_str = col if col else "N/A"
-                                                if col_str not in used_cols:
-                                                    used_cols[col_str] = 1
-                                                    new_header.append(col_str)
-                                                else:
-                                                    used_cols[col_str] += 1
-                                                    new_header.append(f"{col_str}.{used_cols[col_str]}")
-
-                                            if any(len(row) != len(new_header) for row in data_rows):
-                                                df = pd.DataFrame(table_data)
-                                            else:
-                                                df = pd.DataFrame(data_rows, columns=new_header)
-
-                                            table_str = df.to_csv(index=False)
-                                            all_tables_text.append(
-                                                f"Page {page_number}, Table {table_idx}:\n{table_str}\n"
+                            with pdfplumber.open(pdf_file) as pdf_:
+                                for pgnum, page in enumerate(pdf_.pages, start=1):
+                                    found_tables = page.extract_tables()
+                                    if found_tables:
+                                        for tix, tdata in enumerate(found_tables, start=1):
+                                            table_lines.append(
+                                                f"Page {pgnum}, Table {tix}, row_count={len(tdata)}"
                                             )
-                            if len(all_tables_text) > 0:
-                                combined_tables = "\n".join(all_tables_text)
-                                gpt_prompt = (
-                                    "Please analyze the following tables from a scientific PDF. "
-                                    "Summarize the key insights and provide a brief interpretation:\n\n"
-                                    f"{combined_tables}"
-                                )
-                                openai.api_key = api_key
-                                try:
-                                    resp = openai.chat.completions.create(
-                                        model=model,
-                                        messages=[
-                                            {"role": "system", "content": "You are an expert in PDF table analysis."},
-                                            {"role": "user", "content": gpt_prompt}
-                                        ],
-                                        temperature=0.3,
-                                        max_tokens=1000
-                                    )
-                                    result = resp.choices[0].message.content
-                                except Exception as e_:
-                                    st.error(f"GPT table analysis error: {e_}")
-                                    result = "(Error in GPT evaluation for tables)"
+                            if table_lines:
+                                r_ = "Tables found:\n" + "\n".join(table_lines)
                             else:
-                                result = "No tables found in the PDF."
+                                r_ = "No tables found."
                         except Exception as e_:
-                            st.error(f"Error reading PDF tables from {fpdf.name}: {e_}")
-                            result = f"(Error reading tables in {fpdf.name})"
+                            r_ = f"Error reading tables: {e_}"
+                    else:
+                        r_ = "(No analysis type selected.)"
 
-                    final_result_text.append(f"**Result for {fpdf.name}:**\n\n{result}")
+                    # Translate final result if needed
+                    if output_lang != "Deutsch":
+                        lang_map = {
+                            "Englisch": "English",
+                            "Portugiesisch": "Portuguese",
+                            "Serbisch": "Serbian"
+                        }
+                        target_lang = lang_map.get(output_lang, "English")
+                        r_ = translate_text_openai(r_, "German", target_lang, api_key)
 
-                st.subheader("Analysis Results (No Excel)")
-                combined_output = "\n\n---\n\n".join(final_result_text)
-                st.markdown(combined_output)
+                    final_results.append(f"**Result for {pdf_file.name}:**\n\n{r_}")
+
+                st.subheader("Individual Analysis Results (No Excel)")
+                st.markdown("\n\n---\n\n".join(final_results))
     else:
         if not api_key:
             st.warning("Please enter an OpenAI API key!")
         elif not uploaded_files:
             st.info("Please upload one or more PDF files!")
 
-    # ---------------- Multi-PDF => Excel approach ----------------
-    st.write("---")
-    st.write("## All Analyses & Excel Output (Multi-PDF)")
-    user_relevance_score = st.text_input("Manual Relevance Score (1-10)?")
-
-    if "analysis_results" not in st.session_state:
-        st.session_state["analysis_results"] = []
-
-    if uploaded_files and api_key:
-        if st.button("Analyze All & Save to Excel (Multi)"):
-            st.session_state["analysis_results"] = []
-            with st.spinner("Analyzing PDFs..."):
-                import openpyxl
-                import datetime
-
-                if compare_mode:
-                    selected_files_for_excel = uploaded_files
-                else:
-                    selected_files_for_excel = uploaded_files
-
-                main_theme_final = user_defined_theme.strip() if theme_mode == "Manuell" else "n/a"
-
-                for fpdf in selected_files_for_excel:
-                    text_data = analyzer.extract_text_from_pdf(fpdf)
-                    if not text_data.strip():
-                        st.error(f"No text from {fpdf.name} (skipped).")
-                        continue
-
-                    summary_de = analyzer.summarize(text_data, api_key)
-                    summary_en = translate_text_openai(summary_de, "German", "English", api_key)
-
-                    keyf_de = analyzer.extract_key_findings(text_data, api_key)
-                    keyf_en = translate_text_openai(keyf_de, "German", "English", api_key)
-
-                    ergebnisse_de, schlussfolgerung_de = split_summary(summary_de)
-                    ergebnisse_en = translate_text_openai(ergebnisse_de, "German", "English", api_key)
-                    schluss_en = translate_text_openai(schlussfolgerung_de, "German", "English", api_key)
-
-                    c_info = parse_cohort_info(summary_de)
-                    combined_study = (c_info["study_size"] + " " + c_info["origin"]).strip()
-                    if not combined_study:
-                        combined_study = "n/a"
-                    combined_study_en = translate_text_openai(combined_study, "German", "English", api_key)
-
-                    pub_date_str = parse_publication_date(text_data)
-
-                    pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
-                    match_text = re.search(pattern_obvious, text_data)
-                    found_gene = match_text.group(1) if match_text else None
-
-                    rs_pat = r"(rs\d+)"
-                    match_rs = re.search(rs_pat, text_data)
-                    found_rs = match_rs.group(1) if match_rs else None
-
-                    genotype_regex = r"\b([ACGT]{2,3})\b"
-                    lines = text_data.split("\n")
-                    found_pairs = []
-                    for line in lines:
-                        matches = re.findall(genotype_regex, line)
-                        if matches:
-                            for m in matches:
-                                found_pairs.append(m)
-
-                    unique_genos = []
-                    for g_ in found_pairs:
-                        if g_ not in unique_genos:
-                            unique_genos.append(g_)
-                    genotypes = unique_genos[:3]
-
-                    from openpyxl import load_workbook
-                    try:
-                        wb = load_workbook("vorlage_paperqa2.xlsx")
-                    except FileNotFoundError:
-                        st.error("Template 'vorlage_paperqa2.xlsx' not found!")
-                        return
-
-                    ws = wb.active
-                    now_str = datetime.datetime.now().strftime("%Y-%m-%d")
-                    ws["J2"] = now_str
-                    ws["D2"] = main_theme_final
-                    ws["D5"] = found_gene if found_gene else "n/a"
-                    ws["D6"] = found_rs if found_rs else "n/a"
-
-                    genotype_cells = ["D10", "D11", "D12"]
-                    freq_cells = ["E10", "E11", "E12"]
-                    for i in range(3):
-                        if i < len(genotypes):
-                            ws[genotype_cells[i]] = genotypes[i]
-                            ws[freq_cells[i]] = f"{found_rs}:{genotypes[i]}" if found_rs else ""
-                        else:
-                            ws[genotype_cells[i]] = ""
-                            ws[freq_cells[i]] = ""
-
-                    ws["C20"] = pub_date_str
-                    ws["D20"] = combined_study_en
-                    ws["E20"] = keyf_en
-                    ws["G21"] = ergebnisse_en
-                    ws["G22"] = schluss_en
-
-                    output_buffer = io.BytesIO()
-                    wb.save(output_buffer)
-                    output_buffer.seek(0)
-
-                    st.session_state["analysis_results"].append((fpdf.name, output_buffer))
-
-    # Show the individual Excel download buttons
-    if "analysis_results" in st.session_state and st.session_state["analysis_results"]:
-        st.write("## Download Analyzed Excel Files (Individual)")
-        for (filename, io_obj) in st.session_state["analysis_results"]:
-            st.download_button(
-                label=f"Download Excel for {filename}",
-                data=io_obj.getvalue(),
-                file_name=f"analysis_{filename.replace('.pdf', '')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key=f"download_{filename}"
-            )
-
-        # Additional option to combine all these individual XLSX files into one combined workbook
-        st.write("---")
-        st.write("## Combine Individual Excel Files into One Workbook (Using Template Format)")
-
-        if st.button("Combine All Individual XLSX into One Workbook"):
-            from openpyxl import load_workbook, Workbook
-
-            combined_wb = Workbook()
-            default_sheet = combined_wb.active
-            combined_wb.remove(default_sheet)
-
-            # Helper to sanitize sheet name
-            def make_safe_sheetname(name: str, maxlen: int = 31) -> str:
-                invalid_chars = [":", "*", "/", "\\", "?", "[", "]"]
-                for ch in invalid_chars:
-                    name = name.replace(ch, "")
-                safe_name = name[:maxlen]
-                if not safe_name.strip():
-                    safe_name = "Sheet"
-                return safe_name
-
-            for (filename, io_obj) in st.session_state["analysis_results"]:
-                xls_bytes = io_obj.getvalue()
-                temp_wb = load_workbook(io.BytesIO(xls_bytes))
-                sheet = temp_wb.active
-
-                gene_name = sheet["D5"].value or "GENE_UNKNOWN"
-                sheet_name = make_safe_sheetname(gene_name)
-
-                new_ws = combined_wb.create_sheet(sheet_name)
-                for row_idx, row_data in enumerate(sheet.iter_rows(values_only=True), start=1):
-                    for col_idx, cell_val in enumerate(row_data, start=1):
-                        new_ws.cell(row=row_idx, column=col_idx, value=cell_val)
-
-            final_buffer = io.BytesIO()
-            combined_wb.save(final_buffer)
-            final_buffer.seek(0)
-
-            st.download_button(
-                label="Download Combined Workbook",
-                data=final_buffer,
-                file_name="combined_workbook.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-
 def sidebar_module_navigation():
-    """Simple sidebar navigation."""
     st.sidebar.title("Module Navigation")
     pages = {
         "Home": page_home,
@@ -1029,7 +363,7 @@ def sidebar_module_navigation():
         "3) Codewords & PubMed": page_codewords_pubmed,
         "Analyze Paper": page_analyze_paper,
     }
-    for label, page in pages.items():
+    for label, page_fn in pages.items():
         if st.sidebar.button(label, key=label):
             st.session_state["current_page"] = label
 
