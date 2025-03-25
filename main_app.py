@@ -667,7 +667,7 @@ Gib mir eine Zahl von 0 bis 100 (Relevanz), wobei sowohl Codewörter als auch Ge
 # ------------------------------------------------------------------
 # NEUER Bereich: Funktion zur Analyse von Gemeinsamkeiten & Widersprüchen
 # ------------------------------------------------------------------
-def analyze_papers_for_commonalities_and_contradictions(pdf_texts: Dict[str, str], api_key: str, model: str):
+def analyze_papers_for_commonalities_and_contradictions(pdf_texts: Dict[str, str], api_key: str, model: str, method_choice: str = "Standard"):
     """
     Naive Logik zur Extraktion von Claims aus jedem Paper und Ermittlung von
     Gemeinsamkeiten und Widersprüchen.
@@ -675,6 +675,7 @@ def analyze_papers_for_commonalities_and_contradictions(pdf_texts: Dict[str, str
     :param pdf_texts: Dictionary, wobei der Schlüssel der Dateiname und der Wert der extrahierte Text ist.
     :param api_key: OpenAI API Key.
     :param model: GPT-Modell (z.B. "gpt-3.5-turbo").
+    :param method_choice: "Standard" oder "ContraCrow" – bestimmt den verwendeten Prompt.
     :return: JSON-String mit den Ergebnissen.
     """
     import openai
@@ -724,12 +725,33 @@ Text: {txt[:6000]}
     big_input_str = json.dumps(merged_claims, ensure_ascii=False, indent=2)
 
     # 3) Prompt an GPT, um Gemeinsamkeiten und Widersprüche zu identifizieren
-    final_prompt = f"""
+    if method_choice == "ContraCrow":
+        final_prompt = f"""
+Nutze die ContraCrow-Methodik, um die folgenden Claims (Aussagen) aus mehreren wissenschaftlichen PDF-Papers zu analysieren. 
+Die ContraCrow-Methodik fokussiert sich darauf, systematisch Gemeinsamkeiten und klare Widersprüche zu identifizieren.
+Bitte identifiziere:
+1) Die zentralen gemeinsamen Aussagen, die in den Papers auftreten.
+2) Klare Widersprüche zwischen den Aussagen der verschiedenen Papers.
+Antworte ausschließlich in folgendem JSON-Format (ohne zusätzliche Erklärungen):
+{{
+  "commonalities": [
+    "Gemeinsamkeit 1",
+    "Gemeinsamkeit 2"
+  ],
+  "contradictions": [
+    {{"paperA": "...", "claimA": "...", "paperB": "...", "claimB": "...", "reason": "..." }},
+    ...
+  ]
+}}
+Hier die Claims:
+{big_input_str}
+"""
+    else:
+        final_prompt = f"""
 Hier sind verschiedene Claims (Aussagen) aus mehreren wissenschaftlichen PDF-Papers im JSON-Format.
 Bitte identifiziere:
 1) Gemeinsamkeiten zwischen den Papers (Wo überschneiden oder ergänzen sich die Aussagen?)
 2) Mögliche Widersprüche (Welche Aussagen widersprechen sich klar?)
-
 Antworte NUR in folgendem JSON-Format (ohne zusätzliche Erklärungen):
 {{
   "commonalities": [
@@ -741,7 +763,6 @@ Antworte NUR in folgendem JSON-Format (ohne zusätzliche Erklärungen):
     ...
   ]
 }}
-
 Hier die Claims:
 {big_input_str}
 """
@@ -780,6 +801,10 @@ def page_analyze_paper():
         ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4o"],
         index=0
     )
+    
+    # Neue Optionen für die gemeinsame Analyse
+    analysis_method = st.sidebar.selectbox("Analyse-Methode (Gemeinsamkeiten & Widersprüche)", ["Standard GPT", "ContraCrow"])
+    analysis_source = st.sidebar.radio("Analysequelle", ["PDF Volltext", "Abstract"])
     
     # Compare Mode
     compare_mode = st.sidebar.checkbox("Alle Paper gemeinsam vergleichen (Outlier ausschließen)?")
@@ -1303,25 +1328,49 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
     # ------------------------------------------------------------------
     st.write("---")
     st.header("PaperQA Multi-Paper Analyzer: Gemeinsamkeiten & Widersprüche")
-    # Falls noch nicht vorhanden, alle PDF-Texte extrahieren und in st.session_state["paper_texts"] speichern
-    if "paper_texts" not in st.session_state or not st.session_state["paper_texts"]:
-        if uploaded_files:
-            st.session_state["paper_texts"] = {}
-            for upf in uploaded_files:
-                text = analyzer.extract_text_from_pdf(upf)
-                if text.strip():
-                    st.session_state["paper_texts"][upf.name] = text
+    # Option: Analysequelle (PDF Volltext vs. Abstract)
+    analysis_source = st.selectbox("Analysequelle", ["PDF Volltext", "Abstract"])
+    # Option: Auswahl der Methode (Standard oder ContraCrow)
+    analysis_method = st.selectbox("Analyse-Methode", ["Standard GPT", "ContraCrow"])
+    
+    # Erzeuge Dictionary mit Texten
+    if analysis_source == "Abstract":
+        # Nutze Abstracts aus den gescorten Papern (falls vorhanden)
+        if "scored_list" in st.session_state and st.session_state["scored_list"]:
+            paper_texts = {}
+            for paper in st.session_state["scored_list"]:
+                title = paper.get("Title", "Unbenannt")
+                abstract = paper.get("Abstract", "")
+                if abstract.strip():
+                    paper_texts[title] = abstract
                 else:
-                    st.warning(f"Kein Text extrahierbar aus {upf.name}")
-    if st.button("Gemeinsamkeiten & Widersprüche analysieren"):
+                    st.warning(f"Kein Abstract für {title} vorhanden.")
+        else:
+            st.error("Keine gescorten Paper vorhanden für die Abstract-Analyse.")
+            paper_texts = {}
+    else:
+        # Nutze die bereits extrahierten PDF-Volltexte (st.session_state["paper_texts"])
         if "paper_texts" not in st.session_state or not st.session_state["paper_texts"]:
-            st.error("Keine hochgeladenen PDF-Texte vorhanden.")
+            if uploaded_files:
+                st.session_state["paper_texts"] = {}
+                for upf in uploaded_files:
+                    text = analyzer.extract_text_from_pdf(upf)
+                    if text.strip():
+                        st.session_state["paper_texts"][upf.name] = text
+                    else:
+                        st.warning(f"Kein Text extrahierbar aus {upf.name}")
+        paper_texts = st.session_state["paper_texts"]
+    
+    if st.button("Gemeinsamkeiten & Widersprüche analysieren"):
+        if not paper_texts:
+            st.error("Keine Texte für die Analyse vorhanden.")
         else:
             with st.spinner("Analysiere Paper auf Gemeinsamkeiten & Widersprüche..."):
                 result_json_str = analyze_papers_for_commonalities_and_contradictions(
-                    st.session_state["paper_texts"],
+                    paper_texts,
                     api_key,
-                    model
+                    model,
+                    method_choice="ContraCrow" if analysis_method == "ContraCrow" else "Standard"
                 )
                 st.subheader("Ergebnis (JSON)")
                 st.code(result_json_str, language="json")
