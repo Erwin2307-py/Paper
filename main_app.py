@@ -440,179 +440,79 @@ def page_online_api_filter():
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
-class PaperAnalyzer:
-    def __init__(self, model="gpt-3.5-turbo"):
-        self.model = model
-    
-    def extract_text_from_pdf(self, pdf_file):
-        """Extrahiert reinen Text via PyPDF2 (ggf. OCR nötig, falls PDF nicht durchsuchbar)."""
-        reader = PyPDF2.PdfReader(pdf_file)
-        text = ""
-        for page in reader.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text + "\n"
-        return text
-    
-    def analyze_with_openai(self, text, prompt_template, api_key):
-        """Hilfsfunktion, um OpenAI per ChatCompletion aufzurufen."""
-        if len(text) > 15000:
-            text = text[:15000] + "..."
-        prompt = prompt_template.format(text=text)
-        openai.api_key = api_key
-        response = openai.ChatCompletion.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": (
-                    "Du bist ein Experte für die Analyse wissenschaftlicher Paper, "
-                    "besonders im Bereich Side-Channel Analysis."
-                )},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.3,
-            max_tokens=1500
-        )
-        return response.choices[0].message.content
-    
-    def summarize(self, text, api_key):
-        """Erstellt eine Zusammenfassung in Deutsch."""
-        prompt = (
-            "Erstelle eine strukturierte Zusammenfassung des folgenden "
-            "wissenschaftlichen Papers. Gliedere sie in mindestens vier klar getrennte Abschnitte "
-            "(z.B. 1. Hintergrund, 2. Methodik, 3. Ergebnisse, 4. Schlussfolgerungen). "
-            "Verwende maximal 500 Wörter:\n\n{text}"
-        )
-        return self.analyze_with_openai(text, prompt, api_key)
-    
-    def extract_key_findings(self, text, api_key):
-        """Extrahiere die 5 wichtigsten Erkenntnisse."""
-        prompt = (
-            "Extrahiere die 5 wichtigsten Erkenntnisse aus diesem wissenschaftlichen "
-            "Paper im Bereich Side-Channel Analysis. Liste sie mit Bulletpoints auf:\n\n{text}"
-        )
-        return self.analyze_with_openai(text, prompt, api_key)
-    
-    def identify_methods(self, text, api_key):
-        """Ermittelt genutzte Methoden und Techniken."""
-        prompt = (
-            "Identifiziere und beschreibe die im Paper verwendeten Methoden "
-            "und Techniken zur Side-Channel-Analyse. Gib zu jeder Methode "
-            "eine kurze Erklärung:\n\n{text}"
-        )
-        return self.analyze_with_openai(text, prompt, api_key)
-    
-    def evaluate_relevance(self, text, topic, api_key):
-        """Bewertet die Relevanz zum Thema (Skala 1-10)."""
-        prompt = (
-            f"Bewerte die Relevanz dieses Papers für das Thema '{topic}' auf "
-            f"einer Skala von 1-10. Begründe deine Bewertung:\n\n{{text}}"
-        )
-        return self.analyze_with_openai(text, prompt, api_key)
+# ---------------------------
+# Neue Funktion: ChatGPT-Scoring mit Genes und Codewords
+# ---------------------------
+def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
+    """
+    Lässt ChatGPT jedes Paper scoren (0-100) basierend auf Codewörtern + Genen.
+    Zeigt dabei an, welches Paper gerade verarbeitet wird.
+    """
+    if not papers:
+        return []
 
-class AlleleFrequencyFinder:
-    """Klasse zum Abrufen und Anzeigen von Allelfrequenzen aus verschiedenen Quellen."""
-    def __init__(self):
-        self.ensembl_server = "https://rest.ensembl.org"
-        self.max_retries = 3
-        self.retry_delay = 2  # Sekunden zwischen Wiederholungsversuchen
+    openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
+    if not openai.api_key:
+        st.error("Kein 'OPENAI_API_KEY' in st.secrets hinterlegt.")
+        return []
 
-    def get_allele_frequencies(self, rs_id: str, retry_count: int = 0) -> Optional[Dict[str, Any]]:
-        """Holt Allelfrequenzen von Ensembl."""
-        if not rs_id.startswith("rs"):
-            rs_id = f"rs{rs_id}"
-        endpoint = f"/variation/human/{rs_id}?pops=1"
-        url = f"{self.ensembl_server}{endpoint}"
+    scored_results = []
+    total = len(papers)
+    progress = st.progress(0)
+    status_text = st.empty()  # Platzhalter für Status-Informationen
+
+    genes_str = ", ".join(genes) if genes else ""
+
+    for idx, paper in enumerate(papers, start=1):
+        # Update Status: Zeige an, welches Paper gerade verarbeitet wird.
+        current_title = paper.get("Title", "n/a")
+        status_text.text(f"Verarbeite Paper {idx}/{total}: {current_title}")
+        progress.progress(idx / total)
+        title = paper.get("Title", "n/a")
+        abstract = paper.get("Abstract", "n/a")
+
+        prompt = (
+            f"Codewörter: {codewords}\n"
+            f"Gene: {genes_str}\n\n"
+            f"Paper:\n"
+            f"Titel: {title}\n"
+            f"Abstract:\n{abstract}\n\n"
+            "Gib mir eine Zahl von 0 bis 100 (Relevanz), "
+            "wobei sowohl Codewörter als auch Gene berücksichtigt werden."
+        )
         try:
-            response = requests.get(url, headers={"Content-Type": "application/json"}, timeout=10)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.HTTPError as e:
-            if response.status_code == 500 and retry_count < self.max_retries:
-                time.sleep(self.retry_delay)
-                return self.get_allele_frequencies(rs_id, retry_count + 1)
-            elif response.status_code == 404:
-                return None
+            resp = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=20,
+                temperature=0
+            )
+            raw_text = resp.choices[0].message.content.strip()
+            match = re.search(r'(\d+)', raw_text)
+            if match:
+                score = int(match.group(1))
             else:
-                return None
-        except requests.exceptions.RequestException:
-            if retry_count < self.max_retries:
-                time.sleep(self.retry_delay)
-                return self.get_allele_frequencies(rs_id, retry_count + 1)
-            return None
-    
-    def try_alternative_source(self, rs_id: str) -> Optional[Dict[str, Any]]:
-        return None
-    
-    def build_freq_info_text(self, data: Dict[str, Any]) -> str:
-        """Erzeugt einen kurzen Text über Allelfrequenzen."""
-        if not data:
-            return "Keine Daten von Ensembl"
-        maf = data.get("MAF", None)
-        pops = data.get("populations", [])
-        out = []
-        out.append(f"MAF={maf}" if maf else "MAF=n/a")
-        if pops:
-            max_pop = 2
-            for i, pop in enumerate(pops):
-                if i >= max_pop:
-                    break
-                pop_name = pop.get('population', 'N/A')
-                allele = pop.get('allele', 'N/A')
-                freq = pop.get('frequency', 'N/A')
-                out.append(f"{pop_name}:{allele}={freq}")
-        else:
-            out.append("Keine Populationsdaten gefunden.")
-        return " | ".join(out)
+                score = 0
+        except Exception as e:
+            st.error(f"ChatGPT Fehler beim Scoring: {e}")
+            score = 0
 
-def split_summary(summary_text):
-    """Versucht 'Ergebnisse' und 'Schlussfolgerungen' zu splitten."""
-    m = re.search(r'Ergebnisse\s*:\s*(.*?)\s*Schlussfolgerungen\s*:\s*(.*)', summary_text, re.DOTALL | re.IGNORECASE)
-    if m:
-        ergebnisse = m.group(1).strip()
-        schlussfolgerungen = m.group(2).strip()
-    else:
-        ergebnisse = summary_text
-        schlussfolgerungen = ""
-    return ergebnisse, schlussfolgerungen
+        new_item = dict(paper)
+        new_item["Relevance"] = score
+        scored_results.append(new_item)
 
-def parse_cohort_info(summary_text: str) -> dict:
-    """Parst grobe Infos zur Kohorte (Anzahl Patienten, Herkunft etc.) aus deutschem Summary."""
-    info = {"study_size": "", "origin": ""}
+    # Status-Platzhalter leeren, wenn fertig.
+    status_text.empty()
+    progress.empty()
 
-    pattern_nationality = re.compile(
-        r"(\d+)\s+(Filipino|Chinese|Japanese|Han\sChinese|[A-Za-z]+)\s+([Cc]hildren(?:\s+and\s+adolescents)?|adolescents?|participants?|subjects?)",
-        re.IGNORECASE
-    )
-    match_nat = pattern_nationality.search(summary_text)
-    if match_nat:
-        num_str = match_nat.group(1)
-        origin_str = match_nat.group(2)
-        group_str = match_nat.group(3)
-        info["study_size"] = f"{num_str} {group_str}"
-        info["origin"] = origin_str
+    # Sortieren nach Relevance
+    scored_results.sort(key=lambda x: x["Relevance"], reverse=True)
 
-    pattern_both = re.compile(
-        r"(\d+)\s*Patient(?:en)?(?:[^\d]+)(\d+)\s*gesunde\s*Kontroll(?:personen)?",
-        re.IGNORECASE
-    )
-    m_both = pattern_both.search(summary_text)
-    if m_both and not info["study_size"]:
-        p_count = m_both.group(1)
-        c_count = m_both.group(2)
-        info["study_size"] = f"{p_count} Patienten / {c_count} Kontrollpersonen"
-    else:
-        pattern_single_p = re.compile(r"(\d+)\s*Patient(?:en)?", re.IGNORECASE)
-        m_single_p = pattern_single_p.search(summary_text)
-        if m_single_p and not info["study_size"]:
-            info["study_size"] = f"{m_single_p.group(1)} Patienten"
+    return scored_results[:top_k]
 
-    pattern_origin = re.compile(r"in\s*der\s+(\S+)\s+Bevölkerung", re.IGNORECASE)
-    m_orig = pattern_origin.search(summary_text)
-    if m_orig and not info["origin"]:
-        info["origin"] = m_orig.group(1).strip()
-
-    return info
-
+# ------------------------------------------------------------------
+# 8) Seite: Analyze Paper
+# ------------------------------------------------------------------
 def page_analyze_paper():
     """
     Seite für die Analyse von Papers (Upload PDFs, einzeln oder kombiniert,
@@ -695,8 +595,8 @@ def page_analyze_paper():
                     st.error("Keine verwertbaren Paper.")
                     return
 
-                # Run the outlier logic to get a list of relevant papers
-                # (This returns a list of filenames and the discovered main theme)
+                # Hier wird angenommen, dass do_outlier_logic bereits korrekt definiert ist
+                # (Die Logik zur Bestimmung der relevanten Paper bleibt unverändert.)
                 relevant_papers, discovered_theme = do_outlier_logic(paper_map)
                 st.session_state["relevant_papers_compare"] = relevant_papers
                 st.session_state["theme_compare"] = discovered_theme
@@ -767,22 +667,18 @@ def page_analyze_paper():
                     if action == "Zusammenfassung":
                         with st.spinner(f"Erstelle Zusammenfassung für {fpdf.name}..."):
                             result = analyzer.summarize(text_data, api_key)
-
                     elif action == "Wichtigste Erkenntnisse":
                         with st.spinner(f"Extrahiere Erkenntnisse aus {fpdf.name}..."):
                             result = analyzer.extract_key_findings(text_data, api_key)
-
                     elif action == "Methoden & Techniken":
                         with st.spinner(f"Identifiziere Methoden aus {fpdf.name}..."):
                             result = analyzer.identify_methods(text_data, api_key)
-
                     elif action == "Relevanz-Bewertung":
                         if not topic:
                             st.error("Bitte Thema angeben!")
                             return
                         with st.spinner(f"Bewerte Relevanz von {fpdf.name}..."):
                             result = analyzer.evaluate_relevance(text_data, topic, api_key)
-
                     elif action == "Tabellen & Grafiken":
                         with st.spinner(f"Suche Tabellen/Grafiken in {fpdf.name}..."):
                             all_tables_text = []
@@ -1056,7 +952,6 @@ def page_analyze_paper():
         if "search_results" in st.session_state and st.session_state["search_results"]:
             st.info("Es wurden noch keine gescorten Paper gespeichert. Scoring wird jetzt durchgeführt...")
             # Sicherstellen, dass Codewords und selected genes in SessionState gespeichert sind
-            # Falls nicht, setze leere Standardwerte
             if "codewords" not in st.session_state:
                 st.session_state["codewords"] = ""
             if "selected_genes" not in st.session_state:
