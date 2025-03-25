@@ -399,6 +399,10 @@ def page_home():
     st.image("Bild1.jpg", caption="Willkommen!", use_container_width=False, width=600)
 
 def page_codewords_pubmed():
+    """
+    Diese Funktion lädt das modul_codewords_pubmed, in dem wir
+    die Multi-API-Suche durchführen + ChatGPT-Scoring + Abspeichern.
+    """
     st.title("Codewords & PubMed Settings")
     from modules.codewords_pubmed import module_codewords_pubmed
     module_codewords_pubmed()
@@ -636,7 +640,7 @@ def page_analyze_paper():
     # Compare Mode
     compare_mode = st.sidebar.checkbox("Alle Paper gemeinsam vergleichen (Outlier ausschließen)?")
 
-    # NEU: Radio: Hauptthema => 'manuell' oder 'GPT'
+    # Radio: Hauptthema => 'manuell' oder 'GPT'
     theme_mode = st.sidebar.radio(
         "Hauptthema bestimmen",
         ["Manuell", "GPT"]
@@ -1356,8 +1360,6 @@ def module_scored_paper_selection():
     Zeigt ein Dropdown mit allen gescorten Papers aus st.session_state["scored_list"] an.
     Ermöglicht das Auswählen für eine detaillierte Einzelanalyse (Titel, Abstract, etc.).
     """
-    # Hier minimaler Fix: Falls "scored_list" noch nie angelegt wurde,
-    # legen wir es leer an, um Fehler zu vermeiden.
     if "scored_list" not in st.session_state:
         st.session_state["scored_list"] = []
 
