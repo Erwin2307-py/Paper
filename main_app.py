@@ -1288,6 +1288,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     )
     st.write("---")
     st.write("## Einzelanalyse der nach ChatGPT-Scoring ausgewählten Paper")
+    # Hier werden die gescorten Paper aus st.session_state["scored_list"] verwendet.
     if "scored_list" not in st.session_state or not st.session_state["scored_list"]:
         if "search_results" in st.session_state and st.session_state["search_results"]:
             st.info("Es wurden noch keine gescorten Paper gespeichert. Scoring wird jetzt durchgeführt...")
@@ -1319,7 +1320,12 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
             st.write("**Jahr:** ", selected_paper.get("Year", "n/a"))
             st.write("**Publisher:** ", selected_paper.get("Publisher", "n/a"))
             st.write("**Abstract:**")
-            st.markdown(f"> {selected_paper.get('Abstract', 'n/a')}")
+            # Hier wird nun geprüft, ob Abstract vorhanden ist, bevor .strip() aufgerufen wird:
+            abstract = selected_paper.get("Abstract", "")
+            if abstract and abstract.strip():
+                st.markdown(f"> {abstract}")
+            else:
+                st.warning(f"Kein Abstract für {selected_paper.get('Title', 'Unbenannt')} vorhanden.")
         else:
             st.warning("Paper nicht gefunden (unerwarteter Fehler).")
     
@@ -1341,7 +1347,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
             for paper in st.session_state["scored_list"]:
                 title = paper.get("Title", "Unbenannt")
                 abstract = paper.get("Abstract", "")
-                if abstract.strip():
+                if abstract and abstract.strip():
                     paper_texts[title] = abstract
                 else:
                     st.warning(f"Kein Abstract für {title} vorhanden.")
