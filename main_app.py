@@ -804,7 +804,7 @@ def page_analyze_paper():
     
     # Neue Optionen für die gemeinsame Analyse
     analysis_method = st.sidebar.selectbox("Analyse-Methode (Gemeinsamkeiten & Widersprüche)", ["Standard GPT", "ContraCrow"])
-    # Hier entscheiden wir, ob die Analysequelle für Widersprüche aus den gescorten Papern oder aus den hochgeladenen Paper erfolgen soll.
+    # Hier entscheiden wir, ob die Widerspruchsanalyse mit den hochgeladenen oder gescorten Papieren durchgeführt werden soll.
     widerspruchs_source = st.sidebar.selectbox("Analysequelle für Widersprüche", ["Hochgeladene Paper", "Gescorte Paper"])
     
     # Compare Mode
@@ -1291,6 +1291,12 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         file_name=f"analysis_{fpdf.name.replace('.pdf', '')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
+    else:
+        if not api_key:
+            st.warning("Bitte OpenAI API-Key eingeben!")
+        elif not uploaded_files:
+            st.info("Bitte eine oder mehrere PDF-Dateien hochladen!")
+    
     st.write("---")
     st.write("## Einzelanalyse der nach ChatGPT-Scoring ausgewählten Paper")
     # Hier werden die gescorten Paper aus st.session_state["scored_list"] verwendet.
@@ -1333,11 +1339,12 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
         else:
             st.warning("Paper nicht gefunden (unerwarteter Fehler).")
     
-    # NEUER Abschnitt: Auswahl der Quelle für die Widerspruchs-/Gemeinsamkeitsanalyse
+    # NEUER Abschnitt: PaperQA Multi-Paper Analyzer (Gemeinsamkeiten & Widersprüche)
     st.write("---")
     st.header("PaperQA Multi-Paper Analyzer: Gemeinsamkeiten & Widersprüche")
-    analysis_source_choice = st.selectbox("Analysequelle für Widersprüche", ["Hochgeladene Paper", "Gescorte Paper"])
-    # Erzeuge Dictionary mit Texten basierend auf der gewählten Quelle:
+    # Auswahl der Quelle für die Analyse: entweder die gescorten Paper oder die hochgeladenen Paper
+    analysis_source_choice = st.selectbox("Analysequelle für Widersprüche", ["Gescorte Paper", "Hochgeladene Paper"])
+    
     if analysis_source_choice == "Gescorte Paper":
         if "scored_list" in st.session_state and st.session_state["scored_list"]:
             paper_texts = {}
@@ -1349,17 +1356,8 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 else:
                     st.warning(f"Kein Abstract für {title} vorhanden.")
         else:
-            st.error("Keine gescorten Paper vorhanden. Verwende stattdessen hochgeladene Paper.")
-            if "paper_texts" not in st.session_state or not st.session_state["paper_texts"]:
-                if uploaded_files:
-                    st.session_state["paper_texts"] = {}
-                    for upf in uploaded_files:
-                        text = analyzer.extract_text_from_pdf(upf)
-                        if text.strip():
-                            st.session_state["paper_texts"][upf.name] = text
-                        else:
-                            st.warning(f"Kein Text extrahierbar aus {upf.name}")
-            paper_texts = st.session_state["paper_texts"]
+            st.error("Keine gescorten Paper vorhanden. Bitte zuerst Scoring durchführen.")
+            paper_texts = {}
     else:
         if "paper_texts" not in st.session_state or not st.session_state["paper_texts"]:
             if uploaded_files:
@@ -1372,44 +1370,81 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         st.warning(f"Kein Text extrahierbar aus {upf.name}")
         paper_texts = st.session_state["paper_texts"]
     
-    if st.button("Gemeinsamkeiten & Widersprüche analysieren"):
-        if not paper_texts:
-            st.error("Keine Texte für die Analyse vorhanden.")
-        else:
-            with st.spinner("Analysiere Paper auf Gemeinsamkeiten & Widersprüche..."):
-                result_json_str = analyze_papers_for_commonalities_and_contradictions(
-                    paper_texts,
-                    api_key,
-                    model,
-                    method_choice="ContraCrow" if analysis_method == "ContraCrow" else "Standard"
-                )
-                st.subheader("Ergebnis (JSON)")
-                st.code(result_json_str, language="json")
-                try:
-                    data_js = json.loads(result_json_str)
-                    common = data_js.get("commonalities", [])
-                    contras = data_js.get("contradictions", [])
-                    st.write("## Gemeinsamkeiten")
-                    if common:
-                        for c in common:
-                            st.write(f"- {c}")
-                    else:
-                        st.info("Keine Gemeinsamkeiten erkannt.")
-                    st.write("## Widersprüche")
-                    if contras:
-                        for i, cobj in enumerate(contras, start=1):
-                            st.write(f"Widerspruch {i}:")
-                            st.write(f"- **Paper A**: {cobj.get('paperA')} => {cobj.get('claimA')}")
-                            st.write(f"- **Paper B**: {cobj.get('paperB')} => {cobj.get('claimB')}")
-                            st.write(f"  Grund: {cobj.get('reason','(none)')}")
-                    else:
-                        st.info("Keine Widersprüche erkannt.")
-                except Exception as e:
-                    st.warning("Die GPT-Ausgabe konnte nicht als valides JSON geparst werden.")
+    # Zwei separate Buttons für die Analyse der Widersprüche, je nach gewählter Quelle:
+    if analysis_source_choice == "Gescorte Paper":
+        if st.button("Analyse (Gescorte Paper) durchführen"):
+            if not paper_texts:
+                st.error("Keine Texte für die Analyse vorhanden.")
+            else:
+                with st.spinner("Analysiere gescorte Paper auf Gemeinsamkeiten & Widersprüche..."):
+                    result_json_str = analyze_papers_for_commonalities_and_contradictions(
+                        paper_texts,
+                        api_key,
+                        model,
+                        method_choice="ContraCrow" if analysis_method == "ContraCrow" else "Standard"
+                    )
+                    st.subheader("Ergebnis (JSON)")
+                    st.code(result_json_str, language="json")
+                    try:
+                        data_js = json.loads(result_json_str)
+                        common = data_js.get("commonalities", [])
+                        contras = data_js.get("contradictions", [])
+                        st.write("## Gemeinsamkeiten")
+                        if common:
+                            for c in common:
+                                st.write(f"- {c}")
+                        else:
+                            st.info("Keine Gemeinsamkeiten erkannt.")
+                        st.write("## Widersprüche")
+                        if contras:
+                            for i, cobj in enumerate(contras, start=1):
+                                st.write(f"Widerspruch {i}:")
+                                st.write(f"- **Paper A**: {cobj.get('paperA')} => {cobj.get('claimA')}")
+                                st.write(f"- **Paper B**: {cobj.get('paperB')} => {cobj.get('claimB')}")
+                                st.write(f"  Grund: {cobj.get('reason','(none)')}")
+                        else:
+                            st.info("Keine Widersprüche erkannt.")
+                    except Exception as e:
+                        st.warning("Die GPT-Ausgabe konnte nicht als valides JSON geparst werden.")
+    else:
+        if st.button("Analyse (Hochgeladene Paper) durchführen"):
+            if not paper_texts:
+                st.error("Keine Texte für die Analyse vorhanden.")
+            else:
+                with st.spinner("Analysiere hochgeladene Paper auf Gemeinsamkeiten & Widersprüche..."):
+                    result_json_str = analyze_papers_for_commonalities_and_contradictions(
+                        paper_texts,
+                        api_key,
+                        model,
+                        method_choice="ContraCrow" if analysis_method == "ContraCrow" else "Standard"
+                    )
+                    st.subheader("Ergebnis (JSON)")
+                    st.code(result_json_str, language="json")
+                    try:
+                        data_js = json.loads(result_json_str)
+                        common = data_js.get("commonalities", [])
+                        contras = data_js.get("contradictions", [])
+                        st.write("## Gemeinsamkeiten")
+                        if common:
+                            for c in common:
+                                st.write(f"- {c}")
+                        else:
+                            st.info("Keine Gemeinsamkeiten erkannt.")
+                        st.write("## Widersprüche")
+                        if contras:
+                            for i, cobj in enumerate(contras, start=1):
+                                st.write(f"Widerspruch {i}:")
+                                st.write(f"- **Paper A**: {cobj.get('paperA')} => {cobj.get('claimA')}")
+                                st.write(f"- **Paper B**: {cobj.get('paperB')} => {cobj.get('claimB')}")
+                                st.write(f"  Grund: {cobj.get('reason','(none)')}")
+                        else:
+                            st.info("Keine Widersprüche erkannt.")
+                    except Exception as e:
+                        st.warning("Die GPT-Ausgabe konnte nicht als valides JSON geparst werden.")
                     
-    # ------------------------------------------------------------------
-    # Sidebar Navigation und Chatbot
-    # ------------------------------------------------------------------
+# ------------------------------------------------------------------
+# Sidebar Navigation und Chatbot
+# ------------------------------------------------------------------
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
     pages = {
