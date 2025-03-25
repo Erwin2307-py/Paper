@@ -99,7 +99,6 @@ class CoreAPI:
     def __init__(self, api_key):
         self.base_url = "https://api.core.ac.uk/v3/"
         self.headers = {"Authorization": f"Bearer {api_key}"}
-
     def search_publications(self, query, filters=None, sort=None, limit=100):
         endpoint = "search/works"
         params = {"q": query, "limit": limit}
@@ -429,7 +428,6 @@ def page_online_api_filter():
 class PaperAnalyzer:
     def __init__(self, model="gpt-3.5-turbo"):
         self.model = model
-    
     def extract_text_from_pdf(self, pdf_file):
         """Extrahiert reinen Text via PyPDF2 (ggf. OCR nötig, falls PDF nicht durchsuchbar)."""
         reader = PyPDF2.PdfReader(pdf_file)
@@ -439,7 +437,6 @@ class PaperAnalyzer:
             if page_text:
                 text += page_text + "\n"
         return text
-    
     def analyze_with_openai(self, text, prompt_template, api_key):
         """Hilfsfunktion, um OpenAI per ChatCompletion aufzurufen."""
         if len(text) > 15000:
@@ -459,7 +456,6 @@ class PaperAnalyzer:
             max_tokens=1500
         )
         return response.choices[0].message.content
-    
     def summarize(self, text, api_key):
         """Erstellt eine Zusammenfassung in Deutsch."""
         prompt = (
@@ -469,7 +465,6 @@ class PaperAnalyzer:
             "Verwende maximal 500 Wörter:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
-    
     def extract_key_findings(self, text, api_key):
         """Extrahiere die 5 wichtigsten Erkenntnisse."""
         prompt = (
@@ -477,7 +472,6 @@ class PaperAnalyzer:
             "Paper im Bereich Side-Channel Analysis. Liste sie mit Bulletpoints auf:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
-    
     def identify_methods(self, text, api_key):
         """Ermittelt genutzte Methoden und Techniken."""
         prompt = (
@@ -486,7 +480,6 @@ class PaperAnalyzer:
             "eine kurze Erklärung:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
-    
     def evaluate_relevance(self, text, topic, api_key):
         """Bewertet die Relevanz zum Thema (Skala 1-10)."""
         prompt = (
@@ -500,7 +493,7 @@ class AlleleFrequencyFinder:
     def __init__(self):
         self.ensembl_server = "https://rest.ensembl.org"
         self.max_retries = 3
-        self.retry_delay = 2  # Sekunden zwischen Wiederholungsversuchen
+        self.retry_delay = 2
     def get_allele_frequencies(self, rs_id: str, retry_count: int = 0) -> Optional[Dict[str, Any]]:
         if not rs_id.startswith("rs"):
             rs_id = f"rs{rs_id}"
@@ -605,7 +598,7 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     scored_results = []
     total = len(papers)
     progress = st.progress(0)
-    status_text = st.empty()  # Platzhalter für Status-Informationen
+    status_text = st.empty()
     genes_str = ", ".join(genes) if genes else ""
     for idx, paper in enumerate(papers, start=1):
         current_title = paper.get("Title", "n/a")
@@ -651,11 +644,9 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
 # ------------------------------------------------------------------
 def page_analyze_paper():
     """
-    Seite für die Analyse von Papers (Upload PDFs, einzeln oder kombiniert,
-    Outlier-Check usw.).
+    Seite für die Analyse von Papers (Upload PDFs, einzeln oder kombiniert, Outlier-Check usw.).
     """
     st.title("Analyze Paper - Integriert")
-    
     if "api_key" not in st.session_state:
         st.session_state["api_key"] = OPENAI_API_KEY or ""
     st.sidebar.header("Einstellungen - PaperAnalyzer")
@@ -687,7 +678,7 @@ def page_analyze_paper():
     if "theme_compare" not in st.session_state:
         st.session_state["theme_compare"] = ""
     
-    # Dummy-Implementierung für Outlier-Logik (hier können Sie Ihre eigene Logik einfügen)
+    # Dummy-Implementierung für Outlier-Logik
     def do_outlier_logic(paper_map: dict) -> (list, str):
         return list(paper_map.keys()), "Dummy-Thema"
     
@@ -1011,7 +1002,7 @@ def page_analyze_paper():
     st.write("---")
     st.write("## Einzelanalyse der nach ChatGPT-Scoring ausgewählten Paper")
     
-    # --- Button zum Abspeichern der gescorten Paper in SessionState ---
+    # --- NEU: Button zum Abspeichern der gescorten Paper in SessionState ---
     if "scored_list" not in st.session_state or not st.session_state["scored_list"]:
         if "search_results" in st.session_state and st.session_state["search_results"]:
             st.info("Es wurden noch keine gescorten Paper gespeichert. Scoring wird jetzt durchgeführt...")
@@ -1040,10 +1031,7 @@ def page_analyze_paper():
         options=["(Bitte wählen)"] + scored_titles
     )
     if chosen_title != "(Bitte wählen)":
-        selected_paper = next(
-            (p for p in st.session_state["scored_list"] if p["Title"] == chosen_title),
-            None
-        )
+        selected_paper = next((p for p in st.session_state["scored_list"] if p["Title"] == chosen_title), None)
         if selected_paper:
             st.write("**Titel:** ", selected_paper.get("Title", "n/a"))
             st.write("**Quelle:** ", selected_paper.get("Source", "n/a"))
@@ -1052,6 +1040,31 @@ def page_analyze_paper():
             st.write("**Publisher:** ", selected_paper.get("Publisher", "n/a"))
             st.write("**Abstract:**")
             st.markdown(f"> {selected_paper.get('Abstract', 'n/a')}")
+            
+            # NEU: Button für PaperQA Analyse
+            if st.button("PaperQA Analyse durchführen"):
+                abstract = selected_paper.get("Abstract", "")
+                if not abstract.strip():
+                    st.error("Kein Abstract vorhanden, daher kann keine PaperQA Analyse durchgeführt werden.")
+                else:
+                    qa_prompt = (
+                        "Bitte führe eine detaillierte PaperQA Analyse für das folgende Abstract durch. "
+                        "Gib anschließend eine strukturierte Zusammenfassung der wichtigsten Punkte aus, "
+                        "die für die weitere Analyse relevant sind:\n\n" + abstract
+                    )
+                    try:
+                        openai.api_key = api_key
+                        qa_resp = openai.ChatCompletion.create(
+                            model="gpt-3.5-turbo",
+                            messages=[{"role": "user", "content": qa_prompt}],
+                            temperature=0.3,
+                            max_tokens=1000
+                        )
+                        qa_result = qa_resp.choices[0].message.content.strip()
+                        st.subheader("PaperQA Analyse Ergebnis:")
+                        st.write(qa_result)
+                    except Exception as e:
+                        st.error("Fehler bei PaperQA Analyse: " + str(e))
         else:
             st.warning("Paper nicht gefunden (unerwarteter Fehler).")
     else:
