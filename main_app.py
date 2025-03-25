@@ -781,13 +781,10 @@ def page_analyze_paper():
         index=0
     )
     
-    # Neue Optionen für die gemeinsame Analyse
     analysis_method = st.sidebar.selectbox("Analyse-Methode (Gemeinsamkeiten & Widersprüche)", ["Standard GPT", "ContraCrow"])
     
-    # Compare Mode
     compare_mode = st.sidebar.checkbox("Alle Paper gemeinsam vergleichen (Outlier ausschließen)?")
     
-    # Radio: Hauptthema => 'manuell' oder 'GPT'
     theme_mode = st.sidebar.radio("Hauptthema bestimmen", ["Manuell", "GPT"])
     
     action = st.sidebar.radio(
@@ -796,7 +793,6 @@ def page_analyze_paper():
         index=0
     )
     
-    # Manuelles Thema, falls relevant
     user_defined_theme = ""
     if theme_mode == "Manuell":
         user_defined_theme = st.sidebar.text_input("Manuelles Hauptthema (bei Compare-Mode)")
@@ -1206,14 +1202,11 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
     st.write("## Alle Analysen & Excel-Ausgabe (Multi-PDF)")
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
 
-    # Excel-Export-Button
     if uploaded_files and api_key:
         if st.button("Alle Analysen durchführen & in Excel speichern (Multi)"):
             with st.spinner("Analysiere alle hochgeladenen PDFs (für Excel)..."):
-                # Wir verwenden PaperAnalyzer
                 analyzer = PaperAnalyzer(model=model)
                 
-                # Falls Compare Mode aktiv ist, filtern wir ggf.
                 if compare_mode:
                     if not st.session_state["relevant_papers_compare"]:
                         paper_map_auto = {}
@@ -1241,7 +1234,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         st.error(f"Kein Text aus {fpdf.name} extrahierbar (evtl. kein OCR). Überspringe...")
                         continue
                     
-                    # Standard-Analysen
                     summary_de = analyzer.summarize(text, api_key)
                     key_findings_result = analyzer.extract_key_findings(text, api_key)
                     if not topic:
@@ -1250,7 +1242,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
                     methods_result = analyzer.identify_methods(text, api_key)
                     
-                    # Gen + rs-ID extrahieren
                     pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                     match_text = re.search(pattern_obvious, text)
                     gene_via_text = match_text.group(1) if match_text else None
@@ -1260,7 +1251,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     found_rs_match = re.search(rs_pat, text)
                     rs_num = found_rs_match.group(1) if found_rs_match else None
                     
-                    # Genotypen
                     genotype_regex = r"\b([ACGT]{2,3})\b"
                     lines = text.split("\n")
                     found_pairs = []
@@ -1274,7 +1264,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         if gp not in unique_geno_pairs:
                             unique_geno_pairs.append(gp)
                     
-                    # Populationsfrequenz
                     aff = AlleleFrequencyFinder()
                     freq_info = "Keine rsID vorhanden"
                     if rs_num:
@@ -1300,14 +1289,13 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         return
                     ws = wb.active
 
-                    # ------------------- FIX: cell()-Syntax statt ws["XY"] -------------------
                     # D2
                     ws.cell(row=2, column=4).value = st.session_state.get("theme_compare", "N/A")
                     # D5
                     ws.cell(row=5, column=4).value = found_gene if found_gene else ""
                     # E5
                     ws.cell(row=5, column=5).value = rs_num if rs_num else ""
-                    # D10–D12 (row=10..12, col=4) / E10–E12 (row=10..12, col=5)
+                    # D10–D12 / E10–E12
                     for i in range(3):
                         row_index = 10 + i
                         if i < len(unique_geno_pairs):
@@ -1317,6 +1305,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         else:
                             ws.cell(row=row_index, column=4).value = ""
                             ws.cell(row=row_index, column=5).value = ""
+                    
                     # J2
                     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     ws.cell(row=2, column=10).value = now_str
@@ -1330,7 +1319,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     ws.cell(row=21, column=7).value = ergebnisse
                     # G22
                     ws.cell(row=22, column=7).value = schlussfolgerungen
-                    # -------------------------------------------------------------------------
 
                     output_buffer = io.BytesIO()
                     wb.save(output_buffer)
