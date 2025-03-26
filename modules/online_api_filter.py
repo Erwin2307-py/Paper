@@ -33,7 +33,7 @@ def check_europe_pmc_connection(timeout=5):
 def check_google_scholar_connection(timeout=5):
     try:
         from scholarly import scholarly
-        # Kleiner Test, 1 Result abfragen:
+        # Kleiner Test: 1 Result abfragen
         search_results = scholarly.search_pubs("test")
         _ = next(search_results)
         return True
@@ -153,7 +153,7 @@ def load_genes_from_excel(sheet_name: str) -> list:
         return []
     try:
         df = pd.read_excel(excel_path, sheet_name=sheet_name, header=None)
-        gene_series = df.iloc[2:, 2]
+        gene_series = df.iloc[2:, 2]  # Zeile 3 ab, Spalte C
         return gene_series.dropna().astype(str).tolist()
     except Exception as e:
         st.error(f"Fehler beim Laden der Excel-Datei: {e}")
@@ -172,7 +172,8 @@ def check_genes_in_text_with_chatgpt(text: str, genes: list, model="gpt-3.5-turb
         st.warning("Kein Text eingegeben.")
         return {}
     if not genes:
-        st.info("Keine Gene oder Synonyme vorhanden.")
+        # Falls keine Gene gewählt wurden.
+        st.info("Keine Gene oder Synonyme vorhanden (Liste leer).")
         return {}
 
     joined_genes = ", ".join(genes)
@@ -381,28 +382,41 @@ def module_online_api_filter():
     all_genes_in_sheet = load_genes_from_excel(sheet_choice)
 
     if all_genes_in_sheet:
+        # Anfangsbuchstaben sammeln
         unique_first_letters = sorted(list(set(g[0].upper() for g in all_genes_in_sheet if g.strip())))
         selected_letter = st.selectbox("Anfangsbuchstabe:", ["Alle"] + unique_first_letters)
+
         if selected_letter == "Alle":
             filtered_genes = all_genes_in_sheet
         else:
             filtered_genes = [g for g in all_genes_in_sheet if g and g[0].upper() == selected_letter]
 
+        # Wir bieten zusätzlich "(Kein Gen)" an:
         if filtered_genes:
-            selected_gene = st.selectbox("Wähle 1 Gen aus:", filtered_genes)
+            gene_options = ["(Kein Gen)"] + filtered_genes
+            selected_gene = st.selectbox("Wähle 1 Gen aus:", gene_options)
         else:
             st.info("Keine Gene mit diesem Anfangsbuchstaben vorhanden.")
-            selected_gene = ""
+            selected_gene = "(Kein Gen)"
     else:
         st.warning("Keine Gene in diesem Sheet.")
-        selected_gene = ""
+        selected_gene = "(Kein Gen)"
 
     custom_gene_input = st.text_input("Eigenes Gen eingeben (optional):", "")
-    final_gene = custom_gene_input.strip() if custom_gene_input.strip() else selected_gene.strip()
+    if selected_gene == "(Kein Gen)" and not custom_gene_input.strip():
+        # Der User wählt explizit "Kein Gen"
+        final_gene = ""
+    else:
+        # Falls custom-Gene angegeben -> Vorrang
+        final_gene = custom_gene_input.strip() if custom_gene_input.strip() else (
+            "" if selected_gene == "(Kein Gen)" else selected_gene
+        )
+
     st.session_state["final_gene"] = final_gene
 
     st.write("---")
     st.subheader("C) Codewörter & Test-Text")
+
     codewords_input = st.text_input("Codewörter (z.B. 'disease', 'drug', etc.):",
                                     value=st.session_state.get("codewords_str", ""))
     st.session_state["codewords_str"] = codewords_input
@@ -416,32 +430,43 @@ def module_online_api_filter():
         if not use_chatgpt:
             st.warning("ChatGPT ist nicht aktiviert (Checkbox).")
             return
-        if not final_gene:
-            st.warning("Kein Gen ausgewählt/eingegeben.")
-        elif not text_input.strip():
-            st.warning("Kein Text eingegeben.")
+
+        if not final_gene:  
+            # Wenn wirklich kein Gen (bzw. 'Kein Gen' gewählt und kein custom)
+            st.info("Es wurde 'Kein Gen' gewählt oder kein Gen manuell eingegeben.")
+            # Falls wir zusätzlich *trotzdem* die Synonyme checken wollen: 
+            # Dann gene_list ist ggf. nur die Synonyme. 
+            # Aber hier belassen wir es so: 
+            # => D.h. wir generieren keine gene_list und checken nichts, 
+            #    der User kann ja Synonyme checken, wenn er will...
+            gene_list = []
         else:
-            # Zusätzliche Synonyme anhängen
             gene_list = [final_gene]
-            syns = st.session_state["synonyms_selected"]
-            if syns.get("genotype"):
-                gene_list += ["genetic makeup", "genetic constitution", "DNA sequence", "Allele"]
-            if syns.get("phenotype"):
-                gene_list += ["observable traits", "physical appearance", "morphology"]
-            if syns.get("snp"):
-                gene_list += ["point mutation", "genetic variation", "DNA polymorphism"]
-            if syns.get("inc_dec"):
-                gene_list += ["increase", "decrease"]
 
-            st.session_state["selected_genes"] = gene_list
+        # Zusätzliche Synonyme anhängen (falls gewünscht)
+        syns = st.session_state["synonyms_selected"]
+        if syns.get("genotype"):
+            gene_list += ["genetic makeup", "genetic constitution", "DNA sequence", "Allele"]
+        if syns.get("phenotype"):
+            gene_list += ["observable traits", "physical appearance", "morphology"]
+        if syns.get("snp"):
+            gene_list += ["point mutation", "genetic variation", "DNA polymorphism"]
+        if syns.get("inc_dec"):
+            gene_list += ["increase", "decrease"]
 
-            result_map = check_genes_in_text_with_chatgpt(text_input, gene_list)
-            if result_map:
-                st.markdown("### Ergebnis (Gene-Check):")
-                for gene_key, status in result_map.items():
-                    st.write(f"- **{gene_key}**: {'Yes' if status else 'No'}")
-            else:
-                st.info("Keine Ergebnisse oder ChatGPT-Fehler.")
+        st.session_state["selected_genes"] = gene_list
+
+        if not text_input.strip():
+            st.warning("Kein Text eingegeben für den Gene-Check.")
+            return
+
+        result_map = check_genes_in_text_with_chatgpt(text_input, gene_list)
+        if result_map:
+            st.markdown("### Ergebnis (Gene-Check):")
+            for gene_key, status in result_map.items():
+                st.write(f"- **{gene_key}**: {'Yes' if status else 'No'}")
+        else:
+            st.info("Keine Ergebnisse oder ChatGPT-Fehler (oder Gene-Liste leer).")
 
     st.write("---")
     if st.button("Einstellungen als Profil speichern"):
