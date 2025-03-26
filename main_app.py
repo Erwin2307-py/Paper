@@ -612,6 +612,8 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     progress = st.progress(0)
     status_text = st.empty()
     genes_str = ", ".join(genes) if genes else ""
+    # *** Ab hier KEINE automatische Ausführung mehr – wir führen Scoring nur auf Button-Klick aus ***
+    # (Die Logik selbst bleibt unverändert.)
     for idx, paper in enumerate(papers, start=1):
         current_title = paper.get("Title", "n/a")
         status_text.text(f"Verarbeite Paper {idx}/{total}: {current_title}")
@@ -1358,9 +1360,10 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
 
     st.write("---")
     st.write("## Einzelanalyse der nach ChatGPT-Scoring ausgewählten Paper")
-    if "scored_list" not in st.session_state or not st.session_state["scored_list"]:
+    
+    # Button, um das Scoring explizit auszulösen, statt es automatisch zu tun:
+    if st.button("Scoring jetzt durchführen"):
         if "search_results" in st.session_state and st.session_state["search_results"]:
-            st.info("Es wurden noch keine gescorten Paper gespeichert. Scoring wird jetzt durchgeführt...")
             codewords_str = st.session_state.get("codewords", "")
             selected_genes = st.session_state.get("selected_genes", [])
             scored_list = chatgpt_online_search_with_genes(
@@ -1372,8 +1375,13 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
             st.session_state["scored_list"] = scored_list
             st.success("Scored Paper erfolgreich in st.session_state['scored_list'] gespeichert!")
         else:
-            st.info("Keine gescorten Paper vorhanden (st.session_state['scored_list']).")
-            return
+            st.info("Keine (vorherigen) Suchergebnisse gefunden, daher kein Scoring möglich.")
+    
+    # Danach ganz normal:
+    if "scored_list" not in st.session_state or not st.session_state["scored_list"]:
+        st.info("Noch keine gescorten Paper vorhanden. Bitte zuerst 'Scoring jetzt durchführen' anklicken.")
+        return
+    
     st.subheader("Einzelanalyse der nach ChatGPT-Scoring ausgewählten Paper")
     scored_titles = [paper["Title"] for paper in st.session_state["scored_list"]]
     chosen_title = st.selectbox(
