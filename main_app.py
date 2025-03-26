@@ -19,8 +19,6 @@ from dotenv import load_dotenv
 from PIL import Image
 from scholarly import scholarly
 
-from modules.online_api_filter import module_online_api_filter
-
 # Neu: Excel / openpyxl-Import
 import openpyxl
 
@@ -379,7 +377,7 @@ class SemanticScholarSearch:
 # ------------------------------------------------------------------
 # 7) Excel Online Search - Placeholder
 # ------------------------------------------------------------------
-# (Hier könnte Ihr Modul code stehen, falls benötigt)
+# (Hier könnte ggf. zusätzlicher Code stehen, falls benötigt)
 
 # ------------------------------------------------------------------
 # 8) Weitere Module + Seiten
@@ -394,6 +392,7 @@ def module_paperqa2():
 def page_home():
     st.title("Welcome to the Main Menu")
     st.write("Choose a module in the sidebar to proceed.")
+    # Beispielbild laden:
     st.image("Bild1.jpg", caption="Willkommen!", use_container_width=False, width=600)
 
 def page_codewords_pubmed():
@@ -446,7 +445,7 @@ class PaperAnalyzer:
         self.model = model
     
     def extract_text_from_pdf(self, pdf_file):
-        """Extrahiert reinen Text via PyPDF2 (ggf. OCR nötig, falls PDF nicht durchsuchbar)."""
+        """Extrahiert reinen Text via PyPDF2."""
         reader = PyPDF2.PdfReader(pdf_file)
         text = ""
         for page in reader.pages:
@@ -459,6 +458,7 @@ class PaperAnalyzer:
         """Hilfsfunktion, um OpenAI per ChatCompletion aufzurufen."""
         import openai
         openai.api_key = api_key
+        # Bei Bedarf Text kürzen, um Tokens zu sparen
         if len(text) > 15000:
             text = text[:15000] + "..."
         prompt = prompt_template.format(text=text)
@@ -538,6 +538,7 @@ class AlleleFrequencyFinder:
             return None
     
     def try_alternative_source(self, rs_id: str) -> Optional[Dict[str, Any]]:
+        # Placeholder, falls Du eine weitere Quelle abfragen möchtest
         return None
     
     def build_freq_info_text(self, data: Dict[str, Any]) -> str:
@@ -549,7 +550,7 @@ class AlleleFrequencyFinder:
         out = []
         out.append(f"MAF={maf}" if maf else "MAF=n/a")
         if pops:
-            max_pop = 2
+            max_pop = 2  # Falls du nur 2 Populationsdaten ausgeben möchtest
             for i, pop in enumerate(pops):
                 if i >= max_pop:
                     break
@@ -559,6 +560,8 @@ class AlleleFrequencyFinder:
                 out.append(f"{pop_name}:{allele}={freq}")
         else:
             out.append("Keine Populationsdaten gefunden.")
+        # OPTIONAL: Hier könnte Hardy-Weinberg-Gleichung erfasst werden, 
+        #           falls du sie noch implementieren möchtest.
         return " | ".join(out)
 
 def split_summary(summary_text):
@@ -599,7 +602,7 @@ def parse_cohort_info(summary_text: str) -> dict:
     return info
 
 # ------------------------------------------------------------------
-# NEUER Bereich: Definition der Funktion chatgpt_online_search_with_genes
+# Funktion zur ChatGPT-basierten Scoring-Suche
 # ------------------------------------------------------------------
 def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
@@ -652,12 +655,13 @@ Gib mir eine Zahl von 0 bis 100 (Relevanz), wobei sowohl Codewörter als auch Ge
     return scored_results[:top_k]
 
 # ------------------------------------------------------------------
-# NEUER Bereich: Funktion zur Analyse von Gemeinsamkeiten & Widersprüchen
+# Funktion zur Analyse von Gemeinsamkeiten & Widersprüchen
 # ------------------------------------------------------------------
 def analyze_papers_for_commonalities_and_contradictions(pdf_texts: Dict[str, str], api_key: str, model: str, method_choice: str = "Standard"):
     import openai
     openai.api_key = api_key
 
+    # 1) Claims je Paper extrahieren
     all_claims = {}
     for fname, txt in pdf_texts.items():
         prompt_claims = f"""
@@ -699,6 +703,7 @@ Text: {txt[:6000]}
             })
     big_input_str = json.dumps(merged_claims, ensure_ascii=False, indent=2)
 
+    # 2) Gemeinsamkeiten + Widersprüche identifizieren
     if method_choice == "ContraCrow":
         final_prompt = f"""
 Nutze die ContraCrow-Methodik, um die folgenden Claims (Aussagen) aus mehreren wissenschaftlichen PDF-Papers zu analysieren. 
@@ -706,6 +711,7 @@ Die ContraCrow-Methodik fokussiert sich darauf, systematisch Gemeinsamkeiten und
 Bitte identifiziere:
 1) Die zentralen gemeinsamen Aussagen, die in den Papers auftreten.
 2) Klare Widersprüche zwischen den Aussagen der verschiedenen Papers.
+
 Antworte ausschließlich in folgendem JSON-Format (ohne zusätzliche Erklärungen):
 {{
   "commonalities": [
@@ -717,6 +723,7 @@ Antworte ausschließlich in folgendem JSON-Format (ohne zusätzliche Erklärunge
     ...
   ]
 }}
+
 Hier die Claims:
 {big_input_str}
 """
@@ -726,7 +733,8 @@ Hier sind verschiedene Claims (Aussagen) aus mehreren wissenschaftlichen PDF-Pap
 Bitte identifiziere:
 1) Gemeinsamkeiten zwischen den Papers (Wo überschneiden oder ergänzen sich die Aussagen?)
 2) Mögliche Widersprüche (Welche Aussagen widersprechen sich klar?)
-Antworte NUR in folgendem JSON-Format (ohne zusätzliche Erklärungen):
+
+Antworte NUR in folgendem JSON-Format (ohne weitere Erklärungen):
 {{
   "commonalities": [
     "Gemeinsamkeit 1",
@@ -737,9 +745,11 @@ Antworte NUR in folgendem JSON-Format (ohne zusätzliche Erklärungen):
     ...
   ]
 }}
+
 Hier die Claims:
 {big_input_str}
 """
+
     try:
         resp_final = openai.ChatCompletion.create(
             model=model,
@@ -753,7 +763,7 @@ Hier die Claims:
         return f"Fehler bei Gemeinsamkeiten/Widersprüche: {e}"
 
 # ------------------------------------------------------------------
-# 8) Seite: Analyze Paper (inkl. PaperQA Multi-Paper Analyzer)
+# Seite: Analyze Paper (inkl. PaperQA Multi-Paper Analyzer)
 # ------------------------------------------------------------------
 def page_analyze_paper():
     st.title("Analyze Paper - Integriert")
@@ -803,6 +813,7 @@ def page_analyze_paper():
         st.session_state["theme_compare"] = ""
     
     def do_outlier_logic(paper_map: dict) -> (list, str):
+        """Ermittelt, welche Paper thematisch relevant sind und ggf. ein gemeinsames Hauptthema."""
         if theme_mode == "Manuell":
             main_theme = user_defined_theme.strip()
             if not main_theme:
@@ -848,6 +859,7 @@ Nur das JSON, ohne weitere Erklärungen.
             st.markdown("#### GPT-Ausgabe (Outlier-Check / Manuell):")
             st.code(scope_decision, language="json")
             json_str = scope_decision.strip()
+            # Entferne ```-Umrahmungen
             if json_str.startswith("```"):
                 json_str = re.sub(r"```[\w]*\n?", "", json_str)
                 json_str = re.sub(r"\n?```", "", json_str)
@@ -871,6 +883,7 @@ Nur das JSON, ohne weitere Erklärungen.
                     st.warning(f"{fname} => NICHT relevant. Begründung: {reason}")
             return (relevant_papers_local, main_theme)
         else:
+            # GPT ermittelt gemeinsames Hauptthema
             snippet_list = []
             for name, txt_data in paper_map.items():
                 snippet = txt_data[:700].replace("\n", " ")
@@ -1142,6 +1155,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 st.write("Widerspruchsanalyse (Hochgeladene Paper)")
                 if st.button("Widerspruchsanalyse jetzt starten"):
                     if "paper_texts" not in st.session_state or not st.session_state["paper_texts"]:
+                        # Falls nicht vorhanden, extrahiere jetzt
                         st.session_state["paper_texts"] = {}
                         for upf in uploaded_files:
                             t_ = analyzer.extract_text_from_pdf(upf)
@@ -1160,6 +1174,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         )
                         st.subheader("Ergebnis (JSON)")
                         st.code(result_json_str, language="json")
+                        # Versuche JSON zu parsen und auszugeben
                         try:
                             data_js = json.loads(result_json_str)
                             common = data_js.get("commonalities", [])
@@ -1218,6 +1233,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 else:
                     selected_files_for_excel = uploaded_files
 
+                # Schleife über die relevanten oder alle hochgeladenen Dateien
                 for fpdf in selected_files_for_excel:
                     text = analyzer.extract_text_from_pdf(fpdf)
                     if not text.strip():
@@ -1226,17 +1242,25 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     
                     summary_de = analyzer.summarize(text, api_key)
                     key_findings_result = analyzer.extract_key_findings(text, api_key)
+                    
+                    # Thema (falls Compare Mode) oder manuelles/generiertes Thema
+                    main_theme_for_excel = st.session_state.get("theme_compare", "N/A")
+                    if not compare_mode and theme_mode == "Manuell":
+                        main_theme_for_excel = user_defined_theme or "N/A"
+                    
+                    # Relevanz
                     if not topic:
                         relevance_result = "(No topic => no Relevanz-Bewertung)"
                     else:
                         relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
+                    
                     methods_result = analyzer.identify_methods(text, api_key)
                     
+                    # Suche evtl. Gene, rs, genotypes im Text
                     pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                     match_text = re.search(pattern_obvious, text)
                     gene_via_text = match_text.group(1) if match_text else None
                     
-                    found_gene = gene_via_text
                     rs_pat = r"(rs\d+)"
                     found_rs_match = re.search(rs_pat, text)
                     rs_num = found_rs_match.group(1) if found_rs_match else None
@@ -1254,6 +1278,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         if gp not in unique_geno_pairs:
                             unique_geno_pairs.append(gp)
                     
+                    # Hole Allelfrequenzen
                     aff = AlleleFrequencyFinder()
                     freq_info = "Keine rsID vorhanden"
                     if rs_num:
@@ -1263,15 +1288,21 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         if data:
                             freq_info = aff.build_freq_info_text(data)
                     
+                    # Parse Summary (Ergebnisse / Conclusion, Study size, origin)
                     ergebnisse, schlussfolgerungen = split_summary(summary_de)
                     cohort_data = parse_cohort_info(summary_de)
                     study_size = cohort_data.get("study_size", "")
                     origin = cohort_data.get("origin", "")
                     if study_size or origin:
-                        cohort_info = f"{study_size}, {origin}".strip(", ")
+                        cohort_info = (study_size + (", " + origin if origin else "")).strip(", ")
                     else:
                         cohort_info = ""
+                    
+                    # Versuche das Jahr aus dem PDF/Text zu extrahieren (einfacher Regex):
+                    pub_year_match = re.search(r"\b(20[0-9]{2})\b", text)
+                    year_for_excel = pub_year_match.group(1) if pub_year_match else "n/a"
 
+                    # Lade Excel-Vorlage
                     try:
                         wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
                     except FileNotFoundError:
@@ -1279,32 +1310,48 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         return
                     ws = wb.active
 
-                    # Hier wird in Zelle row=5, column=5 der Wert rs_num eingetragen
-                    ws.cell(row=5, column=5).value = rs_num
+                    # -- WICHTIG: Nutze Zellen per Name (z.B. ws["D2"] statt row=2,col=4),
+                    #    um MergedCell-Fehler zu vermeiden. --
 
-                    # Ansonsten alle anderen Zellen wie gewohnt
-                    ws.cell(row=2, column=4).value = st.session_state.get("theme_compare", "N/A")
-                    ws.cell(row=5, column=4).value = found_gene if found_gene else ""
+                    # D2 -> Hauptthema
+                    ws["D2"].value = main_theme_for_excel
+                    # D5 -> Gene name (falls gefunden)
+                    ws["D5"].value = gene_via_text if gene_via_text else ""
+                    # D6 -> rs number
+                    ws["D6"].value = rs_num if rs_num else ""
                     
-                    # D10–D12 / E10–E12
+                    # D10/E10, D11/E11, D12/E12: Genotype/PopFreq
+                    # Nimm bis zu 3 unique Genotype-Matches
+                    genotype_entries = unique_geno_pairs[:3]  # Nur die ersten 3
+                    # Fülle Zeilen 10,11,12
                     for i in range(3):
-                        row_index = 10 + i
-                        if i < len(unique_geno_pairs):
-                            genotype_str = unique_geno_pairs[i][0]
-                            ws.cell(row=row_index, column=4).value = genotype_str
-                            ws.cell(row=row_index, column=5).value = freq_info
+                        row_i = 10 + i  # 10,11,12
+                        if i < len(genotype_entries):
+                            g_str = genotype_entries[i][0]  # Der gefundene Genotyp
+                            ws[f"D{row_i}"].value = g_str
+                            # Freq in E{row_i}, setze freq_info, 
+                            # oder du könntest realistisch je nach rs # neu abfragen
+                            # Hier wird **immer** freq_info geschrieben,
+                            # aber du könntest es verfeinern auf "nur 1. genotype" usw.
+                            ws[f"E{row_i}"].value = freq_info
                         else:
-                            ws.cell(row=row_index, column=4).value = ""
-                            ws.cell(row=row_index, column=5).value = ""
+                            ws[f"D{row_i}"] = ""
+                            ws[f"E{row_i}"] = ""
                     
-                    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    ws.cell(row=2, column=10).value = now_str
-                    ws.cell(row=20, column=3).value = "N/A"
-                    ws.cell(row=20, column=4).value = cohort_info
-                    ws.cell(row=20, column=5).value = key_findings_result
-                    ws.cell(row=21, column=7).value = ergebnisse
-                    ws.cell(row=22, column=7).value = schlussfolgerungen
+                    # C20 -> Jahr
+                    ws["C20"].value = year_for_excel
+                    # D20 -> Study size
+                    ws["D20"].value = cohort_info
+                    # E20 -> Key findings
+                    ws["E20"].value = key_findings_result
+                    # G21 -> Results
+                    ws["G21"].value = ergebnisse
+                    # G22 -> Conclusion
+                    ws["G22"].value = schlussfolgerungen
 
+                    # (Falls du hier noch mehr Daten eintragen möchtest, bitte ergänzen.)
+                    
+                    # Speichere Excel in einen BytesIO-Puffer
                     output_buffer = io.BytesIO()
                     wb.save(output_buffer)
                     output_buffer.seek(0)
@@ -1459,48 +1506,15 @@ def answer_chat(question: str) -> str:
         return f"OpenAI-Fehler: {e}"
 
 def main():
-    st.markdown(
-        """
-        <style>
-        html, body {
-            margin: 0;
-            padding: 0;
-        }
-        .scrollable-chat {
-            max-height: 400px; 
-            overflow-y: scroll; 
-            border: 1px solid #CCC;
-            padding: 8px;
-            margin-top: 10px;
-            border-radius: 4px;
-            background-color: #f9f9f9;
-        }
-        .message {
-            padding: 0.5rem 1rem;
-            border-radius: 15px;
-            margin-bottom: 0.5rem;
-            max-width: 80%;
-            word-wrap: break-word;
-        }
-        .user-message {
-            background-color: #e3f2fd;
-            margin-left: auto;
-            border-bottom-right-radius: 0;
-        }
-        .assistant-message {
-            background-color: #f0f0f0;
-            margin-right: auto;
-            border-bottom-left-radius: 0;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
+    # -------- LAYOUT: Links Module, Rechts Chatbot --------
     col_left, col_right = st.columns([4, 1])
+    
     with col_left:
+        # Navigation
         page_fn = sidebar_module_navigation()
         if page_fn is not None:
             page_fn()
+    
     with col_right:
         st.subheader("Chatbot")
         if "chat_history" not in st.session_state:
@@ -1511,6 +1525,40 @@ def main():
                 st.session_state["chat_history"].append(("user", user_input))
                 bot_answer = answer_chat(user_input)
                 st.session_state["chat_history"].append(("bot", bot_answer))
+        
+        st.markdown(
+            """
+            <style>
+            .scrollable-chat {
+                max-height: 400px; 
+                overflow-y: auto; 
+                border: 1px solid #CCC;
+                padding: 8px;
+                margin-top: 10px;
+                border-radius: 4px;
+                background-color: #f9f9f9;
+            }
+            .message {
+                padding: 0.5rem 1rem;
+                border-radius: 15px;
+                margin-bottom: 0.5rem;
+                max-width: 80%;
+                word-wrap: break-word;
+            }
+            .user-message {
+                background-color: #e3f2fd;
+                margin-left: auto;
+                border-bottom-right-radius: 0;
+            }
+            .assistant-message {
+                background-color: #f0f0f0;
+                margin-right: auto;
+                border-bottom-left-radius: 0;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
         st.markdown('<div class="scrollable-chat" id="chat-container">', unsafe_allow_html=True)
         for role, msg_text in st.session_state["chat_history"]:
             if role == "user":
@@ -1524,6 +1572,8 @@ def main():
                     unsafe_allow_html=True
                 )
         st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Auto-scroll JS
         st.markdown(
             """
             <script>
