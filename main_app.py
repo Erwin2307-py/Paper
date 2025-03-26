@@ -242,7 +242,12 @@ def check_europe_pmc_connection(timeout=10):
 def search_europe_pmc_simple(query):
     """Kurze Suche in Europe PMC."""
     url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
-    params = {"query": query, "format": "json", "pageSize": 100, "resultType": "core"}
+    params = {
+        "query": query,
+        "format": "json",
+        "pageSize": 100,
+        "resultType": "core"
+    }
     out = []
     try:
         r = requests.get(url, params=params, timeout=10)
@@ -287,6 +292,7 @@ def fetch_openalex_data(entity_type, entity_id=None, params=None):
         return None
 
 def search_openalex_simple(query):
+    """Kurze Version: Liest die rohen Daten, prüft nur, ob was zurückkommt."""
     search_params = {"search": query}
     return fetch_openalex_data("works", params=search_params)
 
@@ -324,6 +330,7 @@ class GoogleScholarSearch:
 # 6) Semantic Scholar
 # ------------------------------------------------------------------
 def check_semantic_scholar_connection(timeout=10):
+    """Verbindungstest zu Semantic Scholar."""
     try:
         url = "https://api.semanticscholar.org/graph/v1/paper/search"
         params = {"query": "test", "limit": 1, "fields": "title"}
@@ -370,6 +377,7 @@ class SemanticScholarSearch:
 # ------------------------------------------------------------------
 # 7) Excel Online Search - Placeholder
 # ------------------------------------------------------------------
+# (Hier könnte ggf. zusätzlicher Code stehen, falls benötigt)
 
 # ------------------------------------------------------------------
 # 8) Weitere Module + Seiten
@@ -424,10 +432,9 @@ def page_excel_online_search():
 def page_online_api_filter():
     st.title("Online-API_Filter (Kombiniert)")
     st.write("Hier kombinierst du ggf. API-Auswahl und Online-Filter in einem Schritt.")
-    try:
-        module_online_api_filter()
-    except NameError as e:
-        st.error("Das Modul 'module_online_api_filter' konnte nicht gefunden werden: " + str(e))
+    # Hier wird der Import innerhalb der Funktion vorgenommen, um sicherzustellen, dass module_online_api_filter definiert ist.
+    from modules.online_api_filter import module_online_api_filter
+    module_online_api_filter()
     if st.button("Back to Main Menu"):
         st.session_state["current_page"] = "Home"
 
@@ -460,6 +467,7 @@ class PaperAnalyzer:
         self.model = model
     
     def extract_text_from_pdf(self, pdf_file):
+        """Extrahiert reinen Text via PyPDF2 (ggf. OCR nötig, falls PDF nicht durchsuchbar)."""
         reader = PyPDF2.PdfReader(pdf_file)
         text = ""
         for page in reader.pages:
@@ -469,10 +477,13 @@ class PaperAnalyzer:
         return text
     
     def analyze_with_openai(self, text, prompt_template, api_key):
+        """Hilfsfunktion, um OpenAI per ChatCompletion aufzurufen."""
+        import openai
+        openai.api_key = api_key
+        # Bei Bedarf Text kürzen, um Tokens zu sparen
         if len(text) > 15000:
             text = text[:15000] + "..."
         prompt = prompt_template.format(text=text)
-        openai.api_key = api_key
         response = openai.ChatCompletion.create(
             model=self.model,
             messages=[
@@ -485,6 +496,7 @@ class PaperAnalyzer:
         return response.choices[0].message.content
     
     def summarize(self, text, api_key):
+        """Erstellt eine Zusammenfassung in Deutsch."""
         prompt = (
             "Erstelle eine strukturierte Zusammenfassung des folgenden wissenschaftlichen Papers. "
             "Gliedere sie in mindestens vier klar getrennte Abschnitte (z.B. 1. Hintergrund, 2. Methodik, 3. Ergebnisse, 4. Schlussfolgerungen). "
@@ -493,20 +505,23 @@ class PaperAnalyzer:
         return self.analyze_with_openai(text, prompt, api_key)
     
     def extract_key_findings(self, text, api_key):
+        """Extrahiere die 5 wichtigsten Erkenntnisse."""
         prompt = (
-            "Extrahiere die 5 wichtigsten Erkenntnisse aus diesem wissenschaftlichen Paper. "
+            "Extrahiere die 5 wichtigsten Erkenntnisse aus diesem wissenschaftlichen Paper im Bereich Side-Channel Analysis. "
             "Liste sie mit Bulletpoints auf:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
     
     def identify_methods(self, text, api_key):
+        """Ermittelt genutzte Methoden und Techniken."""
         prompt = (
-            "Identifiziere und beschreibe die im Paper verwendeten Methoden und Techniken. "
+            "Identifiziere und beschreibe die im Paper verwendeten Methoden und Techniken zur Side-Channel-Analyse. "
             "Gib zu jeder Methode eine kurze Erklärung:\n\n{text}"
         )
         return self.analyze_with_openai(text, prompt, api_key)
     
     def evaluate_relevance(self, text, topic, api_key):
+        """Bewertet die Relevanz zum Thema (Skala 1-10)."""
         prompt = (
             f"Bewerte die Relevanz dieses Papers für das Thema '{topic}' auf einer Skala von 1-10. "
             f"Begründe deine Bewertung:\n\n{{text}}"
@@ -514,12 +529,14 @@ class PaperAnalyzer:
         return self.analyze_with_openai(text, prompt, api_key)
 
 class AlleleFrequencyFinder:
+    """Klasse zum Abrufen und Anzeigen von Allelfrequenzen aus verschiedenen Quellen."""
     def __init__(self):
         self.ensembl_server = "https://rest.ensembl.org"
         self.max_retries = 3
-        self.retry_delay = 2
-    
+        self.retry_delay = 2  # Sekunden zwischen Wiederholungsversuchen
+
     def get_allele_frequencies(self, rs_id: str, retry_count: int = 0) -> Optional[Dict[str, Any]]:
+        """Holt Allelfrequenzen von Ensembl."""
         if not rs_id.startswith("rs"):
             rs_id = f"rs{rs_id}"
         endpoint = f"/variation/human/{rs_id}?pops=1"
@@ -546,6 +563,7 @@ class AlleleFrequencyFinder:
         return None
     
     def build_freq_info_text(self, data: Dict[str, Any]) -> str:
+        """Erzeugt einen kurzen Text über Allelfrequenzen."""
         if not data:
             return "Keine Daten von Ensembl"
         maf = data.get("MAF", None)
@@ -553,7 +571,7 @@ class AlleleFrequencyFinder:
         out = []
         out.append(f"MAF={maf}" if maf else "MAF=n/a")
         if pops:
-            max_pop = 2
+            max_pop = 2  # Falls du nur 2 Populationsdaten ausgeben möchtest
             for i, pop in enumerate(pops):
                 if i >= max_pop:
                     break
@@ -566,6 +584,7 @@ class AlleleFrequencyFinder:
         return " | ".join(out)
 
 def split_summary(summary_text):
+    """Versucht 'Ergebnisse' und 'Schlussfolgerungen' zu splitten."""
     pattern = re.compile(
         r'(Ergebnisse(?:\:|\s*\n)|Resultate(?:\:|\s*\n))(?P<results>.*?)(Schlussfolgerungen(?:\:|\s*\n)|Fazit(?:\:|\s*\n))(?P<conclusion>.*)',
         re.IGNORECASE | re.DOTALL
@@ -579,6 +598,7 @@ def split_summary(summary_text):
         return summary_text, ""
 
 def parse_cohort_info(summary_text: str) -> dict:
+    """Parst grobe Infos zur Kohorte (Anzahl Patienten, Herkunft etc.) aus deutschem Summary."""
     info = {"study_size": "", "origin": ""}
     pattern_both = re.compile(
         r"(\d+)\s*Patient(?:en)?(?:[^\d]+)(\d+)\s*gesunde\s*Kontroll(?:personen)?",
@@ -600,7 +620,18 @@ def parse_cohort_info(summary_text: str) -> dict:
         info["origin"] = m_orig.group(1).strip()
     return info
 
+# ------------------------------------------------------------------
+# NEUER Bereich: Definition der Funktion chatgpt_online_search_with_genes
+# ------------------------------------------------------------------
 def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
+    """
+    Lässt ChatGPT jedes Paper scoren (0-100) basierend auf Codewörtern + Genen.
+    :param papers: Liste von Paper-Dictionaries (mit 'Title' und 'Abstract').
+    :param codewords: String mit Codewörtern.
+    :param genes: Liste von Genen.
+    :param top_k: Maximale Anzahl der Ergebnisse.
+    :return: Liste der gescorten Paper, sortiert nach Relevanz (absteigend).
+    """
     openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
     if not openai.api_key:
         st.error("Kein 'OPENAI_API_KEY' in st.secrets hinterlegt.")
@@ -650,10 +681,23 @@ Gib mir eine Zahl von 0 bis 100 (Relevanz), wobei sowohl Codewörter als auch Ge
     scored_results.sort(key=lambda x: x["Relevance"], reverse=True)
     return scored_results[:top_k]
 
-def analyze_papers_for_commonalities_and_contradictions(pdf_texts: Dict[str, str], api_key: str, model: str, method_choice: str = "Standard"):
+# ------------------------------------------------------------------
+# NEUER Bereich: Funktion zur Analyse von Gemeinsamkeiten & Widersprüchen
+# ------------------------------------------------------------------
+def analyze_papers_for_commonalities_and_contradictions(pdf_texts: Dict[str, str], api_key: str, model: str):
+    """
+    Naive Logik zur Extraktion von Claims aus jedem Paper und Ermittlung von
+    Gemeinsamkeiten und Widersprüchen.
+    
+    :param pdf_texts: Dictionary, wobei der Schlüssel der Dateiname und der Wert der extrahierte Text ist.
+    :param api_key: OpenAI API Key.
+    :param model: GPT-Modell (z.B. "gpt-3.5-turbo").
+    :return: JSON-String mit den Ergebnissen.
+    """
     import openai
     openai.api_key = api_key
 
+    # 1) Claims extrahieren pro Paper
     all_claims = {}
     for fname, txt in pdf_texts.items():
         prompt_claims = f"""
@@ -695,37 +739,14 @@ Text: {txt[:6000]}
             })
     big_input_str = json.dumps(merged_claims, ensure_ascii=False, indent=2)
 
-    if method_choice == "ContraCrow":
-        final_prompt = f"""
-Nutze die ContraCrow-Methodik, um die folgenden Claims (Aussagen) aus mehreren wissenschaftlichen PDF-Papers zu analysieren. 
-Die ContraCrow-Methodik fokussiert sich darauf, systematisch Gemeinsamkeiten und klare Widersprüche zu identifizieren.
-Bitte identifiziere:
-1) Die zentralen gemeinsamen Aussagen, die in den Papers auftreten.
-2) Klare Widersprüche zwischen den Aussagen der verschiedenen Papers.
-
-Antworte ausschließlich in folgendem JSON-Format (ohne zusätzliche Erklärungen):
-{{
-  "commonalities": [
-    "Gemeinsamkeit 1",
-    "Gemeinsamkeit 2"
-  ],
-  "contradictions": [
-    {{"paperA": "...", "claimA": "...", "paperB": "...", "claimB": "...", "reason": "..." }},
-    ...
-  ]
-}}
-
-Hier die Claims:
-{big_input_str}
-"""
-    else:
-        final_prompt = f"""
+    # 2) Gemeinsamkeiten + Widersprüche identifizieren
+    final_prompt = f"""
 Hier sind verschiedene Claims (Aussagen) aus mehreren wissenschaftlichen PDF-Papers im JSON-Format.
 Bitte identifiziere:
 1) Gemeinsamkeiten zwischen den Papers (Wo überschneiden oder ergänzen sich die Aussagen?)
 2) Mögliche Widersprüche (Welche Aussagen widersprechen sich klar?)
 
-Antworte NUR in folgendem JSON-Format (ohne weitere Erklärungen):
+Antworte NUR in folgendem JSON-Format (ohne zusätzliche Erklärungen):
 {{
   "commonalities": [
     "Gemeinsamkeit 1",
@@ -753,28 +774,7 @@ Hier die Claims:
         return f"Fehler bei Gemeinsamkeiten/Widersprüche: {e}"
 
 # ------------------------------------------------------------------
-# NEUER Bereich: Excel-Merging-Funktionalität
-# ------------------------------------------------------------------
-def copy_sheet_values(src_sheet, dst_sheet):
-    for row in src_sheet.iter_rows(values_only=True):
-        dst_sheet.append(row)
-
-def merge_excels_into_one(excel_buffers: list) -> bytes:
-    merged_wb = openpyxl.Workbook()
-    default_sheet = merged_wb.active
-    merged_wb.remove(default_sheet)
-    for (pdf_name, excel_bytes) in excel_buffers:
-        wb_temp = openpyxl.load_workbook(io.BytesIO(excel_bytes))
-        sheet_temp = wb_temp.active
-        new_sheet = merged_wb.create_sheet(pdf_name[:28])
-        copy_sheet_values(sheet_temp, new_sheet)
-    output_buf = io.BytesIO()
-    merged_wb.save(output_buf)
-    output_buf.seek(0)
-    return output_buf.getvalue()
-
-# ------------------------------------------------------------------
-# Seite: Analyze Paper (inkl. PaperQA Multi-Paper Analyzer)
+# 8) Seite: Analyze Paper (inkl. PaperQA Multi-Paper Analyzer)
 # ------------------------------------------------------------------
 def page_analyze_paper():
     st.title("Analyze Paper - Integriert")
@@ -788,7 +788,7 @@ def page_analyze_paper():
     
     model = st.sidebar.selectbox(
         "OpenAI-Modell",
-        ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4"],
+        ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4o"],
         index=0
     )
     
@@ -1006,6 +1006,9 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     files_to_process = uploaded_files
                 else:
                     idx = pdf_options.index(selected_pdf) - 1
+                    if idx < 0:
+                        st.warning("Keine Datei ausgewählt.")
+                        return
                     files_to_process = [uploaded_files[idx]]
                 final_result_text = []
                 for fpdf in files_to_process:
@@ -1186,13 +1189,24 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 if not text.strip():
                     st.error(f"Kein Text aus {fpdf.name} extrahierbar (evtl. kein OCR). Überspringe...")
                     continue
+                
                 summary_de = analyzer.summarize(text, api_key)
                 key_findings_result = analyzer.extract_key_findings(text, api_key)
+                
+                # Thema (falls Compare Mode) oder manuelles/generiertes Thema
+                main_theme_for_excel = st.session_state.get("theme_compare", "N/A")
+                if not compare_mode and theme_mode == "Manuell":
+                    main_theme_for_excel = user_defined_theme or "N/A"
+                
+                # Relevanz
                 if not topic:
                     relevance_result = "(No topic => no Relevanz-Bewertung)"
                 else:
                     relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
+                
                 methods_result = analyzer.identify_methods(text, api_key)
+                
+                # Suche evtl. Gene, rs, genotypes im Text
                 pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                 match_text = re.search(pattern_obvious, text)
                 gene_via_text = match_text.group(1) if match_text else None
@@ -1229,6 +1243,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 for gp in found_pairs:
                     if gp not in unique_geno_pairs:
                         unique_geno_pairs.append(gp)
+                
                 aff = AlleleFrequencyFinder()
                 freq_info = "Keine rsID vorhanden"
                 if rs_num:
@@ -1237,45 +1252,34 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         data = aff.try_alternative_source(rs_num)
                     if data:
                         freq_info = aff.build_freq_info_text(data)
+                
                 try:
                     wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
                 except FileNotFoundError:
                     st.error("Vorlage 'vorlage_paperqa2.xlsx' wurde nicht gefunden!")
                     return
                 ws = wb.active
-                ws["D2"].value = st.session_state.get("theme_compare", user_defined_theme or "N/A")
-                ws["D5"].value = found_gene if found_gene else ""
-                ws["D6"].value = rs_num if rs_num else ""
-                genotype_entries = unique_geno_pairs[:3]
-                for i in range(3):
-                    row_i = 10 + i
-                    if i < len(genotype_entries):
-                        g_str = genotype_entries[i][0]
-                        ws[f"D{row_i}"].value = g_str
-                        ws[f"E{row_i}"].value = freq_info
-                    else:
-                        ws[f"D{row_i}"].value = ""
-                        ws[f"E{row_i}"].value = ""
-                pub_year_match = re.search(r"\b(20[0-9]{2})\b", text)
-                year_for_excel = pub_year_match.group(1) if pub_year_match else "n/a"
-                ws["C20"].value = year_for_excel
-                cohort_data = parse_cohort_info(summary_de)
-                study_size = cohort_data.get("study_size", "")
-                origin = cohort_data.get("origin", "")
-                cohort_info = (study_size + (", " + origin if origin else "")).strip(", ")
-                ws["D20"].value = cohort_info
-                ws["E20"].value = key_findings_result
-                ws["G21"].value = summary_de
-                ws["G22"].value = summary_de
-                ws["J2"].value = datetime.datetime.now().strftime("%Y-%m-%d")
+                next_row = ws.max_row + 1
+                ws.cell(row=next_row, column=1).value = fpdf.name
+                ws.cell(row=next_row, column=2).value = found_gene
+                ws.cell(row=next_row, column=3).value = rs_num
+                all_gps = ",".join([x[0] for x in unique_geno_pairs])
+                ws.cell(row=next_row, column=4).value = all_gps
+                ws.cell(row=next_row, column=5).value = freq_info
+                ws.cell(row=next_row, column=6).value = summary_de
+                ws.cell(row=next_row, column=7).value = key_findings_result
+                ws.cell(row=next_row, column=8).value = methods_result
+                combined_relevance = f"{relevance_result}\n(Manuell:{user_relevance_score})"
+                ws.cell(row=next_row, column=9).value = combined_relevance
+                now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                ws.cell(row=next_row, column=10).value = now_str
                 output_buffer = io.BytesIO()
                 wb.save(output_buffer)
                 output_buffer.seek(0)
-                xlsx_name = f"analysis_{fpdf.name.replace('.pdf','')}.xlsx"
                 st.download_button(
                     label=f"Download Excel für {fpdf.name}",
                     data=output_buffer.getvalue(),
-                    file_name=xlsx_name,
+                    file_name=f"analysis_{fpdf.name.replace('.pdf', '')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
                 if "excel_files" not in st.session_state:
@@ -1401,6 +1405,7 @@ def sidebar_module_navigation():
     return pages.get(st.session_state["current_page"], page_home)
 
 def answer_chat(question: str) -> str:
+    """Einfaches Beispiel: Nutzt Paper-Text (falls vorhanden) aus st.session_state + GPT."""
     api_key = st.session_state.get("api_key", "")
     paper_text = st.session_state.get("paper_text", "")
     if not api_key:
@@ -1427,23 +1432,15 @@ def answer_chat(question: str) -> str:
         return f"OpenAI-Fehler: {e}"
 
 def main():
-    st.markdown(
-        """
-        <style>
-        html, body { margin: 0; padding: 0; }
-        .scrollable-chat { max-height: 400px; overflow-y: scroll; border: 1px solid #CCC; padding: 8px; margin-top: 10px; border-radius: 4px; background-color: #f9f9f9; }
-        .message { padding: 0.5rem 1rem; border-radius: 15px; margin-bottom: 0.5rem; max-width: 80%; word-wrap: break-word; }
-        .user-message { background-color: #e3f2fd; margin-left: auto; border-bottom-right-radius: 0; }
-        .assistant-message { background-color: #f0f0f0; margin-right: auto; border-bottom-left-radius: 0; }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
+    # -------- LAYOUT: Links Module, Rechts Chatbot --------
     col_left, col_right = st.columns([4, 1])
+    
     with col_left:
+        # Navigation
         page_fn = sidebar_module_navigation()
         if page_fn is not None:
             page_fn()
+    
     with col_right:
         st.subheader("Chatbot")
         if "chat_history" not in st.session_state:
@@ -1457,9 +1454,15 @@ def main():
         st.markdown('<div class="scrollable-chat" id="chat-container">', unsafe_allow_html=True)
         for role, msg_text in st.session_state["chat_history"]:
             if role == "user":
-                st.markdown(f'<div class="message user-message"><strong>Du:</strong> {msg_text}</div>', unsafe_allow_html=True)
+                st.markdown(
+                    f'<div class="message user-message"><strong>Du:</strong> {msg_text}</div>',
+                    unsafe_allow_html=True
+                )
             else:
-                st.markdown(f'<div class="message assistant-message"><strong>Bot:</strong> {msg_text}</div>', unsafe_allow_html=True)
+                st.markdown(
+                    f'<div class="message assistant-message"><strong>Bot:</strong> {msg_text}</div>',
+                    unsafe_allow_html=True
+                )
         st.markdown('</div>', unsafe_allow_html=True)
         st.markdown(
             """
