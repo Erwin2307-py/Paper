@@ -432,7 +432,6 @@ def page_excel_online_search():
 def page_online_api_filter():
     st.title("Online-API_Filter (Kombiniert)")
     st.write("Hier kombinierst du ggf. API-Auswahl und Online-Filter in einem Schritt.")
-    # Import des Moduls direkt in dieser Funktion, um den NameError zu verhindern:
     from modules.online_api_filter import module_online_api_filter
     module_online_api_filter()
     if st.button("Back to Main Menu"):
@@ -1151,7 +1150,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 st.write("Widerspruchsanalyse (Hochgeladene Paper)")
                 if st.button("Widerspruchsanalyse jetzt starten"):
                     if "paper_texts" not in st.session_state or not st.session_state["paper_texts"]:
-                        # Falls nicht vorhanden, extrahiere jetzt
                         st.session_state["paper_texts"] = {}
                         for upf in uploaded_files:
                             t_ = analyzer.extract_text_from_pdf(upf)
@@ -1170,7 +1168,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         )
                         st.subheader("Ergebnis (JSON)")
                         st.code(result_json_str, language="json")
-                        # Versuche JSON zu parsen und auszugeben
                         try:
                             data_js = json.loads(result_json_str)
                             common = data_js.get("commonalities", [])
@@ -1203,16 +1200,12 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
     st.write("## Alle Analysen & Excel-Ausgabe (Multi-PDF)")
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
 
-    # Hier verwenden wir eine Session-State-Liste, damit die Buttons
-    # (Download-Buttons) bestehen bleiben, auch wenn man einen davon klickt.
     if "excel_downloads" not in st.session_state:
         st.session_state["excel_downloads"] = []
 
     if uploaded_files and api_key:
         if st.button("Alle Analysen durchführen & in Excel speichern (Multi)"):
-            # Leeren, damit wir neu generieren
             st.session_state["excel_downloads"].clear()
-
             with st.spinner("Analysiere alle hochgeladenen PDFs (für Excel)..."):
                 analyzer = PaperAnalyzer(model=model)
                 
@@ -1237,7 +1230,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 else:
                     selected_files_for_excel = uploaded_files
 
-                # Schleife über die relevanten oder alle hochgeladenen Dateien
                 for fpdf in selected_files_for_excel:
                     text = analyzer.extract_text_from_pdf(fpdf)
                     if not text.strip():
@@ -1247,12 +1239,10 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     summary_de = analyzer.summarize(text, api_key)
                     key_findings_result = analyzer.extract_key_findings(text, api_key)
                     
-                    # Thema (falls Compare Mode) oder manuelles/generiertes Thema
                     main_theme_for_excel = st.session_state.get("theme_compare", "N/A")
                     if not compare_mode and theme_mode == "Manuell":
                         main_theme_for_excel = user_defined_theme or "N/A"
                     
-                    # Relevanz
                     if not topic:
                         relevance_result = "(No topic => no Relevanz-Bewertung)"
                     else:
@@ -1260,7 +1250,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     
                     methods_result = analyzer.identify_methods(text, api_key)
                     
-                    # Suche evtl. Gene, rs, genotypes im Text
                     pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
                     match_text = re.search(pattern_obvious, text)
                     gene_via_text = match_text.group(1) if match_text else None
@@ -1282,7 +1271,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         if gp not in unique_geno_pairs:
                             unique_geno_pairs.append(gp)
                     
-                    # Hole Allelfrequenzen
                     aff = AlleleFrequencyFinder()
                     freq_info = "Keine rsID vorhanden"
                     if rs_num:
@@ -1292,7 +1280,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         if data:
                             freq_info = aff.build_freq_info_text(data)
                     
-                    # Parse Summary (Ergebnisse / Conclusion, Study size, origin)
                     ergebnisse, schlussfolgerungen = split_summary(summary_de)
                     cohort_data = parse_cohort_info(summary_de)
                     study_size = cohort_data.get("study_size", "")
@@ -1302,11 +1289,9 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     else:
                         cohort_info = ""
                     
-                    # Versuche das Jahr aus dem PDF/Text zu extrahieren (einfacher Regex):
                     pub_year_match = re.search(r"\b(20[0-9]{2})\b", text)
                     year_for_excel = pub_year_match.group(1) if pub_year_match else "n/a"
 
-                    # Lade Excel-Vorlage
                     try:
                         wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
                     except FileNotFoundError:
@@ -1314,19 +1299,12 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         return
                     ws = wb.active
 
-                    # -- WICHTIG: Nutze Zellen per Name (z.B. ws["D2"] statt row=2,col=4),
-                    #    um MergedCell-Fehler zu vermeiden. --
-                    # D2 -> Hauptthema
                     ws["D2"].value = main_theme_for_excel
-                    # Neu: J2 -> Datum
                     ws["J2"].value = datetime.datetime.now().strftime("%Y-%m-%d")
 
-                    # D5 -> Gene name (falls gefunden)
                     ws["D5"].value = gene_via_text if gene_via_text else ""
-                    # D6 -> rs number
                     ws["D6"].value = rs_num if rs_num else ""
                     
-                    # D10/E10, D11/E11, D12/E12: Genotype/PopFreq
                     genotype_entries = unique_geno_pairs[:3]
                     for i in range(3):
                         row_i = 10 + i
@@ -1338,15 +1316,10 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                             ws[f"D{row_i}"] = ""
                             ws[f"E{row_i}"] = ""
                     
-                    # C20 -> Jahr
                     ws["C20"].value = year_for_excel
-                    # D20 -> Study size
                     ws["D20"].value = cohort_info
-                    # E20 -> Key findings
                     ws["E20"].value = key_findings_result
-                    # G21 -> Results
                     ws["G21"].value = ergebnisse
-                    # G22 -> Conclusion
                     ws["G22"].value = schlussfolgerungen
 
                     output_buffer = io.BytesIO()
@@ -1354,14 +1327,12 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     output_buffer.seek(0)
                     
                     xlsx_name = f"analysis_{fpdf.name.replace('.pdf','')}.xlsx"
-                    # Speichern wir in Session State -> excel_downloads
                     st.session_state["excel_downloads"].append({
                         "label": f"Download Excel für {fpdf.name}",
                         "data": output_buffer.getvalue(),
                         "file_name": xlsx_name
                     })
 
-    # Download-Buttons: Bleiben erhalten, weil wir sie NACHHER ausgeben.
     if "excel_downloads" in st.session_state and st.session_state["excel_downloads"]:
         st.write("## Generierte Excel-Downloads:")
         for dl in st.session_state["excel_downloads"]:
@@ -1401,6 +1372,13 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
         "Wähle ein Paper aus der Scoring-Liste:",
         options=["(Bitte wählen)"] + scored_titles
     )
+    
+    # NEU: Analyseart-Auswahl nur für dieses Paper (Zusammenfassung etc.)
+    analysis_choice_for_scored_paper = st.selectbox(
+        "Welche Analyse willst du durchführen?",
+        ["(Keine Auswahl)", "Zusammenfassung", "Wichtigste Erkenntnisse", "Methoden & Techniken", "Relevanz-Bewertung"]
+    )
+    
     if chosen_title != "(Bitte wählen)":
         selected_paper = next((p for p in st.session_state["scored_list"] if p["Title"] == chosen_title), None)
         if selected_paper:
@@ -1415,6 +1393,40 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 st.markdown(f"> {abstract}")
             else:
                 st.warning(f"Kein Abstract für {selected_paper.get('Title', 'Unbenannt')} vorhanden.")
+            
+            # Button, um die gewählte Analyse durchzuführen
+            if st.button("Analyse für dieses Paper durchführen"):
+                analyzer = PaperAnalyzer(model=model)
+                if not abstract.strip():
+                    st.error("Kein Abstract vorhanden, kann keine Analyse durchführen.")
+                    return
+                if analysis_choice_for_scored_paper == "Zusammenfassung":
+                    res = analyzer.summarize(abstract, api_key)
+                elif analysis_choice_for_scored_paper == "Wichtigste Erkenntnisse":
+                    res = analyzer.extract_key_findings(abstract, api_key)
+                elif analysis_choice_for_scored_paper == "Methoden & Techniken":
+                    res = analyzer.identify_methods(abstract, api_key)
+                elif analysis_choice_for_scored_paper == "Relevanz-Bewertung":
+                    # Nutzt 'topic' aus Sidebar
+                    if not topic:
+                        st.error("Bitte oben ein Topic eingeben (Sidebar).")
+                        return
+                    res = analyzer.evaluate_relevance(abstract, topic, api_key)
+                else:
+                    st.info("Keine gültige Analyseart ausgewählt.")
+                    return
+
+                if res and output_lang != "Deutsch" and analysis_choice_for_scored_paper != "(Keine Auswahl)":
+                    lang_map = {
+                        "Englisch": "English",
+                        "Portugiesisch": "Portuguese",
+                        "Serbisch": "Serbian"
+                    }
+                    target_lang = lang_map.get(output_lang, "English")
+                    res = translate_text_openai(res, "German", target_lang, api_key)
+                
+                st.write("### Ergebnis der Analyse:")
+                st.write(res)
         else:
             st.warning("Paper nicht gefunden (unerwarteter Fehler).")
 
