@@ -600,7 +600,7 @@ def parse_cohort_info(summary_text: str) -> dict:
     return info
 
 # ------------------------------------------------------------------
-# Funktion zur ChatGPT-basierten Scoring-Suche
+# Funktion zur ChatGPT-basierten Scoring-Suche (per Button ausgelöst)
 # ------------------------------------------------------------------
 def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
@@ -612,8 +612,6 @@ def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     progress = st.progress(0)
     status_text = st.empty()
     genes_str = ", ".join(genes) if genes else ""
-    # *** Ab hier KEINE automatische Ausführung mehr – wir führen Scoring nur auf Button-Klick aus ***
-    # (Die Logik selbst bleibt unverändert.)
     for idx, paper in enumerate(papers, start=1):
         current_title = paper.get("Title", "n/a")
         status_text.text(f"Verarbeite Paper {idx}/{total}: {current_title}")
@@ -1205,8 +1203,16 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
     st.write("## Alle Analysen & Excel-Ausgabe (Multi-PDF)")
     user_relevance_score = st.text_input("Manuelle Relevanz-Einschätzung (1-10)?")
 
+    # Hier verwenden wir eine Session-State-Liste, damit die Buttons
+    # (Download-Buttons) bestehen bleiben, auch wenn man einen davon klickt.
+    if "excel_downloads" not in st.session_state:
+        st.session_state["excel_downloads"] = []
+
     if uploaded_files and api_key:
         if st.button("Alle Analysen durchführen & in Excel speichern (Multi)"):
+            # Leeren, damit wir neu generieren
+            st.session_state["excel_downloads"].clear()
+
             with st.spinner("Analysiere alle hochgeladenen PDFs (für Excel)..."):
                 analyzer = PaperAnalyzer(model=model)
                 
@@ -1310,9 +1316,11 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
 
                     # -- WICHTIG: Nutze Zellen per Name (z.B. ws["D2"] statt row=2,col=4),
                     #    um MergedCell-Fehler zu vermeiden. --
-
                     # D2 -> Hauptthema
                     ws["D2"].value = main_theme_for_excel
+                    # Neu: J2 -> Datum
+                    ws["J2"].value = datetime.datetime.now().strftime("%Y-%m-%d")
+
                     # D5 -> Gene name (falls gefunden)
                     ws["D5"].value = gene_via_text if gene_via_text else ""
                     # D6 -> rs number
@@ -1346,22 +1354,28 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     output_buffer.seek(0)
                     
                     xlsx_name = f"analysis_{fpdf.name.replace('.pdf','')}.xlsx"
-                    st.download_button(
-                        label=f"Download Excel für {fpdf.name}",
-                        data=output_buffer,
-                        file_name=xlsx_name,
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-    else:
-        if not api_key:
-            st.warning("Bitte OpenAI API-Key eingeben!")
-        elif not uploaded_files:
-            st.info("Bitte eine oder mehrere PDF-Dateien hochladen!")
+                    # Speichern wir in Session State -> excel_downloads
+                    st.session_state["excel_downloads"].append({
+                        "label": f"Download Excel für {fpdf.name}",
+                        "data": output_buffer.getvalue(),
+                        "file_name": xlsx_name
+                    })
+
+    # Download-Buttons: Bleiben erhalten, weil wir sie NACHHER ausgeben.
+    if "excel_downloads" in st.session_state and st.session_state["excel_downloads"]:
+        st.write("## Generierte Excel-Downloads:")
+        for dl in st.session_state["excel_downloads"]:
+            st.download_button(
+                label=dl["label"],
+                data=dl["data"],
+                file_name=dl["file_name"],
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
     st.write("---")
     st.write("## Einzelanalyse der nach ChatGPT-Scoring ausgewählten Paper")
     
-    # Button, um das Scoring explizit auszulösen, statt es automatisch zu tun:
+    # Button zum Scoring
     if st.button("Scoring jetzt durchführen"):
         if "search_results" in st.session_state and st.session_state["search_results"]:
             codewords_str = st.session_state.get("codewords", "")
@@ -1377,7 +1391,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
         else:
             st.info("Keine (vorherigen) Suchergebnisse gefunden, daher kein Scoring möglich.")
     
-    # Danach ganz normal:
     if "scored_list" not in st.session_state or not st.session_state["scored_list"]:
         st.info("Noch keine gescorten Paper vorhanden. Bitte zuerst 'Scoring jetzt durchführen' anklicken.")
         return
