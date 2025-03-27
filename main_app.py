@@ -428,6 +428,122 @@ class SemanticScholarSearch:
 # (Hier könnte ggf. zusätzlicher Code stehen, falls benötigt)
 
 # ------------------------------------------------------------------
+# NEU: GenotypeFinder für Populationsfrequenz (Hardy–Weinberg-Berechnung)
+# ------------------------------------------------------------------
+class GenotypeFinder:
+    def __init__(self):
+        self.ensembl_server = "https://rest.ensembl.org"
+    
+    def get_variant_info(self, rs_id):
+        """Ruft detaillierte Informationen zu einer Variation von Ensembl ab"""
+        ext = f"/variation/human/{rs_id}?pops=1"
+        st.info(f"Hole Daten für {rs_id} von Ensembl...")
+        try:
+            r = requests.get(self.ensembl_server + ext, headers={"Content-Type": "application/json"})
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            st.error(f"Fehler beim API-Aufruf: {e}")
+            return None
+    
+    def calculate_genotype_frequency(self, data, genotype):
+        """
+        Berechnet die Genotypfrequenz basierend auf Allelfrequenzen und Hardy-Weinberg
+        
+        Parameters:
+        - data: JSON-Daten von der Ensembl API
+        - genotype: Genotyp als String (z.B. 'AA', 'AG', 'GG')
+        
+        Returns:
+        - Dictionary mit Populationen und Genotypfrequenzen
+        """
+        if not data or 'populations' not in data:
+            st.error("Keine Populationsdaten gefunden.")
+            return {}
+        
+        if len(genotype) != 2:
+            st.error(f"Ungültiger Genotyp: {genotype}. Bitte geben Sie genau zwei Allele an (z.B. AA, AG, GG).")
+            return {}
+        
+        allele1, allele2 = genotype[0], genotype[1]
+        results = {}
+        
+        for population in data['populations']:
+            pop_name = population.get('population', 'Unbekannt')
+            # Nur 1000 Genomes Populationen betrachten
+            if '1000GENOMES' not in pop_name:
+                continue
+            
+            allele_freqs = {}
+            for pop_data in data['populations']:
+                if pop_data.get('population') == pop_name:
+                    allele = pop_data.get('allele', '')
+                    freq = pop_data.get('frequency', 0)
+                    allele_freqs[allele] = freq
+            
+            if allele1 not in allele_freqs or allele2 not in allele_freqs:
+                continue
+            
+            if allele1 == allele2:  # Homozygot
+                genotype_freq = allele_freqs[allele1] ** 2
+            else:  # Heterozygot
+                genotype_freq = 2 * allele_freqs[allele1] * allele_freqs[allele2]
+            
+            results[pop_name] = genotype_freq
+        
+        return results
+
+# ------------------------------------------------------------------
+# Neue Seite: Genotype Frequency
+# ------------------------------------------------------------------
+def page_genotype_frequency():
+    st.title("Genotype Frequency Analysis")
+    st.write("Berechne die Genotypfrequenz für eine Variation basierend auf Ensembl-Daten und Hardy–Weinberg.")
+    
+    rs_id = st.text_input("Geben Sie die rs-Nummer ein (z.B. rs699):")
+    genotype = st.text_input("Geben Sie den Genotyp ein (z.B. AA, AG, GG):").upper()
+    
+    if st.button("Berechne Genotypfrequenz"):
+        if not rs_id:
+            st.error("Bitte rs-Nummer eingeben!")
+            return
+        if not genotype:
+            st.error("Bitte Genotyp eingeben!")
+            return
+        
+        if not rs_id.startswith("rs"):
+            rs_id = "rs" + rs_id
+        
+        finder = GenotypeFinder()
+        data = finder.get_variant_info(rs_id)
+        
+        if not data:
+            st.error(f"Keine Daten für {rs_id} gefunden.")
+            return
+        
+        alleles = set()
+        for pop in data.get('populations', []):
+            allele = pop.get('allele')
+            if allele:
+                alleles.add(allele)
+        st.write("Verfügbare Allele: " + ", ".join(sorted(alleles)))
+        
+        genotype_freqs = finder.calculate_genotype_frequency(data, genotype)
+        
+        if not genotype_freqs:
+            st.error(f"Keine Genotypfrequenzen für {genotype} gefunden.")
+            return
+        
+        st.write(f"Genotypfrequenzen für {rs_id} ({genotype}):")
+        if '1000GENOMES:phase_3:ALL' in genotype_freqs:
+            global_freq = genotype_freqs['1000GENOMES:phase_3:ALL']
+            st.write(f"Globale Population: {global_freq:.4f}")
+        
+        for pop, freq in sorted(genotype_freqs.items()):
+            if pop != '1000GENOMES:phase_3:ALL':
+                st.write(f"{pop}: {freq:.4f}")
+
+# ------------------------------------------------------------------
 # 8) Weitere Module + Seiten
 # ------------------------------------------------------------------
 def module_paperqa2():
@@ -506,16 +622,13 @@ class PaperAnalyzer:
         """Hilfsfunktion, um OpenAI per ChatCompletion aufzurufen."""
         import openai
         openai.api_key = api_key
-        # Bei Bedarf Text kürzen, um Tokens zu sparen
         if len(text) > 15000:
             text = text[:15000] + "..."
         prompt = prompt_template.format(text=text)
         response = openai.ChatCompletion.create(
             model=self.model,
-            messages=[
-                {"role": "system", "content": "Du bist ein Experte für die Analyse wissenschaftlicher Paper."},
-                {"role": "user", "content": prompt}
-            ],
+            messages=[{"role": "system", "content": "Du bist ein Experte für die Analyse wissenschaftlicher Paper."},
+                      {"role": "user", "content": prompt}],
             temperature=0.3,
             max_tokens=1500
         )
@@ -646,50 +759,7 @@ def parse_cohort_info(summary_text: str) -> dict:
         info["origin"] = m_orig.group(1).strip()
     return info
 
-# NEU: Hilfsfunktion, um DOI + Link zu PubMed zu holen
-def fetch_pubmed_doi_and_link(pmid: str) -> (str, str):
-    """
-    Versucht, über PubMed E-Summary/E-Fetch den DOI sowie den Link zum Paper herauszufinden.
-    Gibt (doi, pubmed_link) zurück.
-    """
-    if not pmid or pmid == "n/a":
-        return ("n/a", "")
-    
-    link = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
-    
-    # Erst ESummary
-    summary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
-    params_sum = {"db": "pubmed", "id": pmid, "retmode": "json"}
-    try:
-        rs = requests.get(summary_url, params=params_sum, timeout=8)
-        rs.raise_for_status()
-        data = rs.json()
-        result_obj = data.get("result", {}).get(pmid, {})
-        eloc = result_obj.get("elocationid", "")
-        if eloc and eloc.startswith("doi:"):
-            doi_ = eloc.split("doi:", 1)[1].strip()
-            if doi_:
-                return (doi_, link)
-    except Exception:
-        pass
-    
-    # Dann EFetch
-    efetch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
-    params_efetch = {"db": "pubmed", "id": pmid, "retmode": "xml"}
-    try:
-        r_ef = requests.get(efetch_url, params=params_efetch, timeout=8)
-        r_ef.raise_for_status()
-        root = ET.fromstring(r_ef.content)
-        doi_found = "n/a"
-        for aid in root.findall(".//ArticleId"):
-            id_type = aid.attrib.get("IdType", "")
-            if id_type.lower() == "doi":
-                if aid.text:
-                    doi_found = aid.text.strip()
-                    break
-        return (doi_found, link)
-    except Exception:
-        return ("n/a", link)
+# NEU: Doppelte Definition von fetch_pubmed_doi_and_link (siehe oben) wurde beibehalten
 
 # ------------------------------------------------------------------
 # Funktion zur ChatGPT-basierten Scoring-Suche (per Button ausgelöst)
@@ -937,10 +1007,8 @@ Nur das JSON, ohne weitere Erklärungen.
                 openai.api_key = api_key
                 scope_resp = openai.ChatCompletion.create(
                     model=model,
-                    messages=[
-                        {"role": "system", "content": "Du checkst Paper-Snippets auf Relevanz zum user-Thema."},
-                        {"role": "user", "content": big_input}
-                    ],
+                    messages=[{"role": "system", "content": "Du checkst Paper-Snippets auf Relevanz zum user-Thema."},
+                              {"role": "user", "content": big_input}],
                     temperature=0.0,
                     max_tokens=1800
                 )
@@ -997,10 +1065,8 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 openai.api_key = api_key
                 scope_resp = openai.ChatCompletion.create(
                     model=model,
-                    messages=[
-                        {"role": "system", "content": "Du bist ein Assistent, der Paper thematisch filtert."},
-                        {"role": "user", "content": big_input}
-                    ],
+                    messages=[{"role": "system", "content": "Du bist ein Assistent, der Paper thematisch filtert."},
+                              {"role": "user", "content": big_input}],
                     temperature=0.0,
                     max_tokens=1800
                 )
@@ -1183,7 +1249,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                                                             st.write(f"Bild {img_index} konnte nicht extrahiert werden.")
                                             else:
                                                 st.write("Keine Bilder hier.")
-                                    # Volltextsuche "Table"
                                     st.markdown(f"### Volltext-Suche 'Table' in {fpdf.name}")
                                     try:
                                         text_all_pages = ""
@@ -1215,10 +1280,8 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                                             openai.api_key = api_key
                                             gpt_resp = openai.ChatCompletion.create(
                                                 model=model,
-                                                messages=[
-                                                    {"role": "system", "content": "Du bist ein Experte für PDF-Tabellenanalyse."},
-                                                    {"role": "user", "content": gpt_prompt}
-                                                ],
+                                                messages=[{"role": "system", "content": "Du bist ein Experte für PDF-Tabellenanalyse."},
+                                                          {"role": "user", "content": gpt_prompt}],
                                                 temperature=0.3,
                                                 max_tokens=1000
                                             )
@@ -1387,18 +1450,10 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     pub_year_match = re.search(r"\b(20[0-9]{2})\b", text)
                     year_for_excel = pub_year_match.group(1) if pub_year_match else "n/a"
 
-                    # NEU: PubMed ID anreichern, wenn im Text gefunden:
-                    # Ganz simples Pattern:
                     pmid_pattern = re.compile(r"\bPMID:\s*(\d+)\b", re.IGNORECASE)
                     pmid_match = pmid_pattern.search(text)
                     pmid_found = pmid_match.group(1) if pmid_match else "n/a"
 
-                    # Wenn wir in "selected_paper" was haben, könnte man das auch nutzen.
-                    # Hier rein exemplarisch, wir nutzen einfach pmid_found.
-
-                    # Falls wir noch keinen PMID haben, belassen wir es bei "n/a".
-                    
-                    # PubMed-Link + DOI
                     doi_final = "n/a"
                     link_pubmed = ""
                     if pmid_found != "n/a":
@@ -1434,7 +1489,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     ws["G21"].value = ergebnisse
                     ws["G22"].value = schlussfolgerungen
 
-                    # NEU: PubMed ID in J21, Link in J22 und DOI in I22
                     ws["J21"].value = pmid_found if pmid_found != "n/a" else ""
                     ws["J22"].value = link_pubmed if link_pubmed else ""
                     ws["I22"].value = doi_final if doi_final != "n/a" else ""
@@ -1463,7 +1517,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
     st.write("---")
     st.write("## Einzelanalyse der nach ChatGPT-Scoring ausgewählten Paper")
     
-    # Button zum Scoring
     if st.button("Scoring jetzt durchführen"):
         if "search_results" in st.session_state and st.session_state["search_results"]:
             codewords_str = st.session_state.get("codewords", "")
@@ -1602,6 +1655,7 @@ def sidebar_module_navigation():
         "Online-API_Filter": page_online_api_filter,
         "3) Codewords & PubMed": page_codewords_pubmed,
         "Analyze Paper": page_analyze_paper,
+        "Genotype Frequency": page_genotype_frequency
     }
     for label, page in pages.items():
         if st.sidebar.button(label, key=label):
@@ -1628,10 +1682,8 @@ def answer_chat(question: str) -> str:
     try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": sys_msg},
-                {"role": "user", "content": question}
-            ],
+            messages=[{"role": "system", "content": sys_msg},
+                      {"role": "user", "content": question}],
             temperature=0.3,
             max_tokens=400
         )
@@ -1644,7 +1696,6 @@ def main():
     col_left, col_right = st.columns([4, 1])
     
     with col_left:
-        # Navigation
         page_fn = sidebar_module_navigation()
         if page_fn is not None:
             page_fn()
@@ -1707,7 +1758,6 @@ def main():
                 )
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # Auto-scroll JS
         st.markdown(
             """
             <script>
