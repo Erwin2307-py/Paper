@@ -231,10 +231,10 @@ def fetch_pubmed_doi_and_link(pmid: str) -> (str, str):
     """
     if not pmid or pmid == "n/a":
         return ("n/a", "")
-    
+
     # PubMed Link
     link = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
-    
+
     # 1) esummary
     summary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
     params_sum = {"db": "pubmed", "id": pmid, "retmode": "json"}
@@ -243,16 +243,14 @@ def fetch_pubmed_doi_and_link(pmid: str) -> (str, str):
         rs.raise_for_status()
         data = rs.json()
         result_obj = data.get("result", {}).get(pmid, {})
-        # Versuche "elocationid" o.Ä. Felder
         eloc = result_obj.get("elocationid", "")
         if eloc and eloc.startswith("doi:"):
             doi_ = eloc.split("doi:", 1)[1].strip()
             if doi_:
                 return (doi_, link)
-        # Falls nicht gefunden => efetch
     except Exception:
         pass
-    
+
     # 2) efetch
     efetch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
     params_efetch = {"db": "pubmed", "id": pmid, "retmode": "xml"}
@@ -260,7 +258,6 @@ def fetch_pubmed_doi_and_link(pmid: str) -> (str, str):
         r_ef = requests.get(efetch_url, params=params_efetch, timeout=8)
         r_ef.raise_for_status()
         root = ET.fromstring(r_ef.content)
-        # Suche <ArticleIdList> -> <ArticleId IdType="doi">10.XXX....
         doi_found = "n/a"
         for aid in root.findall(".//ArticleId"):
             id_type = aid.attrib.get("IdType", "")
@@ -589,25 +586,29 @@ class AlleleFrequencyFinder:
         return None
     
     def build_freq_info_text(self, data: Dict[str, Any]) -> str:
-        """Erzeugt einen kurzen Text über Allelfrequenzen."""
+        """
+        Erzeugt einen kurzen Text über Allelfrequenzen, sucht insbesondere nach der globalen
+        Frequenz in '1000GENOMES:phase_3:ALL'. Falls gefunden, z.B. 'Globale Population: 0.0274'.
+        """
         if not data:
             return "Keine Daten von Ensembl"
-        maf = data.get("MAF", None)
+
         pops = data.get("populations", [])
-        out = []
-        out.append(f"MAF={maf}" if maf else "MAF=n/a")
-        if pops:
-            max_pop = 2
-            for i, pop in enumerate(pops):
-                if i >= max_pop:
-                    break
-                pop_name = pop.get('population', 'N/A')
-                allele = pop.get('allele', 'N/A')
-                freq = pop.get('frequency', 'N/A')
-                out.append(f"{pop_name}:{allele}={freq}")
+        if not pops:
+            return "Keine Populationsdaten gefunden."
+        
+        # Sucht speziell nach '1000GENOMES:phase_3:ALL'
+        global_freq = None
+        for pop in pops:
+            pop_name = pop.get("population", "")
+            if pop_name == "1000GENOMES:phase_3:ALL":
+                global_freq = pop.get("frequency", None)
+                break
+        
+        if global_freq is not None:
+            return f"Globale Population: {global_freq:.4f}"
         else:
-            out.append("Keine Populationsdaten gefunden.")
-        return " | ".join(out)
+            return "Keine globale Frequenz"
 
 def split_summary(summary_text):
     """Versucht 'Ergebnisse' und 'Schlussfolgerungen' zu splitten."""
@@ -903,7 +904,7 @@ def page_analyze_paper():
         st.session_state["relevant_papers_compare"] = None
     if "theme_compare" not in st.session_state:
         st.session_state["theme_compare"] = ""
-    
+
     def do_outlier_logic(paper_map: dict) -> (list, str):
         """Ermittelt, welche Paper thematisch relevant sind und ggf. ein gemeinsames Hauptthema."""
         if theme_mode == "Manuell":
@@ -1183,7 +1184,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                                                             st.write(f"Bild {img_index} konnte nicht extrahiert werden.")
                                             else:
                                                 st.write("Keine Bilder hier.")
-                                    # Volltextsuche "Table"
                                     st.markdown(f"### Volltext-Suche 'Table' in {fpdf.name}")
                                     try:
                                         text_all_pages = ""
@@ -1306,17 +1306,17 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 
                 if compare_mode:
                     if not st.session_state["relevant_papers_compare"]:
-                        paper_map_auto = {}
+                        paper_map = {}
                         for fpdf in uploaded_files:
-                            txt = analyzer.extract_text_from_pdf(fpdf)
-                            if txt.strip():
-                                paper_map_auto[fpdf.name] = txt
-                        if not paper_map_auto:
+                            txt_ = analyzer.extract_text_from_pdf(fpdf)
+                            if txt_.strip():
+                                paper_map[fpdf.name] = txt_
+                        if not paper_map:
                             st.error("Keine verwertbaren Paper.")
                             return
-                        relevant_papers_auto, discovered_theme_auto = do_outlier_logic(paper_map_auto)
-                        st.session_state["relevant_papers_compare"] = relevant_papers_auto
-                        st.session_state["theme_compare"] = discovered_theme_auto
+                        relevant_papers_, discovered_theme_ = do_outlier_logic(paper_map)
+                        st.session_state["relevant_papers_compare"] = relevant_papers_
+                        st.session_state["theme_compare"] = discovered_theme_
                     relevant_list_for_excel = st.session_state["relevant_papers_compare"] or []
                     if not relevant_list_for_excel:
                         st.error("Keine relevanten Paper nach Outlier-Check für Excel.")
@@ -1326,13 +1326,13 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     selected_files_for_excel = uploaded_files
 
                 for fpdf in selected_files_for_excel:
-                    text = analyzer.extract_text_from_pdf(fpdf)
-                    if not text.strip():
+                    text_ = analyzer.extract_text_from_pdf(fpdf)
+                    if not text_.strip():
                         st.error(f"Kein Text aus {fpdf.name} extrahierbar (evtl. kein OCR). Überspringe...")
                         continue
                     
-                    summary_de = analyzer.summarize(text, api_key)
-                    key_findings_result = analyzer.extract_key_findings(text, api_key)
+                    summary_de = analyzer.summarize(text_, api_key)
+                    key_findings_result = analyzer.extract_key_findings(text_, api_key)
                     
                     main_theme_for_excel = st.session_state.get("theme_compare", "N/A")
                     if not compare_mode and theme_mode == "Manuell":
@@ -1341,68 +1341,60 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     if not topic:
                         relevance_result = "(No topic => no Relevanz-Bewertung)"
                     else:
-                        relevance_result = analyzer.evaluate_relevance(text, topic, api_key)
+                        relevance_result = analyzer.evaluate_relevance(text_, topic, api_key)
                     
-                    methods_result = analyzer.identify_methods(text, api_key)
+                    methods_result = analyzer.identify_methods(text_, api_key)
                     
                     pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
-                    match_text = re.search(pattern_obvious, text)
-                    gene_via_text = match_text.group(1) if match_text else None
+                    match_text_ = re.search(pattern_obvious, text_)
+                    gene_via_text = match_text_.group(1) if match_text_ else None
                     
                     rs_pat = r"(rs\d+)"
-                    found_rs_match = re.search(rs_pat, text)
-                    rs_num = found_rs_match.group(1) if found_rs_match else None
+                    found_rs_match_ = re.search(rs_pat, text_)
+                    rs_num = found_rs_match_.group(1) if found_rs_match_ else None
                     
                     genotype_regex = r"\b([ACGT]{2,3})\b"
-                    lines = text.split("\n")
-                    found_pairs = []
-                    for line in lines:
-                        matches = re.findall(genotype_regex, line)
-                        if matches:
-                            for m in matches:
-                                found_pairs.append((m, line.strip()))
-                    unique_geno_pairs = []
-                    for gp in found_pairs:
-                        if gp not in unique_geno_pairs:
-                            unique_geno_pairs.append(gp)
+                    lines_ = text_.split("\n")
+                    found_pairs_ = []
+                    for line__ in lines_:
+                        matches__ = re.findall(genotype_regex, line__)
+                        if matches__:
+                            for m__ in matches__:
+                                found_pairs_.append((m__, line__.strip()))
+                    unique_geno_pairs_ = []
+                    for gp_ in found_pairs_:
+                        if gp_ not in unique_geno_pairs_:
+                            unique_geno_pairs_.append(gp_)
                     
                     aff = AlleleFrequencyFinder()
                     freq_info = "Keine rsID vorhanden"
                     if rs_num:
-                        data = aff.get_allele_frequencies(rs_num)
-                        if not data:
-                            data = aff.try_alternative_source(rs_num)
-                        if data:
-                            freq_info = aff.build_freq_info_text(data)
+                        data__ = aff.get_allele_frequencies(rs_num)
+                        if not data__:
+                            data__ = aff.try_alternative_source(rs_num)
+                        if data__:
+                            freq_info = aff.build_freq_info_text(data__)
                     
-                    ergebnisse, schlussfolgerungen = split_summary(summary_de)
-                    cohort_data = parse_cohort_info(summary_de)
-                    study_size = cohort_data.get("study_size", "")
-                    origin = cohort_data.get("origin", "")
-                    if study_size or origin:
-                        cohort_info = (study_size + (", " + origin if origin else "")).strip(", ")
+                    ergebnisse_, schlussfolgerungen_ = split_summary(summary_de)
+                    cohort_data_ = parse_cohort_info(summary_de)
+                    study_size_ = cohort_data_.get("study_size", "")
+                    origin_ = cohort_data_.get("origin", "")
+                    if study_size_ or origin_:
+                        cohort_info_ = (study_size_ + (", " + origin_ if origin_ else "")).strip(", ")
                     else:
-                        cohort_info = ""
+                        cohort_info_ = ""
                     
-                    pub_year_match = re.search(r"\b(20[0-9]{2})\b", text)
-                    year_for_excel = pub_year_match.group(1) if pub_year_match else "n/a"
+                    pub_year_match_ = re.search(r"\b(20[0-9]{2})\b", text_)
+                    year_for_excel_ = pub_year_match_.group(1) if pub_year_match_ else "n/a"
 
-                    # NEU: PubMed ID anreichern, wenn im Text gefunden:
-                    # Ganz simples Pattern:
-                    pmid_pattern = re.compile(r"\bPMID:\s*(\d+)\b", re.IGNORECASE)
-                    pmid_match = pmid_pattern.search(text)
-                    pmid_found = pmid_match.group(1) if pmid_match else "n/a"
-
-                    # Wenn wir in "selected_paper" was haben, könnte man das auch nutzen.
-                    # Hier rein exemplarisch, wir nutzen einfach pmid_found.
-
-                    # Falls wir noch keinen PMID haben, belassen wir es bei "n/a".
+                    pmid_pattern_ = re.compile(r"\bPMID:\s*(\d+)\b", re.IGNORECASE)
+                    pmid_match_ = pmid_pattern_.search(text_)
+                    pmid_found_ = pmid_match_.group(1) if pmid_match_ else "n/a"
                     
-                    # PubMed-Link + DOI
-                    doi_final = "n/a"
-                    link_pubmed = ""
-                    if pmid_found != "n/a":
-                        doi_final, link_pubmed = fetch_pubmed_doi_and_link(pmid_found)
+                    doi_final_ = "n/a"
+                    link_pubmed_ = ""
+                    if pmid_found_ != "n/a":
+                        doi_final_, link_pubmed_ = fetch_pubmed_doi_and_link(pmid_found_)
 
                     try:
                         wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
@@ -1417,37 +1409,36 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     ws["D5"].value = gene_via_text if gene_via_text else ""
                     ws["D6"].value = rs_num if rs_num else ""
                     
-                    genotype_entries = unique_geno_pairs[:3]
-                    for i in range(3):
-                        row_i = 10 + i
-                        if i < len(genotype_entries):
-                            g_str = genotype_entries[i][0]
-                            ws[f"D{row_i}"].value = g_str
-                            ws[f"E{row_i}"].value = freq_info
+                    genotype_entries_ = unique_geno_pairs_[:3]
+                    for i_ in range(3):
+                        row_i_ = 10 + i_
+                        if i_ < len(genotype_entries_):
+                            g_str_ = genotype_entries_[i_][0]
+                            ws[f"D{row_i_}"].value = g_str_
+                            ws[f"E{row_i_}"].value = freq_info
                         else:
-                            ws[f"D{row_i}"] = ""
-                            ws[f"E{row_i}"] = ""
+                            ws[f"D{row_i_}"] = ""
+                            ws[f"E{row_i_}"] = ""
                     
-                    ws["C20"].value = year_for_excel
-                    ws["D20"].value = cohort_info
+                    ws["C20"].value = year_for_excel_
+                    ws["D20"].value = cohort_info_
                     ws["E20"].value = key_findings_result
-                    ws["G21"].value = ergebnisse
-                    ws["G22"].value = schlussfolgerungen
+                    ws["G21"].value = ergebnisse_
+                    ws["G22"].value = schlussfolgerungen_
 
-                    # NEU: PubMed ID in J21, Link in J22 und DOI in I22
-                    ws["J21"].value = pmid_found if pmid_found != "n/a" else ""
-                    ws["J22"].value = link_pubmed if link_pubmed else ""
-                    ws["I22"].value = doi_final if doi_final != "n/a" else ""
+                    ws["J21"].value = pmid_found_ if pmid_found_ != "n/a" else ""
+                    ws["J22"].value = link_pubmed_ if link_pubmed_ else ""
+                    ws["I22"].value = doi_final_ if doi_final_ != "n/a" else ""
 
-                    output_buffer = io.BytesIO()
-                    wb.save(output_buffer)
-                    output_buffer.seek(0)
+                    output_buffer_ = io.BytesIO()
+                    wb.save(output_buffer_)
+                    output_buffer_.seek(0)
                     
-                    xlsx_name = f"analysis_{fpdf.name.replace('.pdf','')}.xlsx"
+                    xlsx_name_ = f"analysis_{fpdf.name.replace('.pdf','')}.xlsx"
                     st.session_state["excel_downloads"].append({
                         "label": f"Download Excel für {fpdf.name}",
-                        "data": output_buffer.getvalue(),
-                        "file_name": xlsx_name
+                        "data": output_buffer_.getvalue(),
+                        "file_name": xlsx_name_
                     })
 
     if "excel_downloads" in st.session_state and st.session_state["excel_downloads"]:
@@ -1509,7 +1500,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 st.markdown(f"> {abstract}")
             else:
                 st.warning(f"Kein Abstract für {selected_paper.get('Title', 'Unbenannt')} vorhanden.")
-            
+
             if st.button("Analyse für dieses Paper durchführen"):
                 analyzer = PaperAnalyzer(model=model)
                 if not abstract.strip():
@@ -1531,11 +1522,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     return
 
                 if res and output_lang != "Deutsch" and analysis_choice_for_scored_paper != "(Keine Auswahl)":
-                    lang_map = {
-                        "Englisch": "English",
-                        "Portugiesisch": "Portuguese",
-                        "Serbisch": "Serbian"
-                    }
+                    lang_map = {"Englisch": "English", "Portugiesisch": "Portuguese", "Serbisch": "Serbian"}
                     target_lang = lang_map.get(output_lang, "English")
                     res = translate_text_openai(res, "German", target_lang, api_key)
                 
