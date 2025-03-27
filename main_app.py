@@ -640,47 +640,7 @@ def parse_cohort_info(summary_text: str) -> dict:
         info["origin"] = m_orig.group(1).strip()
     return info
 
-def fetch_pubmed_doi_and_link(pmid: str) -> (str, str):
-    """
-    Attempts to retrieve the DOI and PubMed link for a given PMID.
-    Returns (doi, pubmed_link).
-    """
-    if not pmid or pmid == "n/a":
-        return ("n/a", "")
-    
-    link = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
-    
-    summary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
-    params_sum = {"db": "pubmed", "id": pmid, "retmode": "json"}
-    try:
-        rs = requests.get(summary_url, params=params_sum, timeout=8)
-        rs.raise_for_status()
-        data = rs.json()
-        result_obj = data.get("result", {}).get(pmid, {})
-        eloc = result_obj.get("elocationid", "")
-        if eloc and eloc.startswith("doi:"):
-            doi_ = eloc.split("doi:", 1)[1].strip()
-            if doi_:
-                return (doi_, link)
-    except Exception:
-        pass
-    
-    efetch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
-    params_efetch = {"db": "pubmed", "id": pmid, "retmode": "xml"}
-    try:
-        r_ef = requests.get(efetch_url, params=params_efetch, timeout=8)
-        r_ef.raise_for_status()
-        root = ET.fromstring(r_ef.content)
-        doi_found = "n/a"
-        for aid in root.findall(".//ArticleId"):
-            id_type = aid.attrib.get("IdType", "")
-            if id_type.lower() == "doi":
-                if aid.text:
-                    doi_found = aid.text.strip()
-                    break
-        return (doi_found, link)
-    except Exception:
-        return ("n/a", link)
+# (We have fetch_pubmed_doi_and_link defined above already)
 
 # ------------------------------------------------------------------
 # Function for ChatGPT-based scoring search
@@ -1287,7 +1247,7 @@ Only output this JSON, no further explanation:
         st.session_state["excel_downloads"] = []
 
     # ------------------------------------------------------------------
-    # NEW: GenotypeFinder (we will use it inside the Excel export)
+    # NEW: GenotypeFinder (we use a separate class to compute genotype frequencies)
     # ------------------------------------------------------------------
     class GenotypeFinder:
         def __init__(self):
@@ -1295,12 +1255,15 @@ Only output this JSON, no further explanation:
         
         def get_variant_info(self, rs_id):
             """Fetches detailed info about a variation from Ensembl."""
+            if not rs_id.startswith("rs"):
+                rs_id = f"rs{rs_id}"
             ext = f"/variation/human/{rs_id}?pops=1"
+            url = f"{self.ensembl_server}{ext}"
             try:
-                r = requests.get(self.ensembl_server + ext, headers={"Content-Type": "application/json"})
+                r = requests.get(url, headers={"Content-Type": "application/json"}, timeout=10)
                 r.raise_for_status()
                 return r.json()
-            except Exception as e:
+            except Exception:
                 return None
         
         def calculate_genotype_frequency(self, data, genotype):
@@ -1308,7 +1271,7 @@ Only output this JSON, no further explanation:
             Calculates genotype frequency based on allele frequencies and Hardy-Weinberg.
             
             data: JSON data from the Ensembl API
-            genotype: genotype string (e.g., 'AA', 'AG', 'GG')
+            genotype: genotype string (e.g., 'AA','AG','GG')
             
             Returns: Dict of population => genotype frequency
             """
@@ -1320,20 +1283,26 @@ Only output this JSON, no further explanation:
             allele1, allele2 = genotype[0], genotype[1]
             results = {}
             
+            # We'll only look at 1000GENOMES populations to keep it consistent
             for population in data['populations']:
                 pop_name = population.get('population', 'Unknown')
-                # only 1000GENOMES populations
                 if '1000GENOMES' not in pop_name:
                     continue
                 
+                # First, gather allele frequencies for this pop
+                # so we can compute genotype freq
                 allele_freqs = {}
-                for pop_data in data['populations']:
-                    if pop_data.get('population') == pop_name:
-                        allele = pop_data.get('allele', '')
-                        freq = pop_data.get('frequency', 0)
-                        allele_freqs[allele] = freq
+                # Filter only for the same population name
+                # Because "populations" can contain multiple entries for different subsets
+                # We'll do an additional pass:
+                for pop2 in data['populations']:
+                    if pop2.get('population') == pop_name:
+                        a = pop2.get('allele', '')
+                        f = pop2.get('frequency', 0)
+                        allele_freqs[a] = f
                 
                 if allele1 not in allele_freqs or allele2 not in allele_freqs:
+                    # might not have data for that allele
                     continue
                 
                 # HW assumption
@@ -1351,11 +1320,11 @@ Only output this JSON, no further explanation:
         if not freq_dict:
             return "No genotype frequency data found."
         lines = []
-        # Global first
+        # If there's a "ALL" population, show that first
         if "1000GENOMES:phase_3:ALL" in freq_dict:
             lines.append(f"Global population: {freq_dict['1000GENOMES:phase_3:ALL']:.4f}")
             lines.append("---")
-        # Then others
+        # Then show everything else
         for pop, freq in sorted(freq_dict.items()):
             if pop == "1000GENOMES:phase_3:ALL":
                 continue
@@ -1392,7 +1361,6 @@ Only output this JSON, no further explanation:
                 else:
                     selected_files_for_excel = uploaded_files
 
-                # We'll instantiate a GenotypeFinder only once:
                 gf = GenotypeFinder()
 
                 for fpdf in selected_files_for_excel:
@@ -1437,7 +1405,6 @@ Only output this JSON, no further explanation:
                         if gp not in unique_geno_pairs:
                             unique_geno_pairs.append(gp)
                     
-                    # Also show allele frequencies (but we no longer store them in F10 or anywhere else)
                     aff = AlleleFrequencyFinder()
                     allele_freq_info = "No rsID found"
                     if rs_num:
@@ -1459,7 +1426,6 @@ Only output this JSON, no further explanation:
                     pub_year_match = re.search(r"\b(20[0-9]{2})\b", text)
                     year_for_excel = pub_year_match.group(1) if pub_year_match else "n/a"
 
-                    # Very simple PMID detection
                     pmid_pattern = re.compile(r"\bPMID:\s*(\d+)\b", re.IGNORECASE)
                     pmid_match = pmid_pattern.search(text)
                     pmid_found = pmid_match.group(1) if pmid_match else "n/a"
@@ -1469,7 +1435,7 @@ Only output this JSON, no further explanation:
                     if pmid_found != "n/a":
                         doi_final, link_pubmed = fetch_pubmed_doi_and_link(pmid_found)
 
-                    # Translate content going into Excel to English:
+                    # Translate to English for Excel
                     ergebnisse_en = translate_text_openai(ergebnisse, "German", "English", api_key) if ergebnisse else ""
                     schlussfolgerungen_en = translate_text_openai(schlussfolgerungen, "German", "English", api_key) if schlussfolgerungen else ""
                     cohort_info_en = translate_text_openai(cohort_info, "German", "English", api_key) if cohort_info else ""
@@ -1490,14 +1456,13 @@ Only output this JSON, no further explanation:
                     ws["D5"].value = gene_via_text if gene_via_text else ""
                     ws["D6"].value = rs_num if rs_num else ""
                     
-                    # For up to 3 genotype hits, put genotype in D10, D11, D12 and freq in E10, E11, E12
+                    # Up to 3 genotype hits
                     for i in range(3):
-                        row_i = 10 + i  # e.g., D10/E10 for i=0, D11/E11 for i=1, D12/E12 for i=2
+                        row_i = 10 + i
                         if i < len(unique_geno_pairs):
                             genotype_str = unique_geno_pairs[i][0]
                             ws[f"D{row_i}"].value = genotype_str
                             if rs_num:
-                                # 1) Get variant info from GenotypeFinder
                                 data_gf = gf.get_variant_info(rs_num)
                                 gfreq = gf.calculate_genotype_frequency(data_gf, genotype_str)
                                 gf_text = build_genotype_freq_text(gfreq)
@@ -1508,9 +1473,6 @@ Only output this JSON, no further explanation:
                             ws[f"D{row_i}"] = ""
                             ws[f"E{row_i}"] = ""
 
-                    # We remove writing anything to F10:
-                    # (No references to ws["F10"] remain.)
-                    
                     # Publication year, cohort, key findings
                     ws["C20"].value = year_for_excel
                     ws["D20"].value = cohort_info_en
@@ -1597,7 +1559,6 @@ Only output this JSON, no further explanation:
                 st.warning(f"No abstract for {selected_paper.get('Title', 'Unnamed')}.")
             
             if st.button("Perform Analysis for this Paper"):
-                analyzer = PaperAnalyzer(model=model)
                 if not abstract.strip():
                     st.error("No abstract present, cannot analyze.")
                     return
@@ -1678,17 +1639,108 @@ Only output this JSON, no further explanation:
         else:
             st.error("No scored papers found. Please perform scoring first.")
 
+
+# ------------------------------------------------------------------
+# NEW PAGE: Genotype Frequency Finder
+# ------------------------------------------------------------------
+def page_genotype_finder():
+    """
+    A separate page to look up genotype frequencies via Ensembl for a user-provided rsID & genotype.
+    """
+    st.title("Genotype Frequency Finder")
+
+    # We can reuse the same GenotypeFinder logic from above if we want:
+    class GenotypeFinder:
+        def __init__(self):
+            self.ensembl_server = "https://rest.ensembl.org"
+
+        def get_variant_info(self, rs_id):
+            if not rs_id.startswith("rs"):
+                rs_id = f"rs{rs_id}"
+            ext = f"/variation/human/{rs_id}?pops=1"
+            url = f"{self.ensembl_server}{ext}"
+            try:
+                r = requests.get(url, headers={"Content-Type": "application/json"}, timeout=10)
+                r.raise_for_status()
+                return r.json()
+            except:
+                return None
+        
+        def calculate_genotype_frequency(self, data, genotype):
+            if not data or 'populations' not in data:
+                return {}
+            if len(genotype) < 2:
+                return {}
+            allele1, allele2 = genotype[0], genotype[1]
+            results = {}
+            # Look only at 1000GENOMES data for clarity
+            for pop in data['populations']:
+                pop_name = pop.get('population', '')
+                if '1000GENOMES' not in pop_name:
+                    continue
+                # Gather allele freqs
+                allele_freq_map = {}
+                for pop2 in data['populations']:
+                    if pop2.get('population') == pop_name:
+                        a_ = pop2.get('allele')
+                        f_ = pop2.get('frequency')
+                        allele_freq_map[a_] = f_
+                if allele1 in allele_freq_map and allele2 in allele_freq_map:
+                    if allele1 == allele2:
+                        freq_g = allele_freq_map[allele1] ** 2
+                    else:
+                        freq_g = 2 * allele_freq_map[allele1] * allele_freq_map[allele2]
+                    results[pop_name] = freq_g
+            return results
+    
+    def build_genotype_freq_text(freq_dict: Dict[str, float]) -> str:
+        if not freq_dict:
+            return "No genotype frequency data found."
+        lines = []
+        # If "ALL" is present, show that first
+        if "1000GENOMES:phase_3:ALL" in freq_dict:
+            lines.append(f"Global population (ALL): {freq_dict['1000GENOMES:phase_3:ALL']:.4f}")
+            lines.append("---")
+        for pop, val in sorted(freq_dict.items()):
+            if pop == "1000GENOMES:phase_3:ALL":
+                continue
+            lines.append(f"{pop}: {val:.4f}")
+        return "\n".join(lines)
+
+    st.write("Look up genotype frequencies for a given rsID (from Ensembl).")
+    rs_input = st.text_input("Enter an rsID (e.g., 'rs1234'):", "")
+    genotype_input = st.text_input("Enter a genotype (e.g., 'AA','AC','CC','AG', etc.):", "")
+
+    if st.button("Check Frequencies"):
+        if not rs_input.strip():
+            st.warning("Please enter an rsID.")
+            return
+        gf = GenotypeFinder()
+        data = gf.get_variant_info(rs_input.strip())
+        if not data:
+            st.error(f"No data found for {rs_input.strip()}. Are you sure it's correct?")
+            return
+        freq_dict = gf.calculate_genotype_frequency(data, genotype_input.strip().upper())
+        freq_text = build_genotype_freq_text(freq_dict)
+        st.subheader("Result:")
+        st.write(freq_text)
+
+
 # ------------------------------------------------------------------
 # Sidebar Navigation & Chatbot
 # ------------------------------------------------------------------
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
+
+    # Add a new entry for the Genotype Frequency Finder
     pages = {
         "Home": page_home,
         "Online-API_Filter": page_online_api_filter,
         "3) Codewords & PubMed": page_codewords_pubmed,
         "Analyze Paper": page_analyze_paper,
+        "Genotype Frequency Finder": page_genotype_finder
     }
+
     for label, page in pages.items():
         if st.sidebar.button(label, key=label):
             st.session_state["current_page"] = label
@@ -1822,7 +1874,7 @@ def main():
         )
 
 # ------------------------------------------------------------------
-# Actually run the Streamlit app (unless using CLI for GenotypeFinder)
+# Actually run the Streamlit app
 # ------------------------------------------------------------------
 if __name__ == '__main__':
     main()
