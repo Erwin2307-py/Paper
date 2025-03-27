@@ -224,8 +224,56 @@ def fetch_pubmed_abstract(pmid):
     except Exception as e:
         return f"(Error: {e})"
 
+def fetch_pubmed_doi_and_link(pmid: str) -> (str, str):
+    """
+    Versucht, über PubMed E-Summary/E-Fetch den DOI sowie den Link zum Paper herauszufinden.
+    Gibt (doi, pubmed_link) zurück. Falls kein DOI gefunden, return ("n/a", link).
+    """
+    if not pmid or pmid == "n/a":
+        return ("n/a", "")
+    
+    # PubMed Link
+    link = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
+    
+    # 1) esummary
+    summary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+    params_sum = {"db": "pubmed", "id": pmid, "retmode": "json"}
+    try:
+        rs = requests.get(summary_url, params=params_sum, timeout=8)
+        rs.raise_for_status()
+        data = rs.json()
+        result_obj = data.get("result", {}).get(pmid, {})
+        # Versuche "elocationid" o.Ä. Felder
+        eloc = result_obj.get("elocationid", "")
+        if eloc and eloc.startswith("doi:"):
+            doi_ = eloc.split("doi:", 1)[1].strip()
+            if doi_:
+                return (doi_, link)
+        # Falls nicht gefunden => efetch
+    except Exception:
+        pass
+    
+    # 2) efetch
+    efetch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+    params_efetch = {"db": "pubmed", "id": pmid, "retmode": "xml"}
+    try:
+        r_ef = requests.get(efetch_url, params=params_efetch, timeout=8)
+        r_ef.raise_for_status()
+        root = ET.fromstring(r_ef.content)
+        # Suche <ArticleIdList> -> <ArticleId IdType="doi">10.XXX....
+        doi_found = "n/a"
+        for aid in root.findall(".//ArticleId"):
+            id_type = aid.attrib.get("IdType", "")
+            if id_type.lower() == "doi":
+                doi_found = aid.text.strip() if aid.text else "n/a"
+                break
+        return (doi_found, link)
+    except Exception:
+        return ("n/a", link)
+
 # ------------------------------------------------------------------
 # 3) Europe PMC Check + Search
+#  (unverändert)
 # ------------------------------------------------------------------
 def check_europe_pmc_connection(timeout=10):
     """Check, ob Europe PMC erreichbar ist."""
@@ -273,7 +321,7 @@ def search_europe_pmc_simple(query):
         return []
 
 # ------------------------------------------------------------------
-# 4) OpenAlex API
+# 4) OpenAlex API (unverändert)
 # ------------------------------------------------------------------
 BASE_URL = "https://api.openalex.org"
 
@@ -297,7 +345,7 @@ def search_openalex_simple(query):
     return fetch_openalex_data("works", params=search_params)
 
 # ------------------------------------------------------------------
-# 5) Google Scholar (Test)
+# 5) Google Scholar (unverändert)
 # ------------------------------------------------------------------
 class GoogleScholarSearch:
     def __init__(self):
@@ -327,7 +375,7 @@ class GoogleScholarSearch:
             st.error(f"Fehler bei der Google Scholar-Suche: {e}")
 
 # ------------------------------------------------------------------
-# 6) Semantic Scholar
+# 6) Semantic Scholar (unverändert)
 # ------------------------------------------------------------------
 def check_semantic_scholar_connection(timeout=10):
     """Verbindungstest zu Semantic Scholar."""
@@ -598,8 +646,54 @@ def parse_cohort_info(summary_text: str) -> dict:
         info["origin"] = m_orig.group(1).strip()
     return info
 
+# NEU: Hilfsfunktion, um DOI + Link zu PubMed zu holen
+def fetch_pubmed_doi_and_link(pmid: str) -> (str, str):
+    """
+    Versucht, über PubMed E-Summary/E-Fetch den DOI sowie den Link zum Paper herauszufinden.
+    Gibt (doi, pubmed_link) zurück.
+    """
+    if not pmid or pmid == "n/a":
+        return ("n/a", "")
+    
+    link = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
+    
+    # Erst ESummary
+    summary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+    params_sum = {"db": "pubmed", "id": pmid, "retmode": "json"}
+    try:
+        rs = requests.get(summary_url, params=params_sum, timeout=8)
+        rs.raise_for_status()
+        data = rs.json()
+        result_obj = data.get("result", {}).get(pmid, {})
+        eloc = result_obj.get("elocationid", "")
+        if eloc and eloc.startswith("doi:"):
+            doi_ = eloc.split("doi:", 1)[1].strip()
+            if doi_:
+                return (doi_, link)
+    except Exception:
+        pass
+    
+    # Dann EFetch
+    efetch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+    params_efetch = {"db": "pubmed", "id": pmid, "retmode": "xml"}
+    try:
+        r_ef = requests.get(efetch_url, params=params_efetch, timeout=8)
+        r_ef.raise_for_status()
+        root = ET.fromstring(r_ef.content)
+        doi_found = "n/a"
+        for aid in root.findall(".//ArticleId"):
+            id_type = aid.attrib.get("IdType", "")
+            if id_type.lower() == "doi":
+                if aid.text:
+                    doi_found = aid.text.strip()
+                    break
+        return (doi_found, link)
+    except Exception:
+        return ("n/a", link)
+
 # ------------------------------------------------------------------
 # Funktion zur ChatGPT-basierten Scoring-Suche (per Button ausgelöst)
+# (unverändert)
 # ------------------------------------------------------------------
 def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
@@ -653,6 +747,7 @@ Gib mir eine Zahl von 0 bis 100 (Relevanz), wobei sowohl Codewörter als auch Ge
 
 # ------------------------------------------------------------------
 # Funktion zur Analyse von Gemeinsamkeiten & Widersprüchen
+# (unverändert)
 # ------------------------------------------------------------------
 def analyze_papers_for_commonalities_and_contradictions(pdf_texts: Dict[str, str], api_key: str, model: str, method_choice: str = "Standard"):
     import openai
@@ -1292,6 +1387,23 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     pub_year_match = re.search(r"\b(20[0-9]{2})\b", text)
                     year_for_excel = pub_year_match.group(1) if pub_year_match else "n/a"
 
+                    # NEU: PubMed ID anreichern, wenn im Text gefunden:
+                    # Ganz simples Pattern:
+                    pmid_pattern = re.compile(r"\bPMID:\s*(\d+)\b", re.IGNORECASE)
+                    pmid_match = pmid_pattern.search(text)
+                    pmid_found = pmid_match.group(1) if pmid_match else "n/a"
+
+                    # Wenn wir in "selected_paper" was haben, könnte man das auch nutzen.
+                    # Hier rein exemplarisch, wir nutzen einfach pmid_found.
+
+                    # Falls wir noch keinen PMID haben, belassen wir es bei "n/a".
+                    
+                    # PubMed-Link + DOI
+                    doi_final = "n/a"
+                    link_pubmed = ""
+                    if pmid_found != "n/a":
+                        doi_final, link_pubmed = fetch_pubmed_doi_and_link(pmid_found)
+
                     try:
                         wb = openpyxl.load_workbook("vorlage_paperqa2.xlsx")
                     except FileNotFoundError:
@@ -1321,6 +1433,11 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     ws["E20"].value = key_findings_result
                     ws["G21"].value = ergebnisse
                     ws["G22"].value = schlussfolgerungen
+
+                    # NEU: PubMed ID in J21, Link in J22 und DOI in I22
+                    ws["J21"].value = pmid_found if pmid_found != "n/a" else ""
+                    ws["J22"].value = link_pubmed if link_pubmed else ""
+                    ws["I22"].value = doi_final if doi_final != "n/a" else ""
 
                     output_buffer = io.BytesIO()
                     wb.save(output_buffer)
@@ -1373,7 +1490,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
         options=["(Bitte wählen)"] + scored_titles
     )
     
-    # NEU: Analyseart-Auswahl nur für dieses Paper (Zusammenfassung etc.)
     analysis_choice_for_scored_paper = st.selectbox(
         "Welche Analyse willst du durchführen?",
         ["(Keine Auswahl)", "Zusammenfassung", "Wichtigste Erkenntnisse", "Methoden & Techniken", "Relevanz-Bewertung"]
@@ -1394,7 +1510,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
             else:
                 st.warning(f"Kein Abstract für {selected_paper.get('Title', 'Unbenannt')} vorhanden.")
             
-            # Button, um die gewählte Analyse durchzuführen
             if st.button("Analyse für dieses Paper durchführen"):
                 analyzer = PaperAnalyzer(model=model)
                 if not abstract.strip():
@@ -1407,7 +1522,6 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 elif analysis_choice_for_scored_paper == "Methoden & Techniken":
                     res = analyzer.identify_methods(abstract, api_key)
                 elif analysis_choice_for_scored_paper == "Relevanz-Bewertung":
-                    # Nutzt 'topic' aus Sidebar
                     if not topic:
                         st.error("Bitte oben ein Topic eingeben (Sidebar).")
                         return
