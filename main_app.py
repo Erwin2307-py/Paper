@@ -640,7 +640,9 @@ def parse_cohort_info(summary_text: str) -> dict:
         info["origin"] = m_orig.group(1).strip()
     return info
 
-# (We have fetch_pubmed_doi_and_link defined above already)
+# ------------------------------------------------------------------
+# (Bereits vorhanden) fetch_pubmed_doi_and_link
+# ------------------------------------------------------------------
 
 # ------------------------------------------------------------------
 # Function for ChatGPT-based scoring search
@@ -803,7 +805,7 @@ Hier die Claims:
         return f"Fehler bei Gemeinsamkeiten/Widersprüche: {e}"
 
 # ------------------------------------------------------------------
-# Page: Analyze Paper (incl. PaperQA Multi-Paper Analyzer)
+# Page: Analyze Paper (inkl. PaperQA Multi-Paper Analyzer)
 # ------------------------------------------------------------------
 def page_analyze_paper():
     st.title("Analyze Paper - Integrated")
@@ -1269,10 +1271,8 @@ Only output this JSON, no further explanation:
         def calculate_genotype_frequency(self, data, genotype):
             """
             Calculates genotype frequency based on allele frequencies and Hardy-Weinberg.
-            
             data: JSON data from the Ensembl API
             genotype: genotype string (e.g., 'AA','AG','GG')
-            
             Returns: Dict of population => genotype frequency
             """
             if not data or 'populations' not in data:
@@ -1289,12 +1289,8 @@ Only output this JSON, no further explanation:
                 if '1000GENOMES' not in pop_name:
                     continue
                 
-                # First, gather allele frequencies for this pop
-                # so we can compute genotype freq
+                # Gather allele frequencies
                 allele_freqs = {}
-                # Filter only for the same population name
-                # Because "populations" can contain multiple entries for different subsets
-                # We'll do an additional pass:
                 for pop2 in data['populations']:
                     if pop2.get('population') == pop_name:
                         a = pop2.get('allele', '')
@@ -1302,7 +1298,6 @@ Only output this JSON, no further explanation:
                         allele_freqs[a] = f
                 
                 if allele1 not in allele_freqs or allele2 not in allele_freqs:
-                    # might not have data for that allele
                     continue
                 
                 # HW assumption
@@ -1320,11 +1315,9 @@ Only output this JSON, no further explanation:
         if not freq_dict:
             return "No genotype frequency data found."
         lines = []
-        # If there's a "ALL" population, show that first
         if "1000GENOMES:phase_3:ALL" in freq_dict:
             lines.append(f"Global population: {freq_dict['1000GENOMES:phase_3:ALL']:.4f}")
             lines.append("---")
-        # Then show everything else
         for pop, freq in sorted(freq_dict.items()):
             if pop == "1000GENOMES:phase_3:ALL":
                 continue
@@ -1636,12 +1629,208 @@ Only output this JSON, no further explanation:
                             st.info("No contradictions found.")
                     except Exception as e:
                         st.warning("GPT output could not be parsed as valid JSON.")
-        else:
-            st.error("No scored papers found. Please perform scoring first.")
-
 
 # ------------------------------------------------------------------
-# NEW PAGE: Genotype Frequency Finder
+# NEUE KLASSE & FUNKTION FÜR KI-INHALTSERKENNUNG (AIContentDetector)
+# ------------------------------------------------------------------
+class AIContentDetector:
+    def __init__(self, api_key=None, api_provider=None):
+        self.api_key = api_key
+        self.api_provider = api_provider
+        self.detection_methods = {
+            "pattern_analysis": self.analyze_patterns,
+            "consistency_check": self.check_consistency,
+            "citation_verification": self.verify_citations,
+            "api_detection": self.detect_with_api
+        }
+    
+    def analyze_patterns(self, text):
+        """Untersucht typische KI-Schreibmuster"""
+        # Einige einfache Heuristiken/Regex
+        patterns = {
+            "wiederholende_phrasen": r'(\b\w+\s+\w+\b)(?=.*\1)',  # Beispiel: wiederholte Wortgruppen
+            "gleichmäßiger_ton": r'(jedoch|allerdings|dennoch|daher|folglich|somit)',  # Signalwörter
+            "generische_übergänge": r'\b(zunächst|anschließend|abschließend|zusammenfassend)\b'
+        }
+        
+        scores = {}
+        for name, pattern in patterns.items():
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            # Frequenz pro 100 Wörter
+            density = len(matches) / (len(text.split()) / 100 + 1e-8)
+            # Eine einfache Skalierung  (kein echter wissenschaftl. Ansatz)
+            scores[name] = min(100, density * 5)
+        
+        return sum(scores.values()) / len(scores) if scores else 0
+    
+    def check_consistency(self, text):
+        """Prüft auf konsistente Schreibweise und Ton"""
+        paragraphs = text.split('\n\n')
+        if len(paragraphs) < 3:
+            return 50  # Zu wenig Text für eine sinnvolle Analyse
+        
+        # Satzlängenvariation
+        sentences = re.split(r'[.!?]+', text)
+        lengths = [len(s.split()) for s in sentences if s.strip()]
+        if not lengths:
+            return 50
+        
+        avg_length = sum(lengths) / len(lengths)
+        variation = sum(abs(l - avg_length) for l in lengths) / len(lengths)
+        
+        # Niedrige Variation => KI-typisch (Heuristik)
+        consistency_score = 100 - min(100, variation * 10)
+        return consistency_score
+    
+    def verify_citations(self, text):
+        """Überprüft Zitate auf Plausibilität (sehr einfach)"""
+        citation_pattern = r'\(([^)]+\d{4}[^)]*)\)'
+        citations = re.findall(citation_pattern, text)
+        
+        if not citations:
+            return 60  # Keine Zitate gefunden => neutraler Wert
+        
+        # Einfache Heuristik: sind viele Zitate im gleichen Format?
+        formats = {}
+        for citation in citations:
+            format_key = re.sub(r'[A-Za-z\s]', 'X', citation)
+            format_key = re.sub(r'\d', '9', format_key)
+            formats[format_key] = formats.get(format_key, 0) + 1
+        
+        uniformity = max(formats.values()) / len(citations) * 100
+        return uniformity
+    
+    def detect_with_api(self, text):
+        """Verwendet externe APIs (Originality.ai oder Scribbr)"""
+        if not self.api_key:
+            return 50  # Keine API => Mittelwert
+        
+        # Originality.ai
+        if self.api_provider == "originality":
+            try:
+                response = requests.post(
+                    "https://api.originality.ai/api/v1/scan/ai",
+                    headers={"X-OAI-API-KEY": self.api_key},
+                    json={"content": text}
+                )
+                if response.status_code == 200:
+                    result = response.json()
+                    # 'score.ai' => 0-1
+                    return result.get("score", {}).get("ai", 0.5) * 100
+            except Exception as e:
+                print(f"Originality.ai API-Fehler: {e}")
+        
+        # Scribbr (Beispiel, es gibt keine offizielle Public-API-Doku)
+        elif self.api_provider == "scribbr":
+            try:
+                response = requests.post(
+                    "https://api.scribbr.com/v1/ai-detection",  # fiktiver Endpunkt
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    json={"text": text}
+                )
+                if response.status_code == 200:
+                    result = response.json()
+                    # Annahme: "ai_probability" => 0-100
+                    return result.get("ai_probability", 50)
+            except Exception as e:
+                print(f"Scribbr API-Fehler: {e}")
+        
+        # Fallback
+        return 50
+    
+    def analyze_text(self, text):
+        """Führt eine komplette Analyse durch."""
+        scores = {}
+        for method_name, method_func in self.detection_methods.items():
+            scores[method_name] = method_func(text)
+        
+        # Gewichtung
+        weights = {
+            "pattern_analysis": 0.20,
+            "consistency_check": 0.20,
+            "citation_verification": 0.10,
+            "api_detection": 0.50
+        }
+        
+        weighted_score = sum(scores[m] * weights[m] for m in scores)
+        return {
+            "gesamtbewertung": round(weighted_score, 2),
+            "einzelbewertungen": {m: round(scores[m], 2) for m in scores},
+            "interpretation": self.interpret_score(weighted_score)
+        }
+    
+    def interpret_score(self, score):
+        """Interpretation der KI-Wahrscheinlichkeit"""
+        if score < 30:
+            return "Wahrscheinlich von Menschen geschrieben"
+        elif score < 60:
+            return "Unklare Herkunft, könnte teilweise KI-unterstützt sein"
+        elif score < 85:
+            return "Wahrscheinlich KI-unterstützt oder überarbeitet"
+        else:
+            return "Sehr wahrscheinlich vollständig KI-generiert"
+
+# ------------------------------------------------------------------
+# NEUES MODULE/PAGE: KI-Inhaltserkennung via AIContentDetector
+# ------------------------------------------------------------------
+def page_ai_content_detection():
+    """Seite zur Erkennung von KI-Textinhalten (Paper etc.)."""
+    st.title("KI-Inhaltserkennung (AI Content Detector)")
+    
+    st.info("Hier kannst du Text eingeben oder eine Datei hochladen, um eine KI-Analyse durchzuführen.")
+    
+    # API-Infos für Originality oder Scribbr
+    api_key_input = st.text_input("API Key (optional)", value="", type="password")
+    provider_option = st.selectbox("API-Anbieter", ["Kein API-Einsatz", "originality", "scribbr"], index=0)
+    
+    # Eingabemethode
+    input_mode = st.radio("Eingabemethode für den Text:", ["Direkte Eingabe", "Textdatei hochladen"])
+    
+    text_data = ""
+    if input_mode == "Direkte Eingabe":
+        text_data = st.text_area("Gib hier deinen Text ein:", height=200)
+    else:
+        uploaded_text_file = st.file_uploader("Text-Datei wählen (.txt, .md, etc.)", type=["txt","md","csv","json"])
+        if uploaded_text_file is not None:
+            try:
+                text_data = uploaded_text_file.read().decode("utf-8", errors="ignore")
+            except Exception as e:
+                st.error(f"Fehler beim Lesen der Datei: {e}")
+                return
+    
+    if st.button("KI-Analyse starten"):
+        if not text_data.strip():
+            st.warning("Bitte Text eingeben oder Datei hochladen.")
+            return
+        
+        # Detector instanziieren
+        if provider_option == "Kein API-Einsatz":
+            detector = AIContentDetector(api_key=None, api_provider=None)
+        else:
+            detector = AIContentDetector(api_key=api_key_input, api_provider=provider_option.lower())
+        
+        with st.spinner("Analyse läuft..."):
+            result = detector.analyze_text(text_data)
+        
+        st.subheader("Ergebnis der KI-Analyse")
+        gesamtbewertung = result["gesamtbewertung"]
+        interpretation = result["interpretation"]
+        einzelbewertungen = result["einzelbewertungen"]
+        
+        st.metric("KI-Wahrscheinlichkeit (gesamt)", f"{gesamtbewertung} %", help=interpretation)
+        st.write("**Interpretation:** ", interpretation)
+        
+        st.write("### Einzelbewertungen")
+        for method, score in einzelbewertungen.items():
+            st.write(f"- **{method}**: {score} %")
+        
+        if provider_option != "Kein API-Einsatz":
+            st.write(f"Verwendeter API-Dienst: **{provider_option}**")
+        else:
+            st.write("**Hinweis:** Keine externe API genutzt, nur lokale Heuristiken.")
+
+# ------------------------------------------------------------------
+# Seite: Genotype Frequency Finder
 # ------------------------------------------------------------------
 def page_genotype_finder():
     """
@@ -1649,7 +1838,6 @@ def page_genotype_finder():
     """
     st.title("Genotype Frequency Finder")
 
-    # We can reuse the same GenotypeFinder logic from above if we want:
     class GenotypeFinder:
         def __init__(self):
             self.ensembl_server = "https://rest.ensembl.org"
@@ -1673,12 +1861,10 @@ def page_genotype_finder():
                 return {}
             allele1, allele2 = genotype[0], genotype[1]
             results = {}
-            # Look only at 1000GENOMES data for clarity
             for pop in data['populations']:
                 pop_name = pop.get('population', '')
                 if '1000GENOMES' not in pop_name:
                     continue
-                # Gather allele freqs
                 allele_freq_map = {}
                 for pop2 in data['populations']:
                     if pop2.get('population') == pop_name:
@@ -1697,7 +1883,6 @@ def page_genotype_finder():
         if not freq_dict:
             return "No genotype frequency data found."
         lines = []
-        # If "ALL" is present, show that first
         if "1000GENOMES:phase_3:ALL" in freq_dict:
             lines.append(f"Global population (ALL): {freq_dict['1000GENOMES:phase_3:ALL']:.4f}")
             lines.append("---")
@@ -1725,25 +1910,25 @@ def page_genotype_finder():
         st.subheader("Result:")
         st.write(freq_text)
 
-
 # ------------------------------------------------------------------
 # Sidebar Navigation & Chatbot
 # ------------------------------------------------------------------
 def sidebar_module_navigation():
     st.sidebar.title("Module Navigation")
 
-    # Add a new entry for the Genotype Frequency Finder
     pages = {
         "Home": page_home,
         "Online-API_Filter": page_online_api_filter,
         "3) Codewords & PubMed": page_codewords_pubmed,
         "Analyze Paper": page_analyze_paper,
-        "Genotype Frequency Finder": page_genotype_finder
+        "Genotype Frequency Finder": page_genotype_finder,
+        "AI-Content Detection": page_ai_content_detection  # <-- NEU HINZUGEFÜGT
     }
 
     for label, page in pages.items():
         if st.sidebar.button(label, key=label):
             st.session_state["current_page"] = label
+    
     if "current_page" not in st.session_state:
         st.session_state["current_page"] = "Home"
     return pages.get(st.session_state["current_page"], page_home)
