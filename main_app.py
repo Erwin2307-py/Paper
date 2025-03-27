@@ -232,10 +232,8 @@ def fetch_pubmed_doi_and_link(pmid: str) -> (str, str):
     if not pmid or pmid == "n/a":
         return ("n/a", "")
     
-    # PubMed Link
     link = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
     
-    # 1) esummary
     summary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
     params_sum = {"db": "pubmed", "id": pmid, "retmode": "json"}
     try:
@@ -243,24 +241,20 @@ def fetch_pubmed_doi_and_link(pmid: str) -> (str, str):
         rs.raise_for_status()
         data = rs.json()
         result_obj = data.get("result", {}).get(pmid, {})
-        # Versuche "elocationid" o.Ä. Felder
         eloc = result_obj.get("elocationid", "")
         if eloc and eloc.startswith("doi:"):
             doi_ = eloc.split("doi:", 1)[1].strip()
             if doi_:
                 return (doi_, link)
-        # Falls nicht gefunden => efetch
     except Exception:
         pass
     
-    # 2) efetch
     efetch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
     params_efetch = {"db": "pubmed", "id": pmid, "retmode": "xml"}
     try:
         r_ef = requests.get(efetch_url, params=params_efetch, timeout=8)
         r_ef.raise_for_status()
         root = ET.fromstring(r_ef.content)
-        # Suche <ArticleIdList> -> <ArticleId IdType="doi">10.XXX....
         doi_found = "n/a"
         for aid in root.findall(".//ArticleId"):
             id_type = aid.attrib.get("IdType", "")
@@ -273,7 +267,6 @@ def fetch_pubmed_doi_and_link(pmid: str) -> (str, str):
 
 # ------------------------------------------------------------------
 # 3) Europe PMC Check + Search
-#  (unverändert)
 # ------------------------------------------------------------------
 def check_europe_pmc_connection(timeout=10):
     """Check, ob Europe PMC erreichbar ist."""
@@ -470,7 +463,6 @@ class GenotypeFinder:
         
         for population in data['populations']:
             pop_name = population.get('population', 'Unbekannt')
-            # Nur 1000 Genomes Populationen betrachten
             if '1000GENOMES' not in pop_name:
                 continue
             
@@ -494,7 +486,7 @@ class GenotypeFinder:
         return results
 
 # ------------------------------------------------------------------
-# Neue Seite: Genotype Frequency
+# Neue Seite: Genotype Frequency (optional als eigenständige Seite)
 # ------------------------------------------------------------------
 def page_genotype_frequency():
     st.title("Genotype Frequency Analysis")
@@ -514,32 +506,22 @@ def page_genotype_frequency():
         if not rs_id.startswith("rs"):
             rs_id = "rs" + rs_id
         
-        finder = GenotypeFinder()
-        data = finder.get_variant_info(rs_id)
-        
+        gf = GenotypeFinder()
+        data = gf.get_variant_info(rs_id)
         if not data:
             st.error(f"Keine Daten für {rs_id} gefunden.")
             return
         
-        alleles = set()
-        for pop in data.get('populations', []):
-            allele = pop.get('allele')
-            if allele:
-                alleles.add(allele)
-        st.write("Verfügbare Allele: " + ", ".join(sorted(alleles)))
-        
-        genotype_freqs = finder.calculate_genotype_frequency(data, genotype)
-        
-        if not genotype_freqs:
+        genotype_freq = gf.calculate_genotype_frequency(data, genotype)
+        if not genotype_freq:
             st.error(f"Keine Genotypfrequenzen für {genotype} gefunden.")
             return
         
         st.write(f"Genotypfrequenzen für {rs_id} ({genotype}):")
-        if '1000GENOMES:phase_3:ALL' in genotype_freqs:
-            global_freq = genotype_freqs['1000GENOMES:phase_3:ALL']
+        if '1000GENOMES:phase_3:ALL' in genotype_freq:
+            global_freq = genotype_freq['1000GENOMES:phase_3:ALL']
             st.write(f"Globale Population: {global_freq:.4f}")
-        
-        for pop, freq in sorted(genotype_freqs.items()):
+        for pop, freq in sorted(genotype_freq.items()):
             if pop != '1000GENOMES:phase_3:ALL':
                 st.write(f"{pop}: {freq:.4f}")
 
@@ -672,10 +654,9 @@ class AlleleFrequencyFinder:
     def __init__(self):
         self.ensembl_server = "https://rest.ensembl.org"
         self.max_retries = 3
-        self.retry_delay = 2  # Sekunden zwischen Wiederholungsversuchen
+        self.retry_delay = 2
 
     def get_allele_frequencies(self, rs_id: str, retry_count: int = 0) -> Optional[Dict[str, Any]]:
-        """Holt Allelfrequenzen von Ensembl."""
         if not rs_id.startswith("rs"):
             rs_id = f"rs{rs_id}"
         endpoint = f"/variation/human/{rs_id}?pops=1"
@@ -702,7 +683,6 @@ class AlleleFrequencyFinder:
         return None
     
     def build_freq_info_text(self, data: Dict[str, Any]) -> str:
-        """Erzeugt einen kurzen Text über Allelfrequenzen."""
         if not data:
             return "Keine Daten von Ensembl"
         maf = data.get("MAF", None)
@@ -723,7 +703,6 @@ class AlleleFrequencyFinder:
         return " | ".join(out)
 
 def split_summary(summary_text):
-    """Versucht 'Ergebnisse' und 'Schlussfolgerungen' zu splitten."""
     pattern = re.compile(
         r'(Ergebnisse(?:\:|\s*\n)|Resultate(?:\:|\s*\n))(?P<results>.*?)(Schlussfolgerungen(?:\:|\s*\n)|Fazit(?:\:|\s*\n))(?P<conclusion>.*)',
         re.IGNORECASE | re.DOTALL
@@ -737,7 +716,6 @@ def split_summary(summary_text):
         return summary_text, ""
 
 def parse_cohort_info(summary_text: str) -> dict:
-    """Parst grobe Infos zur Kohorte (Anzahl Patienten, Herkunft etc.) aus deutschem Summary."""
     info = {"study_size": "", "origin": ""}
     pattern_both = re.compile(
         r"(\d+)\s*Patient(?:en)?(?:[^\d]+)(\d+)\s*gesunde\s*Kontroll(?:personen)?",
@@ -759,11 +737,8 @@ def parse_cohort_info(summary_text: str) -> dict:
         info["origin"] = m_orig.group(1).strip()
     return info
 
-# NEU: Doppelte Definition von fetch_pubmed_doi_and_link (siehe oben) wurde beibehalten
-
 # ------------------------------------------------------------------
-# Funktion zur ChatGPT-basierten Scoring-Suche (per Button ausgelöst)
-# (unverändert)
+# Funktion zur ChatGPT-basierten Scoring-Suche (unverändert)
 # ------------------------------------------------------------------
 def chatgpt_online_search_with_genes(papers, codewords, genes, top_k=100):
     openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
@@ -816,14 +791,12 @@ Gib mir eine Zahl von 0 bis 100 (Relevanz), wobei sowohl Codewörter als auch Ge
     return scored_results[:top_k]
 
 # ------------------------------------------------------------------
-# Funktion zur Analyse von Gemeinsamkeiten & Widersprüchen
-# (unverändert)
+# Funktion zur Analyse von Gemeinsamkeiten & Widersprüchen (unverändert)
 # ------------------------------------------------------------------
 def analyze_papers_for_commonalities_and_contradictions(pdf_texts: Dict[str, str], api_key: str, model: str, method_choice: str = "Standard"):
     import openai
     openai.api_key = api_key
 
-    # 1) Claims je Paper extrahieren
     all_claims = {}
     for fname, txt in pdf_texts.items():
         prompt_claims = f"""
@@ -865,7 +838,6 @@ Text: {txt[:6000]}
             })
     big_input_str = json.dumps(merged_claims, ensure_ascii=False, indent=2)
 
-    # 2) Gemeinsamkeiten + Widersprüche identifizieren
     if method_choice == "ContraCrow":
         final_prompt = f"""
 Nutze die ContraCrow-Methodik, um die folgenden Claims (Aussagen) aus mehreren wissenschaftlichen PDF-Papers zu analysieren. 
@@ -975,7 +947,6 @@ def page_analyze_paper():
         st.session_state["theme_compare"] = ""
     
     def do_outlier_logic(paper_map: dict) -> (list, str):
-        """Ermittelt, welche Paper thematisch relevant sind und ggf. ein gemeinsames Hauptthema."""
         if theme_mode == "Manuell":
             main_theme = user_defined_theme.strip()
             if not main_theme:
@@ -1408,14 +1379,12 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     
                     methods_result = analyzer.identify_methods(text, api_key)
                     
-                    pattern_obvious = re.compile(r"in the\s+([A-Za-z0-9_-]+)\s+gene", re.IGNORECASE)
-                    match_text = re.search(pattern_obvious, text)
-                    gene_via_text = match_text.group(1) if match_text else None
-                    
+                    # RS Nummer extrahieren
                     rs_pat = r"(rs\d+)"
                     found_rs_match = re.search(rs_pat, text)
                     rs_num = found_rs_match.group(1) if found_rs_match else None
                     
+                    # Genotyp aus dem Text extrahieren
                     genotype_regex = r"\b([ACGT]{2,3})\b"
                     lines = text.split("\n")
                     found_pairs = []
@@ -1429,6 +1398,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         if gp not in unique_geno_pairs:
                             unique_geno_pairs.append(gp)
                     
+                    # Zuerst die normale Allelfrequenz via AlleleFrequencyFinder
                     aff = AlleleFrequencyFinder()
                     freq_info = "Keine rsID vorhanden"
                     if rs_num:
@@ -1438,14 +1408,36 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                         if data:
                             freq_info = aff.build_freq_info_text(data)
                     
-                    ergebnisse, schlussfolgerungen = split_summary(summary_de)
-                    cohort_data = parse_cohort_info(summary_de)
-                    study_size = cohort_data.get("study_size", "")
-                    origin = cohort_data.get("origin", "")
-                    if study_size or origin:
-                        cohort_info = (study_size + (", " + origin if origin else "")).strip(", ")
-                    else:
-                        cohort_info = ""
+                    # NEU: Falls rs_num und Genotypdaten vorliegen, berechne Genotypfrequenzen via GenotypeFinder
+                    genotype_freq_results = {}
+                    if rs_num and unique_geno_pairs:
+                        gf = GenotypeFinder()
+                        gf_data = gf.get_variant_info(rs_num)
+                        if gf_data:
+                            for gp in unique_geno_pairs:
+                                genotype = gp[0]
+                                genotype_freq = gf.calculate_genotype_frequency(gf_data, genotype)
+                                if genotype_freq:
+                                    formatted = "; ".join([f"{pop}: {freq:.4f}" for pop, freq in genotype_freq.items()])
+                                else:
+                                    formatted = "Keine Daten"
+                                genotype_freq_results[genotype] = formatted
+                    
+                    genotype_entries = unique_geno_pairs[:3]
+                    for i in range(3):
+                        row_i = 10 + i
+                        if i < len(genotype_entries):
+                            g_str = genotype_entries[i][0]
+                            ws_cell = f"D{row_i}"
+                            ws[f"{ws_cell}"].value = g_str
+                            # Falls für diesen Genotyp Genotypfrequenzen berechnet wurden, verwende diese; sonst normale Allelfrequenz
+                            if g_str in genotype_freq_results and genotype_freq_results[g_str]:
+                                ws[f"E{row_i}"].value = genotype_freq_results[g_str]
+                            else:
+                                ws[f"E{row_i}"].value = freq_info
+                        else:
+                            ws[f"D{row_i}"] = ""
+                            ws[f"E{row_i}"] = ""
                     
                     pub_year_match = re.search(r"\b(20[0-9]{2})\b", text)
                     year_for_excel = pub_year_match.group(1) if pub_year_match else "n/a"
@@ -1469,25 +1461,14 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                     ws["D2"].value = main_theme_for_excel
                     ws["J2"].value = datetime.datetime.now().strftime("%Y-%m-%d")
 
-                    ws["D5"].value = gene_via_text if gene_via_text else ""
+                    ws["D5"].value = ""  # z. B. für Gene; ggf. hier weitere Logik
                     ws["D6"].value = rs_num if rs_num else ""
                     
-                    genotype_entries = unique_geno_pairs[:3]
-                    for i in range(3):
-                        row_i = 10 + i
-                        if i < len(genotype_entries):
-                            g_str = genotype_entries[i][0]
-                            ws[f"D{row_i}"].value = g_str
-                            ws[f"E{row_i}"].value = freq_info
-                        else:
-                            ws[f"D{row_i}"] = ""
-                            ws[f"E{row_i}"] = ""
-                    
                     ws["C20"].value = year_for_excel
-                    ws["D20"].value = cohort_info
+                    ws["D20"].value = parse_cohort_info(summary_de).get("study_size", "") + ", " + parse_cohort_info(summary_de).get("origin", "")
                     ws["E20"].value = key_findings_result
-                    ws["G21"].value = ergebnisse
-                    ws["G22"].value = schlussfolgerungen
+                    ws["G21"].value = split_summary(summary_de)[0]
+                    ws["G22"].value = split_summary(summary_de)[1]
 
                     ws["J21"].value = pmid_found if pmid_found != "n/a" else ""
                     ws["J22"].value = link_pubmed if link_pubmed else ""
@@ -1692,7 +1673,6 @@ def answer_chat(question: str) -> str:
         return f"OpenAI-Fehler: {e}"
 
 def main():
-    # -------- LAYOUT: Links Module, Rechts Chatbot --------
     col_left, col_right = st.columns([4, 1])
     
     with col_left:
