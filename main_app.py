@@ -455,8 +455,10 @@ class PaperAnalyzer:
         return text
     
     def analyze_with_openai(self, text, prompt_template, api_key):
+        """Hilfsfunktion, um OpenAI per ChatCompletion aufzurufen."""
         import openai
         openai.api_key = api_key
+        # Bei Bedarf Text kürzen, um Tokens zu sparen
         if len(text) > 15000:
             text = text[:15000] + "..."
         prompt = prompt_template.format(text=text)
@@ -512,6 +514,7 @@ class AlleleFrequencyFinder:
         self.retry_delay = 2  # Sekunden zwischen Wiederholungsversuchen
 
     def get_allele_frequencies(self, rs_id: str, retry_count: int = 0) -> Optional[Dict[str, Any]]:
+        """Holt Allelfrequenzen von Ensembl."""
         if not rs_id.startswith("rs"):
             rs_id = f"rs{rs_id}"
         endpoint = f"/variation/human/{rs_id}?pops=1"
@@ -538,6 +541,7 @@ class AlleleFrequencyFinder:
         return None
     
     def build_freq_info_text(self, data: Dict[str, Any]) -> str:
+        """Erzeugt einen kurzen Text über Allelfrequenzen."""
         if not data:
             return "Keine Daten von Ensembl"
         maf = data.get("MAF", None)
@@ -558,6 +562,7 @@ class AlleleFrequencyFinder:
         return " | ".join(out)
 
 def split_summary(summary_text):
+    """Versucht 'Ergebnisse' und 'Schlussfolgerungen' zu splitten."""
     pattern = re.compile(
         r'(Ergebnisse(?:\:|\s*\n)|Resultate(?:\:|\s*\n))(?P<results>.*?)(Schlussfolgerungen(?:\:|\s*\n)|Fazit(?:\:|\s*\n))(?P<conclusion>.*)',
         re.IGNORECASE | re.DOTALL
@@ -571,6 +576,7 @@ def split_summary(summary_text):
         return summary_text, ""
 
 def parse_cohort_info(summary_text: str) -> dict:
+    """Parst grobe Infos zur Kohorte (Anzahl Patienten, Herkunft etc.) aus deutschem Summary."""
     info = {"study_size": "", "origin": ""}
     pattern_both = re.compile(
         r"(\d+)\s*Patient(?:en)?(?:[^\d]+)(\d+)\s*gesunde\s*Kontroll(?:personen)?",
@@ -1295,6 +1301,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
 
                     ws["D2"].value = main_theme_for_excel
                     ws["J2"].value = datetime.datetime.now().strftime("%Y-%m-%d")
+
                     ws["D5"].value = gene_via_text if gene_via_text else ""
                     ws["D6"].value = rs_num if rs_num else ""
                     
@@ -1365,16 +1372,13 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
         "Wähle ein Paper aus der Scoring-Liste:",
         options=["(Bitte wählen)"] + scored_titles
     )
-
-    # NEU: Auswahl der Analyseart für das bereits gescorte Paper
-    analysis_choice = st.selectbox(
-        "Analyseart für dieses Paper:",
-        ["Zusammenfassung", "Wichtigste Erkenntnisse", "Methoden & Techniken", "Relevanz-Bewertung"]
+    
+    # NEU: Analyseart-Auswahl nur für dieses Paper (Zusammenfassung etc.)
+    analysis_choice_for_scored_paper = st.selectbox(
+        "Welche Analyse willst du durchführen?",
+        ["(Keine Auswahl)", "Zusammenfassung", "Wichtigste Erkenntnisse", "Methoden & Techniken", "Relevanz-Bewertung"]
     )
     
-    # Zusätzliches Feld für Relevanz-Bewertung
-    topic_for_relevance = st.text_input("Thema für Relevanz-Bewertung (falls oben gewählt)")
-
     if chosen_title != "(Bitte wählen)":
         selected_paper = next((p for p in st.session_state["scored_list"] if p["Title"] == chosen_title), None)
         if selected_paper:
@@ -1390,35 +1394,39 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
             else:
                 st.warning(f"Kein Abstract für {selected_paper.get('Title', 'Unbenannt')} vorhanden.")
             
-            # Button für die Analyse dieses einen Papers
-            if st.button("Analyse dieses gescorten Papers jetzt durchführen"):
-                analyzer = PaperAnalyzer()
-                text_data = selected_paper.get("Abstract", "")
-                if not text_data.strip():
-                    st.error("Kein Abstract-Text vorhanden. Keine Analyse möglich.")
+            # Button, um die gewählte Analyse durchzuführen
+            if st.button("Analyse für dieses Paper durchführen"):
+                analyzer = PaperAnalyzer(model=model)
+                if not abstract.strip():
+                    st.error("Kein Abstract vorhanden, kann keine Analyse durchführen.")
                     return
-                if analysis_choice == "Zusammenfassung":
-                    with st.spinner("Erstelle Zusammenfassung..."):
-                        result = analyzer.summarize(text_data, st.session_state["api_key"])
-                elif analysis_choice == "Wichtigste Erkenntnisse":
-                    with st.spinner("Extrahiere wichtigste Erkenntnisse..."):
-                        result = analyzer.extract_key_findings(text_data, st.session_state["api_key"])
-                elif analysis_choice == "Methoden & Techniken":
-                    with st.spinner("Identifiziere Methoden & Techniken..."):
-                        result = analyzer.identify_methods(text_data, st.session_state["api_key"])
-                elif analysis_choice == "Relevanz-Bewertung":
-                    if not topic_for_relevance.strip():
-                        st.warning("Bitte Thema für Relevanz-Bewertung angeben.")
+                if analysis_choice_for_scored_paper == "Zusammenfassung":
+                    res = analyzer.summarize(abstract, api_key)
+                elif analysis_choice_for_scored_paper == "Wichtigste Erkenntnisse":
+                    res = analyzer.extract_key_findings(abstract, api_key)
+                elif analysis_choice_for_scored_paper == "Methoden & Techniken":
+                    res = analyzer.identify_methods(abstract, api_key)
+                elif analysis_choice_for_scored_paper == "Relevanz-Bewertung":
+                    # Nutzt 'topic' aus Sidebar
+                    if not topic:
+                        st.error("Bitte oben ein Topic eingeben (Sidebar).")
                         return
-                    with st.spinner("Bewerte Relevanz..."):
-                        result = analyzer.evaluate_relevance(text_data, topic_for_relevance, st.session_state["api_key"])
+                    res = analyzer.evaluate_relevance(abstract, topic, api_key)
                 else:
-                    result = "(Keine passende Analyseart ausgewählt.)"
-                
-                # Ausgabe
-                st.markdown("### Ergebnis:")
-                st.write(result)
+                    st.info("Keine gültige Analyseart ausgewählt.")
+                    return
 
+                if res and output_lang != "Deutsch" and analysis_choice_for_scored_paper != "(Keine Auswahl)":
+                    lang_map = {
+                        "Englisch": "English",
+                        "Portugiesisch": "Portuguese",
+                        "Serbisch": "Serbian"
+                    }
+                    target_lang = lang_map.get(output_lang, "English")
+                    res = translate_text_openai(res, "German", target_lang, api_key)
+                
+                st.write("### Ergebnis der Analyse:")
+                st.write(res)
         else:
             st.warning("Paper nicht gefunden (unerwarteter Fehler).")
 
@@ -1440,7 +1448,7 @@ Bitte NUR dieses JSON liefern, ohne weitere Erklärungen:
                 with st.spinner("Analysiere gescorte Paper auf Gemeinsamkeiten & Widersprüche..."):
                     result_json_str = analyze_papers_for_commonalities_and_contradictions(
                         paper_texts,
-                        st.session_state["api_key"],
+                        api_key,
                         model,
                         method_choice="ContraCrow" if analysis_method == "ContraCrow" else "Standard"
                     )
