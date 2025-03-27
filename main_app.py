@@ -88,7 +88,7 @@ def translate_text_openai(text, source_language, target_language, api_key):
             temperature=0
         )
         translation = response.choices[0].message.content.strip()
-        # Entfernt führende/abschließende Anführungszeichen
+        # Removes leading/trailing quotes
         if translation and translation[0] in ["'", '"', "‘", "„"]:
             translation = translation[1:]
             if translation and translation[-1] in ["'", '"']:
@@ -822,8 +822,7 @@ Antworte NUR in folgendem JSON-Format (ohne weitere Erklärungen):
     "Gemeinsamkeit 2"
   ],
   "contradictions": [
-    {{"paperA": "...", "claimA": "...", "paperB": "...", "claimB": "...", "reason": "..."}},
-    ...
+    {{"paperA": "...", "claimA": "...", "paperB": "...", "claimB": "...", "reason": "..."}}
   ]
 }}
 
@@ -1491,9 +1490,9 @@ Only output this JSON, no further explanation:
                     ws["D5"].value = gene_via_text if gene_via_text else ""
                     ws["D6"].value = rs_num if rs_num else ""
                     
-                    # For up to 3 genotype hits, we fetch genotype frequency from GenotypeFinder
+                    # For up to 3 genotype hits, put genotype in D10, D11, D12 and freq in E10, E11, E12
                     for i in range(3):
-                        row_i = 10 + i
+                        row_i = 10 + i  # e.g. 10 => D10/E10, 11 => D11/E11, 12 => D12/E12
                         if i < len(unique_geno_pairs):
                             genotype_str = unique_geno_pairs[i][0]
                             ws[f"D{row_i}"].value = genotype_str
@@ -1509,9 +1508,7 @@ Only output this JSON, no further explanation:
                             ws[f"D{row_i}"] = ""
                             ws[f"E{row_i}"] = ""
 
-                    # If you also want to store the quick "allele frequency info" somewhere, you could do:
-                    # e.g. ws["F10"] = allele_freq_info
-                    # But here we'll leave it as-is or store it in F10 just to show:
+                    # If you also want to store the quick "allele frequency info" somewhere, store in F10 (optional)
                     ws["F10"].value = allele_freq_info
 
                     # Publication year, cohort, key findings
