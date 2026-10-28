@@ -40,3 +40,4 @@ img2table
 opencv-python
 google_trans_new==1.1.9
 Pillow
+bibtexparser==1.4.1
